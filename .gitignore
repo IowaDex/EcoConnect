@@ -1,5 +1,6 @@
 # Flutter/Dart
 .dart_tool/
+.Flutter-Flutter.lock
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub/
