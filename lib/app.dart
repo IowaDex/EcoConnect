@@ -7,6 +7,9 @@ import 'core/models/user.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
+import 'features/user/screens/user_screen.dart';
+import 'features/driver/screens/driver_screen.dart';
+import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/admin/screens/admin_panel_screen.dart';
 
 class EcoConnectApp extends StatefulWidget {
@@ -30,18 +33,24 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         final auth = context.read<AuthProvider>();
         final isLoggedIn = auth.currentUser != null;
         final role = auth.currentUser?.role;
-        final isAuthRoute = state.matchedLocation == '/login' || state.matchedLocation == '/signup';
-        final isAdminRoute = state.matchedLocation == '/admin';
+        final loc = state.matchedLocation;
+        final isAuthRoute = loc == '/login' || loc == '/signup';
 
         if (!isLoggedIn && !isAuthRoute) return '/login';
-        if (isLoggedIn && isAuthRoute) return role == UserRole.admin ? '/admin' : '/dashboard';
-        if (isLoggedIn && role == UserRole.admin && !isAdminRoute && state.matchedLocation != '/dashboard') return '/admin';
+        if (isLoggedIn && isAuthRoute) {
+          if (role == UserRole.admin) return '/admin-dashboard';
+          if (role == UserRole.driver) return '/driver';
+          return '/user';
+        }
         return null;
       },
       routes: [
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
-        GoRoute(path: '/dashboard', builder: (_, __) => const DashboardScreen(isDemo: false)),
+        GoRoute(path: '/dashboard', builder: (_, __) => const DashboardScreen()),
+        GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
+        GoRoute(path: '/driver', builder: (_, __) => const DriverScreen()),
+        GoRoute(path: '/admin-dashboard', builder: (_, __) => const AdminDashboardScreen()),
         GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
       ],
     );
