@@ -1,0 +1,71 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub/
+build/
+.packages
+
+# Environment variables (keep secrets out of git)
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Android
+android/.gradle/
+android/local.properties
+android/*.iml
+android/.idea/
+android/.settings/
+android/build/
+android/captures/
+android/gradle-app.setting
+
+# iOS
+ios/.gitignore
+ios/Pods/
+ios/Podfile.lock
+ios/Runner/GeneratedPluginRegistrant.m
+ios/Runner/GeneratedPluginRegistrant.h
+*.xcworkspace
+*.xcuserstate
+
+# Firebase
+*.localized
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Secrets
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+key.properties
+google-services.json
+GoogleService-Info.plist
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Misc
+*.pyc
+*.class

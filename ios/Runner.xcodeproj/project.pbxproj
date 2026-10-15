@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LastChangedDate</key>
+	<string></string>
+	<key>MarkScheme</key>
+	<integer>0</integer>
+	<key>OrderList</key>
+	<array>
+		<string>INFOPLIST_FILE</string>
+		<string>GENERATE_INFOPLIST_FILE</string>
+		<string>CODE_SIGN_STYLE</string>
+		<string>CODE_SIGN_IDENTITY</string>
+		<string>DEVELOPMENT_TEAM</string>
+		<string>PRODUCT_BUNDLE_IDENTIFIER</string>
+		<string>ASSETCATALOG_COMPILER_APPICON_NAME</string>
+		<string>CLANG_ENABLE_MODULES</string>
+	</array>
+	<key>TargetAttributes</key>
+	<dict>
+		<key>97C836ED-00E3-11E5-86B5-98515C21F03C</key>
+		<dict>
+			<key>CreatedByTools</key>
+			<array>
+				<string>Xcode</string>
+			</array>
+			<key>TestTargetID</key>
+			<string></string>
+		</dict>
+	</dict>
+</dict>
+</plist>

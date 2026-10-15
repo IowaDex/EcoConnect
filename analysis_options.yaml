@@ -1,0 +1,41 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Style rules
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_final_fields: true
+    use_super_parameters: true
+
+    # Error rules
+    always_declare_return_types: true
+    avoid_print: warning
+    empty_statements: true
+    iterable_contains_unrelated_type: true
+    list_remove_unrelated_type: true
+
+    # Design rules
+    avoid_empty_else: true
+    avoid_print: warning
+    curly_braces_in_flow_control_structures: true
+    one_member_abstracts: warning
+    prefer_if_null_operators: true
+    prefer_single_quotes: true
+    unnecessary_null_in_if_null_operators: true
+
+    # Documentation
+    comment_references: true
+    file_names: true
+    library_names: true
+
+analyzer:
+  exclude:
+    - build/**
+    - .dart_tool/**
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+  errors:
+    missing_required_param: warning
+    missing_return: warning
+    todo: warning
