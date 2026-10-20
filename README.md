@@ -105,29 +105,17 @@ flutterfire configure
 
 After running `flutterfire configure`, the `lib/firebase_options.dart` file will be auto-generated. No manual changes needed if using the CLI.
 
-### 5. Set Up Cloud Functions
+### 5. Set Up Firebase Authentication Email
 
 ```bash
-# Navigate to functions directory
-cd functions
-
-# Install dependencies
-npm install
-
-# Set up environment variables for email service
-firebase functions:config:set sendgrid.key="YOUR_SENDGRID_API_KEY"
-firebase functions:config:set sendgrid.email="your-email@example.com"
-
-# Or set environment variables manually in .env.local for local testing
+# Configure the built-in Firebase email templates in:
+# Firebase Console > Authentication > Templates
 ```
 
-#### Get SendGrid API Key
-1. Sign up for SendGrid: https://sendgrid.com/
-2. Create an API key in Settings > API Keys
-3. Set the API key in Firebase:
-   ```bash
-   firebase functions:config:set sendgrid.key="SG.xxxxx"
-   ```
+Firebase Authentication sends verification and password-reset emails without
+Cloud Functions or Brevo. The template editor supports branding, sender
+details, subjects, and email content. Fully custom HTML notification emails
+require a separate server-side email provider.
 
 ### 6. Enable Firebase Services
 
@@ -243,14 +231,16 @@ eco_connect/
 
 ## 🔐 Environment Variables
 
-Create `.env` file in project root for local development (Firebase setup):
+Create `.env` in the project root for Flutter's Firebase configuration:
 
 ```env
 FIREBASE_API_KEY=your_api_key
 FIREBASE_PROJECT_ID=ecoconnect
-SENDGRID_API_KEY=your_sendgrid_key
-SENDGRID_EMAIL=noreply@ecoconnect.app
 ```
+
+Brevo is not required for the current Firebase email flow. If it is used in
+the future, its secrets must remain server-side and must not be added to the
+Flutter `.env` file.
 
 ## 🧪 Testing
 
@@ -313,12 +303,27 @@ firebase projects:list
 - **iOS**: Go to Settings > Privacy > Location Services > EcoConnect
 
 ### Email Not Sending
-- Verify SendGrid API key is set correctly
-- Check Firebase Cloud Functions logs:
-  ```bash
-  firebase functions:log
-  ```
-- Ensure email is in SendGrid verified senders list
+- Ensure Email/Password is enabled in Firebase Authentication
+- Configure templates in Firebase Console > Authentication > Templates
+- Check the recipient's spam folder
+
+### Offline Location Sync
+
+Location updates are saved to a local SQLite queue before they are uploaded to
+Firestore. If connectivity is unavailable, the app keeps the points locally
+and retries when connectivity returns. The location card shows whether points
+are synced, pending, or saved offline.
+
+Users can optionally enable **Share my location**. When enabled, the app
+publishes the user's latest location to the `shared_locations/{uid}` document.
+Authenticated users can read these opted-in locations and see them as
+additional markers on the map. Turning sharing off deletes the user's shared
+location document; private location history remains restricted to its owner.
+
+The current Android and iOS configuration requests foreground location. The
+tracking stream remains app-session based; continuous tracking after the app
+is backgrounded or terminated requires a platform background-location service,
+additional permissions, and clear user consent.
 
 ### Build Issues
 ```bash
@@ -348,11 +353,8 @@ flutter pub upgrade
 - `requestPermissions()` - Request location permissions
 
 ### EmailService
-- `sendEmail()` - General email sender
 - `sendVerificationEmail()` - Send verification
-- `sendWelcomeEmail()` - Send welcome
 - `sendPasswordResetEmail()` - Send password reset
-- `sendNotificationEmail()` - Send generic notification
 
 ## 🔄 Future Enhancements
 

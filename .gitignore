@@ -7,9 +7,16 @@
 build/
 .packages
 
+# Local analysis and dependency output
+graphify-out/
+functions/node_modules/
+*.db
+
 # Environment variables (keep secrets out of git)
 .env
 .env.*
+!.env.example
+!functions/.env.example
 
 # IDE
 .idea/

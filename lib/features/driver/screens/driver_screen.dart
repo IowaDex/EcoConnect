@@ -20,6 +20,7 @@ class _DriverScreenState extends State<DriverScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final locationProvider = context.read<LocationProvider>();
+      locationProvider.startSharedLocationUpdates();
       if (!locationProvider.hasLocation) locationProvider.getCurrentLocation();
     });
   }
@@ -143,6 +144,23 @@ class _DriverScreenState extends State<DriverScreen> {
                   value: locationProvider.isTracking,
                   onChanged: (value) => value ? locationProvider.startTracking() : locationProvider.stopTracking(),
                   secondary: Icon(Icons.gps_fixed, color: locationProvider.isTracking ? Colors.green : colorScheme.onSurfaceVariant),
+                ),
+              ),
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Share my location'),
+                  subtitle: Text(
+                    locationProvider.isSharingLocation
+                        ? 'Other signed-in users can see your latest location'
+                        : 'Your location is private',
+                  ),
+                  value: locationProvider.isSharingLocation,
+                  onChanged: locationProvider.setSharingLocation,
+                  secondary: Icon(
+                    locationProvider.isSharingLocation
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
                 ),
               ),
             ],

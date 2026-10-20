@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
+import '../utils/app_logger.dart';
 export '../models/user.dart';
 
 enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified }
@@ -68,7 +69,7 @@ class AuthService {
     // Update display name
     await credential.user?.updateDisplayName(name);
 
-    // Send real Firebase email verification
+    // Send Firebase Authentication's built-in verification email
     await credential.user?.sendEmailVerification();
 
     // Store user data in Firestore
@@ -83,6 +84,7 @@ class AuthService {
     // Do not keep them logged in until email is verified
     final appUser = await _getAppUser(credential.user!);
     await _auth.signOut();
+    AppLogger.info('Account created; verification email requested');
     return appUser;
   }
 
@@ -91,9 +93,11 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+
     try {
       final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
+        email: normalizedEmail,
         password: password,
       );
 
@@ -107,8 +111,10 @@ class AuthService {
         throw const AuthException(AuthErrorType.emailNotVerified);
       }
 
+      AppLogger.info('Login successful');
       return appUser;
     } on FirebaseAuthException catch (e) {
+      AppLogger.error('Login failed (${e.code})', e.message);
       if (e.code == 'user-not-found' || e.code == 'invalid-email') {
         throw const AuthException(AuthErrorType.emailNotFound);
       } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
@@ -131,6 +137,7 @@ class AuthService {
       throw Exception('No user logged in');
     }
     await user.sendEmailVerification();
+    AppLogger.info('Verification email requested');
   }
 
   // Resend email verification by signing in temporarily
@@ -141,11 +148,13 @@ class AuthService {
     );
     await credential.user?.sendEmailVerification();
     await _auth.signOut();
+    AppLogger.info('Verification email resent');
   }
 
   // Send password reset email
   Future<void> sendPasswordResetEmail(String email) async {
     await _auth.sendPasswordResetEmail(email: email);
+    AppLogger.info('Password reset email requested');
   }
 
   // Get user data

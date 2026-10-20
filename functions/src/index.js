@@ -2,27 +2,67 @@
 // Deploy with: firebase deploy --only functions
 
 const functions = require('firebase-functions');
+const {defineSecret} = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 
-// Initialize Firebase Admin
 admin.initializeApp();
-const db = admin.firestore();
 
-// Email configuration - set these as environment variables in Firebase
-const EMAIL_ADDRESS = functions.config().sendgrid?.email || process.env.EMAIL_ADDRESS;
-const EMAIL_API_KEY = functions.config().sendgrid?.key || process.env.EMAIL_API_KEY;
+const brevoSmtpKey = defineSecret('BREVO_SMTP_KEY');
+const brevoSmtpUser = defineSecret('BREVO_SMTP_USER');
+const brevoSenderEmail = defineSecret('BREVO_SENDER_EMAIL');
 
-// Nodemailer transport (using SendGrid by default)
-const transporter = nodemailer.createTransport({
-  host: 'smtp.sendgrid.net',
-  port: 587,
-  secure: false,
-  auth: {
-    user: 'apikey',
-    pass: EMAIL_API_KEY,
-  },
-});
+function getBrevoConfig() {
+  const senderEmail = brevoSenderEmail.value() || process.env.BREVO_SENDER_EMAIL;
+  const smtpUser = brevoSmtpUser.value() || process.env.BREVO_SMTP_USER;
+  const smtpKey = brevoSmtpKey.value() || process.env.BREVO_SMTP_KEY;
+
+  if (!senderEmail || !smtpUser || !smtpKey) {
+    throw new Error('Brevo email configuration is incomplete');
+  }
+
+  return {senderEmail, smtpUser, smtpKey};
+}
+
+function createTransporter() {
+  const {smtpUser, smtpKey} = getBrevoConfig();
+  return nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false,
+    auth: {user: smtpUser, pass: smtpKey},
+  });
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
+}
+
+async function sendVerificationEmail(user) {
+  if (!user.email) {
+    throw new Error('User does not have an email address');
+  }
+
+  const verificationLink = await admin.auth().generateEmailVerificationLink(
+      user.email,
+  );
+  const {senderEmail} = getBrevoConfig();
+  await createTransporter().sendMail({
+    from: `"EcoConnect" <${senderEmail}>`,
+    to: user.email,
+    subject: emailTemplates.verification.subject,
+    html: emailTemplates.verification.html({
+      userName: user.displayName || 'User',
+      verificationLink,
+    }),
+  });
+}
 
 // Email templates
 const emailTemplates = {
@@ -43,7 +83,7 @@ const emailTemplates = {
         </div>
 
         <div style="background: #f8f9fa; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
-          <h2 style="color: #333; margin-top: 0;">Welcome, ${data.userName}!</h2>
+          <h2 style="color: #333; margin-top: 0;">Welcome, ${escapeHtml(data.userName)}!</h2>
           <p style="color: #555; line-height: 1.6;">
             Thank you for creating an account with EcoConnect. We're excited to have you on board!
           </p>
@@ -53,7 +93,7 @@ const emailTemplates = {
         </div>
 
         <div style="text-align: center; margin: 40px 0;">
-          <a href="${data.verificationLink}"
+          <a href="${escapeHtml(data.verificationLink)}"
              style="display: inline-block; background: #4CAF50; color: white; padding: 15px 30px;
                     text-decoration: none; border-radius: 5px; font-weight: bold;
                     font-size: 16px; transition: background 0.3s;">
@@ -63,7 +103,7 @@ const emailTemplates = {
 
         <p style="color: #777; font-size: 14px; text-align: center;">
           If the button doesn't work, copy and paste this link into your browser:<br>
-          <a href="${data.verificationLink}">${data.verificationLink}</a>
+          <a href="${escapeHtml(data.verificationLink)}">${escapeHtml(data.verificationLink)}</a>
         </p>
 
         <hr style="border: none; border-top: 1px solid #eee; margin: 40px 0;">
@@ -86,7 +126,7 @@ const emailTemplates = {
         <title>Welcome to EcoConnect</title>
       </head>
       <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #4CAF50;">Welcome to EcoConnect, ${data.userName}! 🌱</h2>
+        <h2 style="color: #4CAF50;">Welcome to EcoConnect, ${escapeHtml(data.userName)}! 🌱</h2>
         <p>Thank you for joining our community of eco-conscious individuals.</p>
         <p>You can now:</p>
         <ul>
@@ -96,7 +136,7 @@ const emailTemplates = {
           <li>Share your green initiatives</li>
         </ul>
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${data.loginUrl}"
+          <a href="${escapeHtml(data.loginUrl)}"
              style="background: #4CAF50; color: white; padding: 12px 24px;
                     text-decoration: none; border-radius: 5px; font-weight: bold;">
             Get Started
@@ -124,7 +164,7 @@ const emailTemplates = {
         <p>You have requested to reset your password for your EcoConnect account.</p>
         <p>Click the button below to create a new password:</p>
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${data.resetLink}"
+          <a href="${escapeHtml(data.resetLink)}"
              style="background: #4CAF50; color: white; padding: 12px 24px;
                     text-decoration: none; border-radius: 5px; font-weight: bold;">
             Reset Password
@@ -148,10 +188,10 @@ const emailTemplates = {
         <title>EcoConnect Notification</title>
       </head>
       <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #4CAF50;">${data.subject || 'Notification'}</h2>
-        <p>Hello ${data.userName},</p>
+        <h2 style="color: #4CAF50;">${escapeHtml(data.subject || 'Notification')}</h2>
+        <p>Hello ${escapeHtml(data.userName)},</p>
         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          ${data.message}
+          ${escapeHtml(data.message)}
         </div>
         <p>Stay connected with EcoConnect for more updates!</p>
         <p><strong>The EcoConnect Team</strong></p>
@@ -162,7 +202,9 @@ const emailTemplates = {
 };
 
 // Send email function
-exports.sendEmail = functions.https.onCall(async (data, context) => {
+exports.sendEmail = functions.https.onCall(
+  {secrets: [brevoSmtpKey, brevoSmtpUser, brevoSenderEmail]},
+  async (data, context) => {
   // Verify user is authenticated
   if (!context.auth) {
     throw new functions.https.HttpsError(
@@ -171,10 +213,9 @@ exports.sendEmail = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const { to, subject, templateType, templateData } = data;
+  const {to, subject, templateType, templateData} = data || {};
 
-  // Validate required fields
-  if (!to || !templateType) {
+  if (typeof to !== 'string' || !to.trim() || typeof templateType !== 'string') {
     throw new functions.https.HttpsError(
       'invalid-argument',
       'Missing required fields: to and templateType'
@@ -190,20 +231,34 @@ exports.sendEmail = functions.https.onCall(async (data, context) => {
     );
   }
 
-  try {
-    // Get template
-    const template = emailTemplates[templateType];
+  if (subject !== undefined && typeof subject !== 'string') {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Subject must be a string'
+    );
+  }
+  if (templateData !== undefined &&
+      (templateData === null ||
+        typeof templateData !== 'object' ||
+        Array.isArray(templateData))) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Template data must be an object'
+    );
+  }
 
-    // Build email
+  try {
+    const template = emailTemplates[templateType];
+    const {senderEmail} = getBrevoConfig();
+
     const mailOptions = {
-      from: `"EcoConnect" <${EMAIL_ADDRESS}>`,
-      to,
+      from: `"EcoConnect" <${senderEmail}>`,
+      to: to.trim(),
       subject: subject || template.subject,
       html: template.html(templateData || {}),
     };
 
-    // Send email
-    const info = await transporter.sendMail(mailOptions);
+    const info = await createTransporter().sendMail(mailOptions);
 
     return {
       success: true,
@@ -214,32 +269,45 @@ exports.sendEmail = functions.https.onCall(async (data, context) => {
     console.error('Error sending email:', error);
     throw new functions.https.HttpsError(
       'internal',
-      `Failed to send email: ${error.message}`
+      'Failed to send email'
     );
   }
-});
+  },
+);
 
 // Email verification on user creation (trigger)
-exports.sendVerificationOnCreate = functions.auth.user().onCreate(async (user) => {
+exports.sendVerificationEmail = functions.https.onCall(
+  {secrets: [brevoSmtpKey, brevoSmtpUser, brevoSenderEmail]},
+  async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'You must be logged in to request email verification'
+    );
+  }
+
+  try {
+    await sendVerificationEmail(await admin.auth().getUser(context.auth.uid));
+    return {success: true};
+  } catch (error) {
+    console.error('Failed to send verification email:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to send verification email'
+    );
+  }
+  },
+);
+
+exports.sendVerificationOnCreate = functions.auth.user().onCreate(
+  {secrets: [brevoSmtpKey, brevoSmtpUser, brevoSenderEmail]},
+  async (user) => {
   if (user.email) {
     try {
-      // Send custom verification email via callable function
-      const emailData = {
-        to: user.email,
-        subject: 'Verify Your Email - EcoConnect',
-        templateType: 'verification',
-        templateData: {
-          userName: user.displayName || 'User',
-          verificationLink: `https://ecoconnect.app/verify?uid=${user.uid}`,
-          appName: 'EcoConnect',
-        },
-      };
-
-      // Call the sendEmail function
-      const sendEmail = functions.httpsCallable('sendEmail');
-      await sendEmail(emailData);
+      await sendVerificationEmail(user);
     } catch (error) {
       console.error('Failed to send verification email:', error);
     }
   }
-});
+  },
+);

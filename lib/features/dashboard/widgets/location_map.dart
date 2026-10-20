@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/location_provider.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/models/shared_location.dart';
 
 class LocationMap extends StatefulWidget {
   const LocationMap({super.key});
@@ -80,6 +81,9 @@ class _LocationMapState extends State<LocationMap> {
     final latitude = locationProvider.latitude!;
     final longitude = locationProvider.longitude!;
     final position = LatLng(latitude, longitude);
+    final otherLocations = locationProvider.sharedLocations.where(
+      (location) => location.userId != authProvider.currentUser?.uid,
+    );
 
     return Card(
       child: ClipRRect(
@@ -141,6 +145,13 @@ class _LocationMapState extends State<LocationMap> {
                           ],
                         ),
                       ),
+                      ...otherLocations.map(
+                        (location) => _buildSharedMarker(
+                          context,
+                          location,
+                          colorScheme,
+                        ),
+                      ),
                     ],
                   ),
                   // Accuracy circle
@@ -173,28 +184,19 @@ class _LocationMapState extends State<LocationMap> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
+                          Icon(
+                            Icons.location_on,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
                             'Your Location',
                             style: Theme.of(context)
                                 .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$latitude, $longitude',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -234,6 +236,44 @@ class _LocationMapState extends State<LocationMap> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Marker _buildSharedMarker(
+    BuildContext context,
+    SharedLocation location,
+    ColorScheme colorScheme,
+  ) {
+    return Marker(
+      point: LatLng(location.latitude, location.longitude),
+      width: 130,
+      height: 72,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              location.displayName,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.onSecondaryContainer,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          Icon(
+            location.role == 'driver'
+                ? Icons.local_shipping
+                : Icons.person_pin_circle,
+            color: colorScheme.secondary,
+            size: 28,
+          ),
+        ],
       ),
     );
   }

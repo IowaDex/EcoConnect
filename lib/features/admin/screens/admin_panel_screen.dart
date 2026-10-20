@@ -12,13 +12,9 @@ class AdminPanelScreen extends StatefulWidget {
 
 class _AdminPanelScreenState extends State<AdminPanelScreen> {
   final _searchController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   String? _error;
   List<Map<String, dynamic>> _allUsers = [];
-  Map<String, dynamic>? _editingUser;
-  UserRole? _newRole;
-  String? _deleteTargetUid;
 
   @override
   void initState() {
@@ -86,7 +82,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('User deleted'),
+        content: const Text('User deleted'),
         backgroundColor: Colors.red.shade600,
       ),
     );
@@ -168,9 +164,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           // Search bar
           TextField(
             controller: _searchController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               hintText: 'Search users...',
-              prefixIcon: const Icon(Icons.search),
+              prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
             ),
             onChanged: (value) {
@@ -181,7 +177,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
           // Users list
           if (_allUsers.isNotEmpty)
-            ..._allUsers.map((user) => _buildUserCard(user)).toList()
+            ..._allUsers.map(_buildUserCard)
           else
             const Text('No users found'),
         ],

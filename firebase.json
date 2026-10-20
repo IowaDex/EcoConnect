@@ -1,4 +1,7 @@
 {
   "project": "ecoconnect",
-  "plugin": "firebase_flutter"
+  "plugin": "firebase_flutter",
+  "firestore": {
+    "rules": "firestore.rules"
+  }
 }

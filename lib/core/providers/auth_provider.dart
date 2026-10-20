@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
+import '../utils/app_logger.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -79,6 +80,7 @@ class AuthProvider extends ChangeNotifier {
         message = message.replaceFirst('Exception: ', '');
       }
       _setError(message);
+      AppLogger.error('Signup failed', e);
       return false;
     } finally {
       _setLoading(false);
@@ -102,16 +104,21 @@ class AuthProvider extends ChangeNotifier {
         case AuthErrorType.emailNotFound:
           _setError('No account found with this email address.');
         case AuthErrorType.wrongPassword:
-          _setError('Incorrect password. Please try again.');
+          _setError('Invalid email or password. Please try again.');
         case AuthErrorType.emailNotVerified:
           _setError('Please verify your email before logging in.');
       }
+      AppLogger.error('Login rejected', e.type);
       return false;
     } catch (e) {
       String message = e.toString();
-      if (message.contains(']')) message = message.split(']').last.trim();
-      else if (message.startsWith('Exception: ')) message = message.replaceFirst('Exception: ', '');
+      if (message.contains(']')) {
+        message = message.split(']').last.trim();
+      } else if (message.startsWith('Exception: ')) {
+        message = message.replaceFirst('Exception: ', '');
+      }
       _setError(message);
+      AppLogger.error('Login request failed', e);
       return false;
     } finally {
       _setLoading(false);
@@ -127,6 +134,7 @@ class AuthProvider extends ChangeNotifier {
       _userRole = null;
     } catch (e) {
       _setError(e.toString());
+      AppLogger.error('Logout failed', e);
     }
     _setLoading(false);
   }
@@ -141,6 +149,7 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _setError(e.toString());
+      AppLogger.error('Verification email request failed', e);
       _setLoading(false);
       return false;
     }

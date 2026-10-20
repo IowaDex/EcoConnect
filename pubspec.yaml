@@ -17,6 +17,10 @@ dependencies:
   firebase_core: ^2.27.0
   firebase_auth: ^4.17.4
   cloud_firestore: ^4.15.4
+  sqflite: ^2.3.3+1
+  sqflite_common_ffi: ^2.3.4
+  connectivity_plus: ^6.1.4
+  path: ^1.9.0
 
   # Location services
   geolocator: ^10.1.0

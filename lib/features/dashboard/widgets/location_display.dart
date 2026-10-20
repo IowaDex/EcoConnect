@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/location_provider.dart';
+import '../../../core/repositories/location_repository.dart';
 
 class LocationDisplay extends StatelessWidget {
   const LocationDisplay({super.key});
@@ -49,7 +50,7 @@ class LocationDisplay extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         locationProvider.hasLocation
-                            ? 'Coordinates captured'
+                            ? 'Location available'
                             : 'No location yet',
                         style: TextStyle(
                           color: locationProvider.hasLocation
@@ -64,34 +65,25 @@ class LocationDisplay extends StatelessWidget {
               ],
             ),
 
-            // Coordinates display
             if (locationProvider.hasLocation) ...[
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // Latitude
+              const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: _CoordinateTile(
-                      label: 'Latitude',
-                      value: locationProvider.latitude!.toStringAsFixed(6),
-                      icon: Icons.arrow_upward,
-                    ),
+                  Icon(
+                    _syncIcon(locationProvider.syncState),
+                    size: 16,
+                    color: _syncColor(locationProvider.syncState),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _CoordinateTile(
-                      label: 'Longitude',
-                      value: locationProvider.longitude!.toStringAsFixed(6),
-                      icon: Icons.arrow_forward,
+                  const SizedBox(width: 6),
+                  Text(
+                    _syncMessage(locationProvider),
+                    style: TextStyle(
+                      color: _syncColor(locationProvider.syncState),
+                      fontSize: 13,
                     ),
                   ),
                 ],
               ),
-
-              // Accuracy indicator
               if (locationProvider.currentPosition?.accuracy != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -122,7 +114,7 @@ class LocationDisplay extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                  'Tap "Get Current Location" to fetch your GPS coordinates',
+                  'Tap "Get Current Location" to display your location on the map',
                   style: TextStyle(
                     color: Colors.grey.shade600,
                     fontSize: 13,
@@ -142,56 +134,46 @@ class LocationDisplay extends StatelessWidget {
     if (accuracy < 50) return Colors.orange;
     return Colors.red;
   }
-}
 
-class _CoordinateTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
+  String _syncMessage(LocationProvider provider) {
+    switch (provider.syncState) {
+      case LocationSyncState.synced:
+        return 'Location synced';
+      case LocationSyncState.pending:
+        return '${provider.pendingCount} location(s) waiting to sync';
+      case LocationSyncState.syncing:
+        return 'Syncing location';
+      case LocationSyncState.offline:
+        return 'Saved offline; waiting for connection';
+      case LocationSyncState.failed:
+        return 'Saved locally; sync will retry';
+    }
+  }
 
-  const _CoordinateTile({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
+  IconData _syncIcon(LocationSyncState state) {
+    switch (state) {
+      case LocationSyncState.synced:
+        return Icons.cloud_done;
+      case LocationSyncState.pending:
+      case LocationSyncState.syncing:
+        return Icons.cloud_upload;
+      case LocationSyncState.offline:
+        return Icons.cloud_off;
+      case LocationSyncState.failed:
+        return Icons.sync_problem;
+    }
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: Colors.grey.shade600),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ],
-      ),
-    );
+  Color _syncColor(LocationSyncState state) {
+    switch (state) {
+      case LocationSyncState.synced:
+        return Colors.green;
+      case LocationSyncState.pending:
+      case LocationSyncState.syncing:
+        return Colors.orange;
+      case LocationSyncState.offline:
+      case LocationSyncState.failed:
+        return Colors.red;
+    }
   }
 }

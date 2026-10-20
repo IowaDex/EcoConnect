@@ -7,6 +7,7 @@ class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
 
   Future<void> _handleLogout(BuildContext context) async {
+    final authProvider = context.read<AuthProvider>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -23,8 +24,8 @@ class AdminDashboardScreen extends StatelessWidget {
       ),
     );
     if (confirmed != true) return;
+    await authProvider.logout();
     if (context.mounted) {
-      await context.read<AuthProvider>().logout();
       context.go('/login');
     }
   }

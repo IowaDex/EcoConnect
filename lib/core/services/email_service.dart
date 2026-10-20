@@ -1,82 +1,30 @@
-// Mock Email Service for Windows Testing
-// This provides a local implementation without Firebase Cloud Functions
-// Replace with real Firebase Cloud Functions when deploying to mobile
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EmailService {
-  /// General email sender - mock implementation
-  Future<void> sendEmail({
-    required String to,
-    required String subject,
-    required String templateType,
-    required Map<String, dynamic> templateData,
-  }) async {
-    // Simulate network delay
-    await Future.delayed(const Duration(milliseconds: 600));
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-    print('📧 [MOCK EMAIL SENT]');
-    print('To: $to');
-    print('Subject: $subject');
-    print('Type: $templateType');
-    print('---');
+  Future<void> sendVerificationEmail(User user) async {
+    await user.sendEmailVerification();
   }
 
-  /// Send verification email for new user sign up
-  Future<void> sendVerificationEmail(dynamic user) async {
-    await sendEmail(
-      to: user.email ?? 'user@example.com',
-      subject: 'Verify Your Email - EcoConnect',
-      templateType: 'verification',
-      templateData: {
-        'userName': user.displayName ?? 'User',
-        'verificationLink': 'https://ecoconnect.app/verify',
-        'appName': 'EcoConnect',
-      },
-    );
-  }
-
-  /// Send welcome email after successful email verification
-  Future<void> sendWelcomeEmail(dynamic user) async {
-    await sendEmail(
-      to: user.email ?? 'user@example.com',
-      subject: 'Welcome to EcoConnect!',
-      templateType: 'welcome',
-      templateData: {
-        'userName': user.displayName ?? 'User',
-        'appName': 'EcoConnect',
-        'loginUrl': 'https://ecoconnect.app/login',
-      },
-    );
-  }
-
-  /// Send password reset email
   Future<void> sendPasswordResetEmail(String email) async {
-    await sendEmail(
-      to: email,
-      subject: 'Reset Your Password - EcoConnect',
-      templateType: 'passwordReset',
-      templateData: {
-        'appName': 'EcoConnect',
-        'resetLink': 'https://ecoconnect.app/reset-password',
-      },
+    await _auth.sendPasswordResetEmail(email: email);
+  }
+
+  Future<void> sendWelcomeEmail(User user) async {
+    throw UnsupportedError(
+      'Custom welcome emails require a server-side email provider.',
     );
   }
 
-  /// Send notification email (generic)
   Future<void> sendNotificationEmail({
     required String to,
     required String subject,
     required String message,
     String? userName,
   }) async {
-    await sendEmail(
-      to: to,
-      subject: subject,
-      templateType: 'notification',
-      templateData: {
-        'userName': userName ?? 'User',
-        'message': message,
-        'appName': 'EcoConnect',
-      },
+    throw UnsupportedError(
+      'Custom notification emails require a server-side email provider.',
     );
   }
 }

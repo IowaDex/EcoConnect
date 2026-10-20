@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'core/providers/auth_provider.dart';
 import 'core/providers/location_provider.dart';
+import 'core/database/database_initializer.dart';
 import 'app.dart';
 
 void main() async {
@@ -17,6 +18,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  initializeLocalDatabase();
 
   runApp(
     MultiProvider(
