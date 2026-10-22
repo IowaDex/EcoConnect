@@ -4,7 +4,7 @@ import '../models/user.dart';
 import '../utils/app_logger.dart';
 export '../models/user.dart';
 
-enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified }
+enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified, accountRemoved }
 
 class AuthException implements Exception {
   final AuthErrorType type;
@@ -16,31 +16,27 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  AppUser? _currentUser;
-
   factory AuthService() {
     return _instance;
   }
 
   AuthService._internal();
 
-  // Get current user
-  AppUser? get currentUser => _currentUser;
-
   // Auth state changes stream
   Stream<AppUser?> get authStateChanges {
     return _auth.authStateChanges().asyncMap((firebaseUser) async {
-      if (firebaseUser == null) {
-        _currentUser = null;
-        return null;
-      }
+      if (firebaseUser == null) return null;
+      // No sign-out here: during signup the profile is written after this fires.
       return await _getAppUser(firebaseUser);
     });
   }
 
-  Future<AppUser> _getAppUser(User firebaseUser) async {
+  /// Returns null when the profile is gone, i.e. an admin deleted the account.
+  Future<AppUser?> _getAppUser(User firebaseUser) async {
     final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
-    final roleStr = doc.data()?['role'] ?? 'user';
+    final data = doc.data();
+    if (data == null) return null;
+    final roleStr = data['role'] ?? 'user';
     return AppUser(
       uid: firebaseUser.uid,
       email: firebaseUser.email,
@@ -54,7 +50,7 @@ class AuthService {
   }
 
   // Sign up with email and password and role
-  Future<AppUser> signUp({
+  Future<void> signUp({
     required String email,
     required String password,
     required String name,
@@ -82,10 +78,8 @@ class AuthService {
     });
 
     // Do not keep them logged in until email is verified
-    final appUser = await _getAppUser(credential.user!);
     await _auth.signOut();
     AppLogger.info('Account created; verification email requested');
-    return appUser;
   }
 
   // Login with email and password
@@ -105,9 +99,13 @@ class AuthService {
 
       final appUser = await _getAppUser(credential.user!);
 
+      if (appUser == null) {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.accountRemoved);
+      }
+
       if (!credential.user!.emailVerified && appUser.role != UserRole.admin) {
         await _auth.signOut();
-        _currentUser = null;
         throw const AuthException(AuthErrorType.emailNotVerified);
       }
 
@@ -124,20 +122,21 @@ class AuthService {
     }
   }
 
-  // Logout
+  // Logout; removes the shared location first, while we still have permission.
   Future<void> logout() async {
-    await _auth.signOut();
-    _currentUser = null;
-  }
-
-  // Send email verification for currently signed-in user
-  Future<void> sendEmailVerification() async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      throw Exception('No user logged in');
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _firestore
+            .collection('shared_locations')
+            .doc(uid)
+            .delete()
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        AppLogger.error('Could not remove shared location on logout', e);
+      }
     }
-    await user.sendEmailVerification();
-    AppLogger.info('Verification email requested');
+    await _auth.signOut();
   }
 
   // Resend email verification by signing in temporarily
@@ -149,18 +148,6 @@ class AuthService {
     await credential.user?.sendEmailVerification();
     await _auth.signOut();
     AppLogger.info('Verification email resent');
-  }
-
-  // Send password reset email
-  Future<void> sendPasswordResetEmail(String email) async {
-    await _auth.sendPasswordResetEmail(email: email);
-    AppLogger.info('Password reset email requested');
-  }
-
-  // Get user data
-  Future<Map<String, dynamic>?> getUserData(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.data();
   }
 
   // Get all users (for admin panel)
@@ -179,17 +166,21 @@ class AuthService {
     });
   }
 
-  // Delete user (for admin)
+  // Delete all of a user's data (for admin). The login account itself can only
+  // be removed in the Firebase console; login refuses accounts without a profile.
   Future<void> deleteUser(String uid) async {
-    await _firestore.collection('users').doc(uid).delete();
-  }
-
-  // Check if current user is admin
-  Future<bool> isAdmin() async {
-    final user = _auth.currentUser;
-    if (user == null) return false;
-
-    final doc = await _firestore.collection('users').doc(user.uid).get();
-    return doc.data()?['role'] == 'admin';
+    final profile = _firestore.collection('users').doc(uid);
+    while (true) {
+      final page = await profile.collection('locations').limit(400).get();
+      if (page.docs.isEmpty) break;
+      final batch = _firestore.batch();
+      for (final doc in page.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    await _firestore.collection('shared_locations').doc(uid).delete();
+    // Profile last, so a partial failure leaves the user listed for a retry.
+    await profile.delete();
   }
 }

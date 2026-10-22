@@ -37,9 +37,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    if (success) {
-      context.go('/dashboard');
-    } else if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
+    // On success the router redirect in app.dart opens the role's screen.
+    if (success) return;
+    if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
       _showUnverifiedDialog(_emailController.text.trim());
     } else if (authProvider.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(

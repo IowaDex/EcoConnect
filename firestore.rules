@@ -3,47 +3,48 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
-    // Users can only read/write their own profile
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function profile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    // Admin is the `role` field on the user's own profile; signup can't set it.
+    function isAdmin() {
+      return signedIn() && profile(request.auth.uid).role == 'admin';
+    }
+
     match /users/{userId} {
-      // A user can read their own profile if they are authenticated
-      // or if the userId matches the authenticated user
-      allow read: if request.auth != null && request.auth.uid == userId;
-
-      // A user can update their own profile (name, emailVerified)
-      // but cannot change their role
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId
-        && request.auth.uid == userId
-        && !request.resource.data.keys().hasAny(['role']);
-
-      // Admin can create new users (only during signup flow handled by auth)
-      allow create: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can read all users
-      allow read: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can update role
-      allow update: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can delete
-      allow delete: if request.auth != null && request.auth.token.admin == true;
+      allow read: if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId)
+        && request.resource.data.role in ['user', 'driver'];
+      allow update: if (isSelf(userId)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+        || isAdmin();
+      allow delete: if isAdmin();
 
       match /locations/{locationId} {
-        allow read, create: if request.auth != null
-          && request.auth.uid == userId;
-        allow update, delete: if request.auth != null
-          && request.auth.uid == userId;
-        allow read: if request.auth != null
-          && request.auth.token.admin == true;
+        allow read, write: if isSelf(userId);
+        allow read, delete: if isAdmin();
       }
     }
 
     match /shared_locations/{userId} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
-        && request.auth.uid == userId;
-      allow delete: if request.auth != null
-        && request.auth.uid == userId;
+      allow read: if signedIn() && request.auth.token.email_verified == true;
+      allow create, update: if isSelf(userId)
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.accuracy is number
+        && request.resource.data.recordedAt is timestamp
+        && request.resource.data.displayName is string
+        && request.resource.data.role == profile(userId).role;
+      allow delete: if isSelf(userId) || isAdmin();
     }
   }
 }

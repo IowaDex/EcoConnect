@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/shared_location.dart';
@@ -24,10 +24,28 @@ class LocationProvider extends ChangeNotifier {
   bool _isSharingLocation = false;
   StreamSubscription<List<SharedLocation>>? _sharedLocationsSubscription;
   List<SharedLocation> _sharedLocations = const [];
+  StreamSubscription<User?>? _authSubscription;
+  String? _userId;
 
   LocationProvider() {
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen((_) => syncPending());
+    _authSubscription =
+        FirebaseAuth.instance.authStateChanges().listen(_onUserChanged);
+  }
+
+  // Nothing from the previous account may carry over to the next one.
+  void _onUserChanged(User? user) {
+    if (user?.uid == _userId) return;
+    _userId = user?.uid;
+    stopTracking();
+    _sharedLocationsSubscription?.cancel();
+    _sharedLocationsSubscription = null;
+    _sharedLocations = const [];
+    _isSharingLocation = false;
+    _currentPosition = null;
+    _locationRepository.reset();
+    notifyListeners();
   }
 
   Position? get currentPosition => _currentPosition;
@@ -80,13 +98,15 @@ class LocationProvider extends ChangeNotifier {
   }
 
   void startSharedLocationUpdates() {
-    _sharedLocationsSubscription ??=
+    if (_sharedLocationsSubscription != null) return;
+    _locationRepository.loadSharingEnabled().then((_) {
+      _isSharingLocation = _locationRepository.sharingEnabled;
+      notifyListeners();
+    });
+    _sharedLocationsSubscription =
         _locationRepository.watchSharedLocations().listen(
       (locations) {
         _sharedLocations = locations;
-        final currentUserId = _locationRepository.currentUserId;
-        _isSharingLocation =
-            locations.any((location) => location.userId == currentUserId);
         notifyListeners();
       },
       onError: (Object error) {
@@ -225,6 +245,7 @@ class LocationProvider extends ChangeNotifier {
     stopTracking();
     _connectivitySubscription?.cancel();
     _sharedLocationsSubscription?.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 }

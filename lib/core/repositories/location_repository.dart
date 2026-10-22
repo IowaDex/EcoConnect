@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../database/local_database.dart';
 import '../models/location_record.dart';
@@ -18,25 +19,36 @@ class LocationRepository {
 
   static const _minimumDistanceMeters = 20.0;
   static const _minimumInterval = Duration(seconds: 30);
+  static const _minimumMovingInterval = Duration(seconds: 5);
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final LocalDatabase _database;
   bool _sharingEnabled = false;
+  Map<String, dynamic>? _profile;
 
-  String? get currentUserId => _auth.currentUser?.uid;
+  bool get sharingEnabled => _sharingEnabled;
 
   LocationRecord? _lastSaved;
-  String? _lastSavedUserId;
+
+  /// Forgets everything tied to the previous signed-in account.
+  void reset() {
+    _sharingEnabled = false;
+    _profile = null;
+    _lastSaved = null;
+  }
 
   Future<bool> savePosition(Position position) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return false;
-    if (_lastSavedUserId != userId) {
-      _lastSaved = null;
-      _lastSavedUserId = userId;
+    if (!shouldSave(
+      _lastSaved,
+      position.latitude,
+      position.longitude,
+      position.timestamp,
+    )) {
+      return false;
     }
-    if (!_shouldSave(position)) return false;
 
     final recordedAt = position.timestamp.toUtc();
     final id = '${userId}_${recordedAt.microsecondsSinceEpoch}_'
@@ -55,18 +67,26 @@ class LocationRepository {
     return true;
   }
 
-  bool _shouldSave(Position position) {
-    final previous = _lastSaved;
+  @visibleForTesting
+  static bool shouldSave(
+    LocationRecord? previous,
+    double latitude,
+    double longitude,
+    DateTime at,
+  ) {
     if (previous == null) return true;
 
-    final elapsed = position.timestamp.difference(previous.recordedAt);
+    final elapsed = at.difference(previous.recordedAt);
     final distance = Geolocator.distanceBetween(
       previous.latitude,
       previous.longitude,
-      position.latitude,
-      position.longitude,
+      latitude,
+      longitude,
     );
-    return elapsed >= _minimumInterval || distance >= _minimumDistanceMeters;
+    // Moving fast still saves at most every 5 s, to keep Firestore costs bounded.
+    return elapsed >= _minimumInterval ||
+        (distance >= _minimumDistanceMeters &&
+            elapsed >= _minimumMovingInterval);
   }
 
   Future<int> pendingCount() async {
@@ -115,9 +135,24 @@ class LocationRepository {
   Stream<List<SharedLocation>> watchSharedLocations() {
     return _firestore.collection('shared_locations').snapshots().map(
           (snapshot) => snapshot.docs
-              .map(SharedLocation.fromFirestore)
+              .map((doc) => SharedLocation.tryParse(doc.id, doc.data()))
+              .whereType<SharedLocation>()
               .toList(growable: false),
         );
+  }
+
+  /// Reads whether this account is already sharing, e.g. after an app restart.
+  Future<bool> loadSharingEnabled() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    try {
+      final doc =
+          await _firestore.collection('shared_locations').doc(user.uid).get();
+      if (_auth.currentUser?.uid == user.uid) _sharingEnabled = doc.exists;
+    } catch (_) {
+      // Unknown state: leave sharing off rather than guess.
+    }
+    return _sharingEnabled;
   }
 
   Future<void> setSharingEnabled(bool enabled) async {
@@ -135,8 +170,11 @@ class LocationRepository {
     if (!_sharingEnabled) return;
     final user = _auth.currentUser;
     if (user == null) return;
-    final profile = await _firestore.collection('users').doc(user.uid).get();
-    final profileData = profile.data() ?? const <String, dynamic>{};
+    final profileData = _profile ??=
+        (await _firestore.collection('users').doc(user.uid).get()).data() ??
+            const <String, dynamic>{};
+    // Sharing may have been turned off while the profile was loading.
+    if (!_sharingEnabled || _auth.currentUser?.uid != user.uid) return;
 
     await _firestore.collection('shared_locations').doc(user.uid).set({
       'displayName': profileData['name'] as String? ??

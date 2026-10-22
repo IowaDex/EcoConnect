@@ -1,12 +1,11 @@
-import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
-  StreamSubscription<Position>? _positionStream;
-
-  // Location stream for real-time updates
+  // Location stream for real-time updates; skips fixes under 20 m apart.
   Stream<Position> get positionStream {
-    return Geolocator.getPositionStream();
+    return Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(distanceFilter: 20),
+    );
   }
 
   /// Check if location services are enabled
@@ -93,27 +92,6 @@ class LocationService {
   /// Start listening to location updates (real-time)
   Stream<Position> startLocationUpdates() {
     return positionStream;
-  }
-
-  /// Stop listening to location updates
-  void stopLocationUpdates() {
-    _positionStream?.cancel();
-    _positionStream = null;
-  }
-
-  /// Calculate distance between two positions in meters
-  double calculateDistance(
-    double startLatitude,
-    double startLongitude,
-    double endLatitude,
-    double endLongitude,
-  ) {
-    return Geolocator.distanceBetween(
-      startLatitude,
-      startLongitude,
-      endLatitude,
-      endLongitude,
-    );
   }
 
   /// Get the last known location (faster but may be stale)

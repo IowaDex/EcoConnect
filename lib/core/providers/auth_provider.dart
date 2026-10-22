@@ -9,17 +9,16 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   AuthErrorType? _loginErrorType;
-  Map<String, dynamic>? _userData;
-  UserRole? _userRole;
+  bool _isInitialized = false;
 
   AppUser? get currentUser => _currentUser;
+  /// False until Firebase has restored (or ruled out) the saved session.
+  bool get isInitialized => _isInitialized;
   bool get isLoading => _isLoading;
   String? get error => _error;
   AuthErrorType? get loginErrorType => _loginErrorType;
   bool get isAuthenticated => _currentUser != null;
   bool get isEmailVerified => _currentUser?.emailVerified ?? false;
-  Map<String, dynamic>? get userData => _userData;
-  UserRole? get userRole => _userRole;
 
   AuthProvider() {
     _initAuth();
@@ -27,32 +26,19 @@ class AuthProvider extends ChangeNotifier {
 
   void _initAuth() {
     _authService.authStateChanges.listen((AppUser? user) {
-      if (user != null && !user.emailVerified && user.role != UserRole.admin) {
-        // Do not auto-login unverified users
-        _currentUser = null;
-        _userData = null;
-        _userRole = null;
-      } else {
-        _currentUser = user;
-        if (user != null) {
-          _userRole = user.role;
-          _loadUserData(user.uid);
-        } else {
-          _userData = null;
-          _userRole = null;
-        }
-      }
+      // Do not auto-login unverified users
+      final blocked =
+          user != null && !user.emailVerified && user.role != UserRole.admin;
+      _currentUser = blocked ? null : user;
+      _isInitialized = true;
+      notifyListeners();
+    }, onError: (Object e) {
+      // e.g. offline with no cached profile: fall back to the login screen.
+      AppLogger.error('Could not restore session', e);
+      _currentUser = null;
+      _isInitialized = true;
       notifyListeners();
     });
-  }
-
-  Future<void> _loadUserData(String uid) async {
-    try {
-      _userData = await _authService.getUserData(uid);
-      notifyListeners();
-    } catch (e) {
-      // Silent catch or major error handling
-    }
   }
 
   Future<bool> signUp({
@@ -107,6 +93,8 @@ class AuthProvider extends ChangeNotifier {
           _setError('Invalid email or password. Please try again.');
         case AuthErrorType.emailNotVerified:
           _setError('Please verify your email before logging in.');
+        case AuthErrorType.accountRemoved:
+          _setError('This account has been removed by an administrator.');
       }
       AppLogger.error('Login rejected', e.type);
       return false;
@@ -130,33 +118,11 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _authService.logout();
       _currentUser = null;
-      _userData = null;
-      _userRole = null;
     } catch (e) {
       _setError(e.toString());
       AppLogger.error('Logout failed', e);
     }
     _setLoading(false);
-  }
-
-  Future<bool> sendVerificationEmail() async {
-    if (_currentUser == null) return false;
-
-    _setLoading(true);
-    try {
-      await _authService.sendEmailVerification();
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _setError(e.toString());
-      AppLogger.error('Verification email request failed', e);
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  Future<void> refreshUser() async {
-    notifyListeners();
   }
 
   void _setLoading(bool value) {

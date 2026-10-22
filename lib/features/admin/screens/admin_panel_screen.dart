@@ -11,7 +11,6 @@ class AdminPanelScreen extends StatefulWidget {
 }
 
 class _AdminPanelScreenState extends State<AdminPanelScreen> {
-  final _searchController = TextEditingController();
   bool _isLoading = false;
   String? _error;
   List<Map<String, dynamic>> _allUsers = [];
@@ -23,7 +22,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   Future<void> _loadUsers() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final users = await AuthService().getAllUsers();
       setState(() {
@@ -38,10 +40,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
-  Future<void> _toggleRole(String uid, UserRole currentRole) async {
-    final newRole = currentRole == UserRole.admin
-        ? UserRole.user
-        : UserRole.admin;
+  Future<void> _setRole(String uid, UserRole newRole) async {
     await AuthService().updateUserRole(uid, newRole);
     await _loadUsers();
     if (!mounted) return;
@@ -77,12 +76,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     if (confirm != true) return;
 
-    await AuthService().deleteUser(uid);
+    String message = 'User data deleted';
+    try {
+      await AuthService().deleteUser(uid);
+    } catch (e) {
+      message = 'Delete failed, please retry: $e';
+    }
     await _loadUsers();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('User deleted'),
+        content: Text(message),
         backgroundColor: Colors.red.shade600,
       ),
     );
@@ -92,13 +96,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final authProvider = context.read<AuthProvider>();
-    final isAdmin = authProvider.isAuthenticated && authProvider.isEmailVerified;
-
-    // Check if current user is actually an admin
-    if (isAdmin) {
-      // Try to verify via Firestore
-      // We'll just show the panel and let the service check
-    }
+    final isAdmin = authProvider.currentUser?.role == UserRole.admin;
 
     return Scaffold(
       appBar: AppBar(
@@ -115,10 +113,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   Widget _buildBody(bool isAdmin, ColorScheme colorScheme) {
-    if (!_isLoading && _allUsers.isEmpty) {
-      return const Center(child: Text('No users found'));
-    }
-
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -161,20 +155,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Search bar
-          TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(
-              hintText: 'Search users...',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) {
-              // Filter users locally
-            },
-          ),
-          const SizedBox(height: 16),
-
           // Users list
           if (_allUsers.isNotEmpty)
             ..._allUsers.map(_buildUserCard)
@@ -246,7 +226,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       );
                     }).toList(),
                     onChanged: (newRole) {
-                      _toggleRole(uid, roleEnum);
+                      if (newRole != null && newRole != roleEnum) {
+                        _setRole(uid, newRole);
+                      }
                     },
                   ),
                 const SizedBox(width: 8),

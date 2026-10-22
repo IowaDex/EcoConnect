@@ -10,12 +10,8 @@ A comprehensive Flutter mobile application featuring user authentication, email 
   - Session persistence
   - Email verification
 
-- **General Email Service**
-  - Verification emails on signup
-  - Welcome emails after verification
-  - Password reset emails (ready for implementation)
-  - Notification emails (extensible system)
-  - Firebase Cloud Functions integration
+- **Email**
+  - Verification emails on signup, sent by Firebase Authentication
 
 - **Real-time GPS Location Tracking**
   - Get current GPS location with high accuracy
@@ -43,13 +39,13 @@ A comprehensive Flutter mobile application featuring user authentication, email 
 - **Flutter SDK**: 3.0.0 or higher
   - Download: https://flutter.dev/docs/get-started/install
 
-- **Node.js**: 18+ (for Firebase Cloud Functions)
+- **Node.js**: 18+ (for the Firebase CLI and the Firestore rules tests)
   - Download: https://nodejs.org/
+- **Java**: 11+ (for the Firestore emulator used by the rules tests)
 
 - **Firebase Project**: Create one at https://console.firebase.google.com/
   - Enable Firebase Authentication (Email/Password)
   - Enable Firestore Database
-  - Enable Cloud Functions
 
 - **Android Studio** (for Android development)
   - Download: https://developer.android.com/studio
@@ -112,46 +108,35 @@ After running `flutterfire configure`, the `lib/firebase_options.dart` file will
 # Firebase Console > Authentication > Templates
 ```
 
-Firebase Authentication sends verification and password-reset emails without
-Cloud Functions or Brevo. The template editor supports branding, sender
-details, subjects, and email content. Fully custom HTML notification emails
-require a separate server-side email provider.
+Firebase Authentication sends verification and password-reset emails. The
+template editor supports branding, sender details, subjects, and email content.
+The app has no Cloud Functions and does not need the Blaze plan.
 
 ### 6. Enable Firebase Services
 
 In Firebase Console:
 1. **Authentication**: Enable Email/Password provider
-2. **Firestore Database**: 
-   - Create database in production mode
-   - Add security rules (see below)
-3. **Cloud Functions**: Enable billing (required for functions)
+2. **Firestore Database**: Create database in production mode
 
-### 7. Set Up Firestore Security Rules
+### 7. Deploy Firestore Security Rules
 
-In Firebase Console > Firestore > Rules, replace with:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Users collection - only owner can read/write
-    match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
-    }
-    
-    // Default deny all
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
-
-### 8. Deploy Cloud Functions
+The rules live in `firestore.rules`. Test them, then deploy:
 
 ```bash
-firebase deploy --only functions
+cd firestore-tests && npm install && npx firebase emulators:exec --only firestore "npm test"
+cd .. && firebase deploy --only firestore:rules
 ```
+
+### 8. Create the First Admin
+
+Signup only allows the `user` and `driver` roles. To make an admin, edit
+`users/{uid}` in Firebase Console > Firestore and set `role` to `admin`. After
+that, admins can change roles from the Admin Panel.
+
+Deleting a user in the Admin Panel removes their profile, location history and
+shared location, and the app refuses to log them in. Their login account stays
+in Firebase Authentication; remove it in Firebase Console > Authentication if
+needed (deleting it from the app would require Cloud Functions on Blaze).
 
 ## 🏃 Running the App
 
@@ -197,7 +182,6 @@ eco_connect/
 │   ├── core/
 │   │   ├── services/
 │   │   │   ├── auth_service.dart       # Firebase auth wrapper
-│   │   │   ├── email_service.dart      # Email functionality
 │   │   │   └── location_service.dart   # GPS/location tracking
 │   │   ├── providers/
 │   │   │   ├── auth_provider.dart      # Auth state management
@@ -211,18 +195,14 @@ eco_connect/
 │   │   │   │   ├── login_screen.dart
 │   │   │   │   └── signup_screen.dart
 │   │   │   └── widgets/
+│   │   ├── user/ driver/ admin/  # One screen set per role
 │   │   └── dashboard/
-│   │       ├── screens/
-│   │       │   └── dashboard_screen.dart
 │   │       └── widgets/
 │   │           ├── gps_button.dart
-│   │           └── location_display.dart
-│   └── features/splash/
-│       └── splash_screen.dart
-├── functions/
-│   ├── src/
-│   │   └── index.js              # Cloud Functions implementation
-│   └── package.json              # Node.js dependencies
+│   │           ├── location_display.dart
+│   │           └── location_map.dart
+├── firestore.rules               # Firestore security rules
+├── firestore-tests/              # Rules tests (Firestore emulator)
 ├── android/                       # Android native code
 ├── ios/                          # iOS native code
 ├── pubspec.yaml                  # Flutter dependencies
@@ -236,11 +216,12 @@ Create `.env` in the project root for Flutter's Firebase configuration:
 ```env
 FIREBASE_API_KEY=your_api_key
 FIREBASE_PROJECT_ID=ecoconnect
+# iOS only: the App ID of the iOS app registered in Firebase
+FIREBASE_IOS_APP_ID=1:000000000000:ios:0000000000000000
 ```
 
-Brevo is not required for the current Firebase email flow. If it is used in
-the future, its secrets must remain server-side and must not be added to the
-Flutter `.env` file.
+Never put server-side secrets (such as email provider keys) in the Flutter
+`.env` file: it is bundled into the app.
 
 ## 🧪 Testing
 
@@ -272,17 +253,42 @@ Flutter `.env` file.
 flutter test
 ```
 
+### Firestore Rules Testing
+```bash
+cd firestore-tests
+npm install
+npx firebase emulators:exec --only firestore "npm test"
+```
+
 ### Build APK (Android)
 ```bash
 flutter build apk --release
 # Output: build/app/outputs/flutter-app.apk
 ```
 
-### Build for iOS
+### Build for iOS (IPA)
+
+Needs a Mac with Xcode and an Apple Developer account.
+
+1. Register an iOS app in Firebase Console > Project settings with bundle ID
+   `com.ecoconnect.ecoConnect`, then add its App ID to `.env` as
+   `FIREBASE_IOS_APP_ID` (optionally `FIREBASE_IOS_API_KEY`). The web app ID
+   does not work on iOS.
+2. Open `ios/Runner.xcworkspace` in Xcode, select the Runner target >
+   Signing & Capabilities, and choose your team.
+3. Build:
 ```bash
-flutter build ios --release
-# Follow on-screen instructions for deployment
+flutter build ipa --release
+# Output: build/ios/ipa/*.ipa
 ```
+
+**No Mac?** Use the GitHub Actions workflow `.github/workflows/ios-ipa.yml`:
+1. In GitHub > Settings > Secrets and variables > Actions, add a secret
+   `DOTENV` containing your whole `.env` file (including `FIREBASE_IOS_APP_ID`).
+2. Actions > "Build iOS IPA (unsigned)" > Run workflow.
+3. Download the `EcoConnect-unsigned-ipa` artifact and install it with
+   Sideloadly using an Apple Account. With a free account the app stops
+   opening after 7 days and must be re-installed.
 
 ## 🐛 Troubleshooting
 
@@ -316,9 +322,10 @@ are synced, pending, or saved offline.
 
 Users can optionally enable **Share my location**. When enabled, the app
 publishes the user's latest location to the `shared_locations/{uid}` document.
-Authenticated users can read these opted-in locations and see them as
-additional markers on the map. Turning sharing off deletes the user's shared
-location document; private location history remains restricted to its owner.
+Signed-in users with a verified email can read these opted-in locations and see
+them as additional markers on the map. Turning sharing off or logging out
+deletes the user's shared location document; private location history remains
+restricted to its owner and admins.
 
 The current Android and iOS configuration requests foreground location. The
 tracking stream remains app-session based; continuous tracking after the app
@@ -341,9 +348,7 @@ flutter pub upgrade
 ### AuthProvider
 - `signUp(name, email, password)` - Create account and send verification
 - `login(email, password)` - Authenticate user
-- `logout()` - Sign out user
-- `sendVerificationEmail()` - Resend verification email
-- `refreshUser()` - Refresh auth state
+- `logout()` - Remove the shared location, then sign out
 
 ### LocationProvider
 - `getCurrentLocation()` - Get one-time location
@@ -351,10 +356,7 @@ flutter pub upgrade
 - `stopTracking()` - Disable real-time updates
 - `checkPermissions()` - Check location permission status
 - `requestPermissions()` - Request location permissions
-
-### EmailService
-- `sendVerificationEmail()` - Send verification
-- `sendPasswordResetEmail()` - Send password reset
+- `setSharingLocation(enabled)` - Turn live location sharing on or off
 
 ## 🔄 Future Enhancements
 
@@ -377,8 +379,7 @@ This project is private and confidential.
 
 For issues or questions:
 1. Check the troubleshooting section above
-2. Review Firebase logs: `firebase functions:log`
-3. Check Flutter doctor: `flutter doctor -v`
+2. Check Flutter doctor: `flutter doctor -v`
 
 ## 📱 Platforms Supported
 

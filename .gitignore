@@ -9,14 +9,14 @@ build/
 
 # Local analysis and dependency output
 graphify-out/
-functions/node_modules/
+firestore-tests/node_modules/
 *.db
 
 # Environment variables (keep secrets out of git)
 .env
 .env.*
 !.env.example
-!functions/.env.example
+
 
 # IDE
 .idea/
@@ -36,12 +36,10 @@ android/captures/
 android/gradle-app.setting
 
 # iOS
-ios/.gitignore
 ios/Pods/
 ios/Podfile.lock
 ios/Runner/GeneratedPluginRegistrant.m
 ios/Runner/GeneratedPluginRegistrant.h
-*.xcworkspace
 *.xcuserstate
 
 # Firebase
@@ -77,3 +75,5 @@ coverage/
 # Misc
 *.pyc
 *.class
+# Firebase emulator logs
+*-debug.log

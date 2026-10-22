@@ -19,21 +19,28 @@ class SharedLocation {
     required this.recordedAt,
   });
 
-  factory SharedLocation.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> snapshot,
-  ) {
-    final data = snapshot.data()!;
-    final timestamp = data['recordedAt'] as Timestamp?;
-    if (timestamp == null) {
-      throw StateError('Shared location ${snapshot.id} has no recordedAt');
+  /// Returns null for malformed documents so one bad entry can't break the map.
+  static SharedLocation? tryParse(String id, Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final timestamp = data['recordedAt'];
+    final latitude = data['latitude'];
+    final longitude = data['longitude'];
+    final accuracy = data['accuracy'];
+    if (timestamp is! Timestamp ||
+        latitude is! num ||
+        longitude is! num ||
+        accuracy is! num) {
+      return null;
     }
+    final displayName = data['displayName'];
+    final role = data['role'];
     return SharedLocation(
-      userId: snapshot.id,
-      displayName: data['displayName'] as String? ?? 'EcoConnect user',
-      role: data['role'] as String? ?? 'user',
-      latitude: (data['latitude'] as num).toDouble(),
-      longitude: (data['longitude'] as num).toDouble(),
-      accuracy: (data['accuracy'] as num).toDouble(),
+      userId: id,
+      displayName: displayName is String ? displayName : 'EcoConnect user',
+      role: role is String ? role : 'user',
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+      accuracy: accuracy.toDouble(),
       recordedAt: timestamp.toDate(),
     );
   }
