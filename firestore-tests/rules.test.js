@@ -1,4 +1,5 @@
-// Run with: npm run test:emulator (starts the Firestore emulator, then npm test)
+// Run with: npm run test:emulator (needs firebase-tools on PATH; starts the
+// Firestore emulator, then npm test)
 const {test, before, after, beforeEach} = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -53,6 +54,7 @@ beforeEach(async () => {
     await setDoc(doc(db, 'users/root'), {name: 'Root', role: 'admin'});
     await setDoc(doc(db, 'users/alice/locations/l1'), {latitude: 1});
     await setDoc(doc(db, 'shared_locations/dan'), shared('driver'));
+    await setDoc(doc(db, 'shared_locations/alice'), shared('user'));
   });
 });
 
@@ -83,10 +85,53 @@ test('shared location writes are type-checked and keep the real role', async () 
   await assertFails(setDoc(doc(as('alice'), 'shared_locations/dan'), shared('user')));
 });
 
-test('admins can list users and delete location history; others cannot', async () => {
+test('the calls the app makes every day are allowed', async () => {
+  const alice = as('alice');
+  await assertSucceeds(getDoc(doc(alice, 'users/alice')));
+  await assertSucceeds(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
+  await assertSucceeds(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
+  await assertSucceeds(deleteDoc(doc(alice, 'shared_locations/alice')));
+  await assertFails(deleteDoc(doc(as('alice'), 'shared_locations/dan')));
+});
+
+test('admins can run every step of delete user and change roles; others cannot', async () => {
   await assertFails(getDocs(collection(as('dan'), 'users')));
   await assertFails(deleteDoc(doc(as('dan'), 'users/alice/locations/l1')));
-  await assertSucceeds(getDocs(collection(as('root'), 'users')));
-  await assertSucceeds(deleteDoc(doc(as('root'), 'users/alice/locations/l1')));
-  await assertSucceeds(deleteDoc(doc(as('root'), 'users/alice')));
+  await assertFails(setDoc(doc(as('dan'), 'removed_users/alice'), {removedAt: 1}));
+
+  const root = as('root');
+  await assertSucceeds(getDocs(collection(root, 'users')));
+  await assertSucceeds(updateDoc(doc(root, 'users/alice'), {role: 'driver'}));
+  await assertSucceeds(setDoc(doc(root, 'removed_users/alice'), {removedAt: 1}));
+  await assertSucceeds(getDocs(collection(root, 'users/alice/locations')));
+  await assertSucceeds(deleteDoc(doc(root, 'users/alice/locations/l1')));
+  await assertSucceeds(deleteDoc(doc(root, 'shared_locations/alice')));
+  await assertSucceeds(deleteDoc(doc(root, 'users/alice')));
+});
+
+test('admins cannot delete their own profile', async () => {
+  await assertFails(deleteDoc(doc(as('root'), 'users/root')));
+});
+
+test('a deleted user is locked out even though their login still works', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'removed_users/alice'), {removedAt: 1});
+    await deleteDoc(doc(db, 'users/alice'));
+  });
+  const alice = as('alice');
+  await assertFails(getDoc(doc(alice, 'shared_locations/dan')));
+  await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
+  await assertFails(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
+  await assertFails(setDoc(doc(alice, 'users/alice'), {name: 'Alice', role: 'user'}));
+});
+
+test('a user being deleted cannot write while the delete is still running', async () => {
+  // Admin delete has written the tombstone but not yet removed the profile.
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'removed_users/alice'), {removedAt: 1});
+  });
+  const alice = as('alice');
+  await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
+  await assertFails(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
 });

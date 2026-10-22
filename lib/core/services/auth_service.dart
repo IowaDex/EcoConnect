@@ -31,7 +31,8 @@ class AuthService {
     });
   }
 
-  /// Returns null when the profile is gone, i.e. an admin deleted the account.
+  /// Returns null when there is no profile: an admin deleted it, or signup
+  /// hasn't written it yet.
   Future<AppUser?> _getAppUser(User firebaseUser) async {
     final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
     final data = doc.data();
@@ -123,7 +124,9 @@ class AuthService {
   }
 
   // Logout; removes the shared location first, while we still have permission.
-  Future<void> logout() async {
+  // Returns false if that removal failed (e.g. offline); sign-out still happens.
+  Future<bool> logout() async {
+    var removed = true;
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
       try {
@@ -133,10 +136,12 @@ class AuthService {
             .delete()
             .timeout(const Duration(seconds: 5));
       } catch (e) {
+        removed = false;
         AppLogger.error('Could not remove shared location on logout', e);
       }
     }
     await _auth.signOut();
+    return removed;
   }
 
   // Resend email verification by signing in temporarily
@@ -169,6 +174,10 @@ class AuthService {
   // Delete all of a user's data (for admin). The login account itself can only
   // be removed in the Firebase console; login refuses accounts without a profile.
   Future<void> deleteUser(String uid) async {
+    // Tombstone first: the rules then refuse to let them re-create a profile.
+    await _firestore.collection('removed_users').doc(uid).set({
+      'removedAt': FieldValue.serverTimestamp(),
+    });
     final profile = _firestore.collection('users').doc(uid);
     while (true) {
       final page = await profile.collection('locations').limit(400).get();

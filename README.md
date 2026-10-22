@@ -36,12 +36,12 @@ A comprehensive Flutter mobile application featuring user authentication, email 
 
 ## 📋 Prerequisites
 
-- **Flutter SDK**: 3.0.0 or higher
+- **Flutter SDK**: 3.44 or higher (Dart 3.12+)
   - Download: https://flutter.dev/docs/get-started/install
 
-- **Node.js**: 18+ (for the Firebase CLI and the Firestore rules tests)
+- **Node.js**: 20+ (for the Firebase CLI and the Firestore rules tests)
   - Download: https://nodejs.org/
-- **Java**: 11+ (for the Firestore emulator used by the rules tests)
+- **Java**: 21+ (for the Firestore emulator used by the rules tests)
 
 - **Firebase Project**: Create one at https://console.firebase.google.com/
   - Enable Firebase Authentication (Email/Password)
@@ -108,9 +108,9 @@ After running `flutterfire configure`, the `lib/firebase_options.dart` file will
 # Firebase Console > Authentication > Templates
 ```
 
-Firebase Authentication sends verification and password-reset emails. The
-template editor supports branding, sender details, subjects, and email content.
-The app has no Cloud Functions and does not need the Blaze plan.
+Firebase Authentication sends the verification emails. The template editor
+supports branding, sender details, subjects, and email content. The app has no
+password-reset flow yet, no Cloud Functions, and does not need the Blaze plan.
 
 ### 6. Enable Firebase Services
 
@@ -123,7 +123,7 @@ In Firebase Console:
 The rules live in `firestore.rules`. Test them, then deploy:
 
 ```bash
-cd firestore-tests && npm install && npx firebase emulators:exec --only firestore "npm test"
+cd firestore-tests && npm install && npm run test:emulator
 cd .. && firebase deploy --only firestore:rules
 ```
 
@@ -134,9 +134,17 @@ Signup only allows the `user` and `driver` roles. To make an admin, edit
 that, admins can change roles from the Admin Panel.
 
 Deleting a user in the Admin Panel removes their profile, location history and
-shared location, and the app refuses to log them in. Their login account stays
-in Firebase Authentication; remove it in Firebase Console > Authentication if
-needed (deleting it from the app would require Cloud Functions on Blaze).
+shared location, and records them in `removed_users` so they can't re-create a
+profile. From then on the app refuses to log them in and the rules deny them the
+map and location writes. Their login account stays in Firebase Authentication;
+remove or disable it in Firebase Console > Authentication if needed (doing that
+from the app would require Cloud Functions on Blaze). Admins can't delete their
+own profile.
+
+To restore a deleted user, in Firebase Console > Firestore: delete their
+`removed_users/{uid}` document, then re-create `users/{uid}` with `name`,
+`email` and `role`. (Signing up again doesn't work while their login account
+still exists; alternatively delete that account so they can sign up fresh.)
 
 ## 🏃 Running the App
 
@@ -196,6 +204,7 @@ eco_connect/
 │   │   │   │   └── signup_screen.dart
 │   │   │   └── widgets/
 │   │   ├── user/ driver/ admin/  # One screen set per role
+│   │   ├── splash/               # Shown while the saved session is restored
 │   │   └── dashboard/
 │   │       └── widgets/
 │   │           ├── gps_button.dart
@@ -213,11 +222,22 @@ eco_connect/
 
 Create `.env` in the project root for Flutter's Firebase configuration:
 
+Copy the values from Firebase Console > Project settings > Your apps.
+
 ```env
-FIREBASE_API_KEY=your_api_key
-FIREBASE_PROJECT_ID=ecoconnect
-# iOS only: the App ID of the iOS app registered in Firebase
+# Required on every platform
+FIREBASE_API_KEY=your_web_api_key
+FIREBASE_MESSAGING_SENDER_ID=000000000000
+FIREBASE_PROJECT_ID=your_project_id
+# Required on Android/web (the web app's App ID)
+FIREBASE_APP_ID=1:000000000000:web:0000000000000000
+# Required for iOS builds (the iOS app registered in Firebase)
 FIREBASE_IOS_APP_ID=1:000000000000:ios:0000000000000000
+# Optional
+FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+FIREBASE_STORAGE_BUCKET=your_project_id.firebasestorage.app
+# iOS only; falls back to FIREBASE_API_KEY when empty
+FIREBASE_IOS_API_KEY=your_ios_api_key
 ```
 
 Never put server-side secrets (such as email provider keys) in the Flutter
@@ -257,8 +277,11 @@ flutter test
 ```bash
 cd firestore-tests
 npm install
-npx firebase emulators:exec --only firestore "npm test"
+npm run test:emulator  # needs firebase-tools installed globally
 ```
+
+GitHub runs the same tests (`.github/workflows/firestore-rules.yml`) on every
+push that changes `firestore.rules` or `firestore-tests/`.
 
 ### Build APK (Android)
 ```bash
@@ -284,7 +307,10 @@ flutter build ipa --release
 
 **No Mac?** Use the GitHub Actions workflow `.github/workflows/ios-ipa.yml`:
 1. In GitHub > Settings > Secrets and variables > Actions, add a secret
-   `DOTENV` containing your whole `.env` file (including `FIREBASE_IOS_APP_ID`).
+   `DOTENV` containing your whole `.env` file. The workflow stops if
+   `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID` or
+   `FIREBASE_IOS_APP_ID` is empty, or if a `your_...` placeholder is left. It
+   runs `flutter test` before building, so a failing test blocks the IPA.
 2. Actions > "Build iOS IPA (unsigned)" > Run workflow.
 3. Download the `EcoConnect-unsigned-ipa` artifact and install it with
    Sideloadly using an Apple Account. With a free account the app stops
@@ -324,7 +350,8 @@ Users can optionally enable **Share my location**. When enabled, the app
 publishes the user's latest location to the `shared_locations/{uid}` document.
 Signed-in users with a verified email can read these opted-in locations and see
 them as additional markers on the map. Turning sharing off or logging out
-deletes the user's shared location document; private location history remains
+deletes the user's shared location document (if the phone is offline at logout,
+the delete is only sent the next time that user signs in); private location history remains
 restricted to its owner and admins.
 
 The current Android and iOS configuration requests foreground location. The
@@ -348,7 +375,7 @@ flutter pub upgrade
 ### AuthProvider
 - `signUp(name, email, password)` - Create account and send verification
 - `login(email, password)` - Authenticate user
-- `logout()` - Remove the shared location, then sign out
+- `logout()` - Try to remove the shared location (5 s limit), then sign out
 
 ### LocationProvider
 - `getCurrentLocation()` - Get one-time location
@@ -383,11 +410,11 @@ For issues or questions:
 
 ## 📱 Platforms Supported
 
-- **Android**: 5.0 (API 21) and above
-- **iOS**: 11.0 and above
+- **Android**: 7.0 (API 24) and above
+- **iOS**: 15.0 and above
 
 ---
 
 **Last Updated**: October 13, 2026
-**Flutter Version**: 3.x+
-**Firebase**: Latest (v2.24+)
+**Flutter Version**: 3.44+
+**Firebase**: firebase_core 5, firebase_auth 7, cloud_firestore 7

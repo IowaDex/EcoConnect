@@ -30,13 +30,24 @@ jobs:
             echo "::error::Add a DOTENV repository secret with the contents of .env"
             exit 1
           fi
-          if ! grep -q '^FIREBASE_IOS_APP_ID=' <<< "$DOTENV"; then
-            echo "::error::DOTENV must include FIREBASE_IOS_APP_ID (the iOS app from Firebase)"
+          # Secrets pasted from Windows may carry CRLF line endings.
+          DOTENV="${DOTENV//$'\r'/}"
+          # The app reads these at startup and refuses to start without them.
+          for key in FIREBASE_API_KEY FIREBASE_PROJECT_ID FIREBASE_MESSAGING_SENDER_ID FIREBASE_IOS_APP_ID; do
+            if ! grep -qE "^${key}=[\"']?[^\"'[:space:]]" <<< "$DOTENV"; then
+              echo "::error::DOTENV is missing a value for ${key}"
+              exit 1
+            fi
+          done
+          if grep -qE "=[\"']?your_" <<< "$DOTENV"; then
+            echo "::error::DOTENV still contains README placeholder values (your_...)"
             exit 1
           fi
           printf '%s\n' "$DOTENV" > .env
 
       - run: flutter pub get
+
+      - run: flutter test
 
       - run: flutter build ios --release --no-codesign
 

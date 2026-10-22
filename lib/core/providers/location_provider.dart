@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/shared_location.dart';
 import '../repositories/location_repository.dart';
 import '../services/location_service.dart';
+import '../utils/app_logger.dart';
 
 class LocationProvider extends ChangeNotifier {
   final LocationService _locationService = LocationService();
@@ -25,7 +26,8 @@ class LocationProvider extends ChangeNotifier {
   StreamSubscription<List<SharedLocation>>? _sharedLocationsSubscription;
   List<SharedLocation> _sharedLocations = const [];
   StreamSubscription<User?>? _authSubscription;
-  String? _userId;
+  // Seeded so the stream's first event (the same user) isn't seen as a change.
+  String? _userId = FirebaseAuth.instance.currentUser?.uid;
 
   LocationProvider() {
     _connectivitySubscription =
@@ -84,23 +86,37 @@ class LocationProvider extends ChangeNotifier {
   }
 
   Future<void> setSharingLocation(bool enabled) async {
+    // Show the change right away; offline, Firestore only confirms on reconnect.
+    _isSharingLocation = enabled;
+    notifyListeners();
     try {
-      await _locationRepository.setSharingEnabled(enabled);
-      _isSharingLocation = enabled;
+      final sent = await _locationRepository.setSharingEnabled(enabled);
+      if (!sent) {
+        _error = 'You are offline. Your location will be hidden as soon as '
+            'you reconnect.';
+      }
       if (enabled && _currentPosition != null) {
         await _locationRepository.publishSharedLocation(_currentPosition!);
       }
-      notifyListeners();
     } catch (error) {
-      _error = 'Unable to update location sharing: $error';
-      notifyListeners();
+      AppLogger.error('Updating location sharing failed', error);
+      _error = enabled
+          ? 'Could not share your location yet. It will update with your '
+              'next location.'
+          : 'Could not turn off sharing. Please try again.';
     }
+    _isSharingLocation = _locationRepository.sharingEnabled;
+    notifyListeners();
   }
 
   void startSharedLocationUpdates() {
     if (_sharedLocationsSubscription != null) return;
     _locationRepository.loadSharingEnabled().then((_) {
       _isSharingLocation = _locationRepository.sharingEnabled;
+      notifyListeners();
+    }, onError: (Object error) {
+      AppLogger.error('Checking location sharing failed', error);
+      _error = 'Could not check whether you are sharing your location.';
       notifyListeners();
     });
     _sharedLocationsSubscription =
@@ -127,7 +143,7 @@ class LocationProvider extends ChangeNotifier {
     }
 
     _isTracking = true;
-    await syncPending();
+    unawaited(syncPending());
     notifyListeners();
 
     _positionSubscription = _locationService.startLocationUpdates().listen(
@@ -156,6 +172,13 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Call before logging out from a screen that tracks location, so no new
+  /// shared position lands after the logout deletes it.
+  void prepareLogout() {
+    stopTracking();
+    _locationRepository.reset();
+  }
+
   Future<void> _saveAndSync(Position position) async {
     try {
       final saved = await _locationRepository.savePosition(position);
@@ -163,11 +186,26 @@ class LocationProvider extends ChangeNotifier {
       _pendingCount = await _locationRepository.pendingCount();
       _syncState = LocationSyncState.pending;
       notifyListeners();
-      await syncPending();
+    } catch (error) {
+      AppLogger.error('Saving location failed', error);
+      _syncState = LocationSyncState.failed;
+      _error = 'Could not save your location on this phone.';
+      notifyListeners();
+      return;
+    }
+    // Not awaited: offline these wait for the network indefinitely and must
+    // not hold up saving the next position locally.
+    unawaited(syncPending());
+    unawaited(_publishShared(position));
+  }
+
+  Future<void> _publishShared(Position position) async {
+    try {
       await _locationRepository.publishSharedLocation(position);
     } catch (error) {
-      _syncState = LocationSyncState.failed;
-      _error = 'Location sync failed. It will retry automatically.';
+      AppLogger.error('Updating shared location failed', error);
+      _error = 'Could not update your shared location. It will retry with '
+          'your next location.';
       notifyListeners();
     }
   }

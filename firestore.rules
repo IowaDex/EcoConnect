@@ -20,24 +20,45 @@ service cloud.firestore {
       return signedIn() && profile(request.auth.uid).role == 'admin';
     }
 
+    // A deleted user keeps their login, so access also requires a profile.
+    function hasProfile(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function isRemoved(uid) {
+      return exists(/databases/$(database)/documents/removed_users/$(uid));
+    }
+
     match /users/{userId} {
       allow read: if isSelf(userId) || isAdmin();
       allow create: if isSelf(userId)
+        && !isRemoved(userId)
         && request.resource.data.role in ['user', 'driver'];
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
         || isAdmin();
-      allow delete: if isAdmin();
+      // Not their own profile: that would lock the admin out for good.
+      allow delete: if isAdmin() && request.auth.uid != userId;
 
       match /locations/{locationId} {
-        allow read, write: if isSelf(userId);
+        allow read: if isSelf(userId);
+        // !isRemoved also covers the window while an admin delete is running.
+        allow write: if isSelf(userId) && hasProfile(userId) && !isRemoved(userId);
         allow read, delete: if isAdmin();
       }
     }
 
+    // Written by an admin when deleting a user; blocks re-creating the profile.
+    match /removed_users/{userId} {
+      allow read, write: if isAdmin();
+    }
+
     match /shared_locations/{userId} {
-      allow read: if signedIn() && request.auth.token.email_verified == true;
+      allow read: if signedIn()
+        && request.auth.token.email_verified == true
+        && hasProfile(request.auth.uid);
       allow create, update: if isSelf(userId)
+        && !isRemoved(userId)
         && request.resource.data.latitude is number
         && request.resource.data.longitude is number
         && request.resource.data.accuracy is number

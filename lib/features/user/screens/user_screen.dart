@@ -42,7 +42,17 @@ class _UserScreenState extends State<UserScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await context.read<AuthProvider>().logout();
+    context.read<LocationProvider>().prepareLogout();
+    // The app-wide messenger survives the switch to the login screen.
+    final messenger = ScaffoldMessenger.of(context);
+    final removed = await context.read<AuthProvider>().logout();
+    if (!removed) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Signed out, but your shared location could not be '
+            'removed. Sign in when online and turn sharing off.'),
+        backgroundColor: Colors.orange,
+      ));
+    }
     if (mounted) context.go('/login');
   }
 

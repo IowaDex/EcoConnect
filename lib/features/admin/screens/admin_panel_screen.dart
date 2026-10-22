@@ -1,7 +1,9 @@
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/utils/app_logger.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -22,17 +24,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   Future<void> _loadUsers() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
       final users = await AuthService().getAllUsers();
+      if (!mounted) return;
       setState(() {
         _allUsers = users;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -40,16 +45,29 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
-  Future<void> _setRole(String uid, UserRole newRole) async {
-    await AuthService().updateUserRole(uid, newRole);
-    await _loadUsers();
+  void _showResult(String message, {required bool success}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Role updated to ${newRole.name}'),
-        backgroundColor: Colors.green.shade600,
+        content: Text(message),
+        backgroundColor: success ? Colors.green.shade600 : Colors.red.shade600,
       ),
     );
+  }
+
+  // A short reason for snackbars, e.g. "permission-denied".
+  String _reason(Object e) => e is FirebaseException ? e.code : '$e';
+
+  Future<void> _setRole(String uid, UserRole newRole) async {
+    try {
+      await AuthService().updateUserRole(uid, newRole);
+    } catch (e) {
+      AppLogger.error('Role update failed', e);
+      _showResult('Could not change role (${_reason(e)}).', success: false);
+      return;
+    }
+    await _loadUsers();
+    _showResult('Role updated to ${newRole.name}', success: true);
   }
 
   Future<void> _deleteUser(String uid) async {
@@ -74,21 +92,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
-    String message = 'User data deleted';
+    setState(() => _isLoading = true);
+    String? failure;
     try {
       await AuthService().deleteUser(uid);
     } catch (e) {
-      message = 'Delete failed, please retry: $e';
+      AppLogger.error('Delete user failed', e);
+      failure = _reason(e);
     }
     await _loadUsers();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade600,
-      ),
+    _showResult(
+      failure == null
+          ? 'User data deleted'
+          : 'Delete failed ($failure). Please retry.',
+      success: failure == null,
     );
   }
 
@@ -104,7 +123,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => authProvider.logout(),
+            // Disabled mid-delete: signing out would abort it half done.
+            onPressed: _isLoading ? null : () => authProvider.logout(),
           ),
         ],
       ),
@@ -232,11 +252,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     },
                   ),
                 const SizedBox(width: 8),
-                // Delete button
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _deleteUser(uid),
-                ),
+                // Delete button; hidden on your own row so an admin can't lock themselves out
+                if (uid != context.read<AuthProvider>().currentUser?.uid)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteUser(uid),
+                  ),
               ],
             ),
             const Divider(height: 24),

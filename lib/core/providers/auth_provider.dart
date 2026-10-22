@@ -113,16 +113,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  /// Returns false if the shared location could not be removed before sign-out.
+  Future<bool> logout() async {
     _setLoading(true);
+    var removed = true;
     try {
-      await _authService.logout();
+      removed = await _authService.logout();
       _currentUser = null;
     } catch (e) {
       _setError(e.toString());
       AppLogger.error('Logout failed', e);
     }
     _setLoading(false);
+    return removed;
   }
 
   void _setLoading(bool value) {
