@@ -3,6 +3,10 @@
 name: Build iOS IPA (unsigned)
 
 on:
+  # Push a tag like ios-v1 to build; works from any branch, e.g. test.
+  push:
+    tags:
+      - 'ios-v*'
   workflow_dispatch:
 
 permissions:
