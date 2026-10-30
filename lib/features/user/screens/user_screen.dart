@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../dashboard/widgets/gps_button.dart';
-import '../../dashboard/widgets/location_display.dart';
-import '../../dashboard/widgets/location_map.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
+import '../../location/widgets/gps_button.dart';
+import '../../location/widgets/location_display.dart';
+import '../../location/widgets/location_map.dart';
 
 class UserScreen extends StatefulWidget {
   const UserScreen({super.key});
@@ -42,10 +42,11 @@ class _UserScreenState extends State<UserScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    context.read<LocationProvider>().prepareLogout();
     // The app-wide messenger survives the switch to the login screen.
     final messenger = ScaffoldMessenger.of(context);
-    final removed = await context.read<AuthProvider>().logout();
+    final authProvider = context.read<AuthProvider>();
+    final removed = await context.read<LocationProvider>().endSession();
+    await authProvider.logout();
     if (!removed) {
       messenger.showSnackBar(const SnackBar(
         content: Text('Signed out, but your shared location could not be '

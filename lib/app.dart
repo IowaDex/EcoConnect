@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'core/providers/auth_provider.dart';
-import 'core/models/user.dart';
+import 'features/auth/providers/auth_provider.dart';
+import 'features/auth/models/user.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/user/screens/user_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/admin/screens/admin_panel_screen.dart';
-import 'features/splash/splash_screen.dart';
+import 'features/splash/screens/splash_screen.dart';
 
 /// Where to send the user, or null to stay. Pure so it can be unit tested.
 String? authRedirect({

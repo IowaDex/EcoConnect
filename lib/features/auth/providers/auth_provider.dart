@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
-import '../utils/app_logger.dart';
+import '../../../core/utils/app_logger.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -113,19 +113,16 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Returns false if the shared location could not be removed before sign-out.
-  Future<bool> logout() async {
+  Future<void> logout() async {
     _setLoading(true);
-    var removed = true;
     try {
-      removed = await _authService.logout();
+      await _authService.logout();
       _currentUser = null;
     } catch (e) {
       _setError(e.toString());
       AppLogger.error('Logout failed', e);
     }
     _setLoading(false);
-    return removed;
   }
 
   void _setLoading(bool value) {

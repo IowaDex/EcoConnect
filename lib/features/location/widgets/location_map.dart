@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/services/auth_service.dart';
-import '../../../core/models/shared_location.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../providers/location_provider.dart';
+import '../../auth/services/auth_service.dart';
+import '../models/shared_location.dart';
 
 class LocationMap extends StatefulWidget {
   const LocationMap({super.key});

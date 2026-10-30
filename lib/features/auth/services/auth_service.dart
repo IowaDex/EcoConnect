@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
-import '../utils/app_logger.dart';
+import '../../../core/utils/app_logger.dart';
 export '../models/user.dart';
 
 enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified, accountRemoved }
@@ -123,26 +123,9 @@ class AuthService {
     }
   }
 
-  // Logout; removes the shared location first, while we still have permission.
-  // Returns false if that removal failed (e.g. offline); sign-out still happens.
-  Future<bool> logout() async {
-    var removed = true;
-    final uid = _auth.currentUser?.uid;
-    if (uid != null) {
-      try {
-        await _firestore
-            .collection('shared_locations')
-            .doc(uid)
-            .delete()
-            .timeout(const Duration(seconds: 5));
-      } catch (e) {
-        removed = false;
-        AppLogger.error('Could not remove shared location on logout', e);
-      }
-    }
-    await _auth.signOut();
-    return removed;
-  }
+  // Callers remove any data that needs the signed-in session (e.g. the shared
+  // location) before calling this.
+  Future<void> logout() => _auth.signOut();
 
   // Resend email verification by signing in temporarily
   Future<void> resendVerificationEmail(String email, String password) async {
@@ -173,23 +156,18 @@ class AuthService {
 
   // Delete all of a user's data (for admin). The login account itself can only
   // be removed in the Firebase console; login refuses accounts without a profile.
-  Future<void> deleteUser(String uid) async {
+  // [deleteLocationData] removes the user's location data, which the location
+  // feature owns; it runs between the tombstone and the profile delete.
+  Future<void> deleteUser(
+    String uid, {
+    required Future<void> Function() deleteLocationData,
+  }) async {
     // Tombstone first: the rules then refuse to let them re-create a profile.
     await _firestore.collection('removed_users').doc(uid).set({
       'removedAt': FieldValue.serverTimestamp(),
     });
-    final profile = _firestore.collection('users').doc(uid);
-    while (true) {
-      final page = await profile.collection('locations').limit(400).get();
-      if (page.docs.isEmpty) break;
-      final batch = _firestore.batch();
-      for (final doc in page.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-    }
-    await _firestore.collection('shared_locations').doc(uid).delete();
+    await deleteLocationData();
     // Profile last, so a partial failure leaves the user listed for a retry.
-    await profile.delete();
+    await _firestore.collection('users').doc(uid).delete();
   }
 }

@@ -1,5 +1,5 @@
 import 'package:eco_connect/app.dart';
-import 'package:eco_connect/core/models/user.dart';
+import 'package:eco_connect/features/auth/models/user.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

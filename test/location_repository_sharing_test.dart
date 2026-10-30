@@ -4,8 +4,8 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:eco_connect/core/database/local_database.dart';
-import 'package:eco_connect/core/repositories/location_repository.dart';
+import 'package:eco_connect/features/location/database/local_database.dart';
+import 'package:eco_connect/features/location/repositories/location_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';

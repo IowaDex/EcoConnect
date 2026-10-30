@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/repositories/location_repository.dart';
+import '../models/location_sync_state.dart';
+import '../providers/location_provider.dart';
 
 class LocationDisplay extends StatelessWidget {
   const LocationDisplay({super.key});

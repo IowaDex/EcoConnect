@@ -1,5 +1,5 @@
-import 'package:eco_connect/core/models/location_record.dart';
-import 'package:eco_connect/core/repositories/location_repository.dart';
+import 'package:eco_connect/features/location/models/location_record.dart';
+import 'package:eco_connect/features/location/repositories/location_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

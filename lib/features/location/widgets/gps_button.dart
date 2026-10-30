@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/providers/location_provider.dart';
+import '../providers/location_provider.dart';
 
 class GpsButton extends StatelessWidget {
   const GpsButton({super.key});

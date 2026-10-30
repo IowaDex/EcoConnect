@@ -1,23 +1,23 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import '../models/location_sync_state.dart';
 import '../models/shared_location.dart';
 import '../repositories/location_repository.dart';
 import '../services/location_service.dart';
-import '../utils/app_logger.dart';
+import '../../../core/utils/app_logger.dart';
 
 class LocationProvider extends ChangeNotifier {
-  final LocationService _locationService = LocationService();
-  final LocationRepository _locationRepository = LocationRepository();
+  final LocationService _locationService;
+  final LocationRepository _locationRepository;
 
   Position? _currentPosition;
   bool _isLoading = false;
   String? _error;
   bool _isTracking = false;
   StreamSubscription<Position>? _positionSubscription;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<Object?>? _connectivitySubscription;
   LocationSyncState _syncState = LocationSyncState.synced;
   int _pendingCount = 0;
   bool _isSyncing = false;
@@ -25,21 +25,29 @@ class LocationProvider extends ChangeNotifier {
   bool _isSharingLocation = false;
   StreamSubscription<List<SharedLocation>>? _sharedLocationsSubscription;
   List<SharedLocation> _sharedLocations = const [];
-  StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<String?>? _authSubscription;
   // Seeded so the stream's first event (the same user) isn't seen as a change.
-  String? _userId = FirebaseAuth.instance.currentUser?.uid;
+  late String? _userId;
 
-  LocationProvider() {
+  /// The arguments exist so tests can swap in fakes; the app uses the defaults.
+  LocationProvider({
+    LocationRepository? repository,
+    LocationService? service,
+    Stream<Object?>? connectivityChanges,
+  })  : _locationRepository = repository ?? LocationRepository(),
+        _locationService = service ?? LocationService() {
     _connectivitySubscription =
-        Connectivity().onConnectivityChanged.listen((_) => syncPending());
+        (connectivityChanges ?? Connectivity().onConnectivityChanged)
+            .listen((_) => syncPending());
+    _userId = _locationRepository.currentUserId;
     _authSubscription =
-        FirebaseAuth.instance.authStateChanges().listen(_onUserChanged);
+        _locationRepository.userIdChanges.listen(_onUserChanged);
   }
 
   // Nothing from the previous account may carry over to the next one.
-  void _onUserChanged(User? user) {
-    if (user?.uid == _userId) return;
-    _userId = user?.uid;
+  void _onUserChanged(String? userId) {
+    if (userId == _userId) return;
+    _userId = userId;
     stopTracking();
     _sharedLocationsSubscription?.cancel();
     _sharedLocationsSubscription = null;
@@ -172,11 +180,13 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Call before logging out from a screen that tracks location, so no new
-  /// shared position lands after the logout deletes it.
-  void prepareLogout() {
+  /// Call before signing out. Stops tracking so no new shared position lands
+  /// after the pin is deleted, then deletes it while still signed in.
+  /// Returns false if the pin could not be removed (e.g. offline).
+  Future<bool> endSession() async {
     stopTracking();
     _locationRepository.reset();
+    return _locationRepository.removeSharedLocation();
   }
 
   Future<void> _saveAndSync(Position position) async {
@@ -223,24 +233,13 @@ class LocationProvider extends ChangeNotifier {
           : LocationSyncState.pending;
     } catch (error) {
       _pendingCount = await _locationRepository.pendingCount();
-      _syncState = _isOfflineError(error)
+      _syncState = LocationRepository.isOfflineError(error)
           ? LocationSyncState.offline
           : LocationSyncState.failed;
     } finally {
       _isSyncing = false;
       notifyListeners();
     }
-
-  }
-
-  bool _isOfflineError(Object error) {
-    if (error is TimeoutException) return true;
-    if (error is FirebaseException) {
-      return error.code == 'unavailable' ||
-          error.code == 'deadline-exceeded' ||
-          error.code == 'network-request-failed';
-    }
-    return false;
   }
 
   Future<bool> openLocationSettings() async {

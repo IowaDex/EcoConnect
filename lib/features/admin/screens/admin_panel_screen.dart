@@ -1,8 +1,9 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/auth_service.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../auth/services/auth_service.dart';
+import '../../location/repositories/location_repository.dart';
 import '../../../core/utils/app_logger.dart';
 
 class AdminPanelScreen extends StatefulWidget {
@@ -97,7 +98,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() => _isLoading = true);
     String? failure;
     try {
-      await AuthService().deleteUser(uid);
+      await AuthService().deleteUser(
+        uid,
+        deleteLocationData: () => LocationRepository().deleteAllFor(uid),
+      );
     } catch (e) {
       AppLogger.error('Delete user failed', e);
       failure = _reason(e);

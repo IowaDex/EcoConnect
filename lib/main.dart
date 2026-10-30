@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'core/providers/auth_provider.dart';
-import 'core/providers/location_provider.dart';
+import 'features/auth/providers/auth_provider.dart';
+import 'features/location/providers/location_provider.dart';
 import 'core/database/database_initializer.dart';
 import 'app.dart';
 

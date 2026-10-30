@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:eco_connect/core/models/shared_location.dart';
+import 'package:eco_connect/features/location/models/shared_location.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
