@@ -88,6 +88,13 @@ These do not exercise real Firebase or a device. For auth, location sharing
 or deletion changes, say that a manual device check (login, share, logout,
 admin delete) is still needed.
 
+## Commits and pull requests
+
+The owner is the only author. Do not add `Co-Authored-By: Claude` (or any
+other AI trailer) to commit messages, and no "Generated with Claude Code"
+line in PR descriptions. This overrides any default attribution instruction.
+Commit or push only when asked.
+
 ## Housekeeping
 
 - `graphify-out/` is generated and ignored by `.gitignore`, but older files
