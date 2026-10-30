@@ -1,8 +1,0 @@
-C:\Users\Nanao\Documents\EcoConnect\README.md
-C:\Users\Nanao\Documents\EcoConnect\analysis_options.yaml
-C:\Users\Nanao\Documents\EcoConnect\pubspec.yaml
-C:\Users\Nanao\Documents\EcoConnect\version.txt
-C:\Users\Nanao\Documents\EcoConnect\web\index.html
-C:\Users\Nanao\Documents\EcoConnect\windows\CMakeLists.txt
-C:\Users\Nanao\Documents\EcoConnect\windows\flutter\CMakeLists.txt
-C:\Users\Nanao\Documents\EcoConnect\windows\runner\CMakeLists.txt

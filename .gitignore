@@ -77,3 +77,12 @@ coverage/
 *.class
 # Firebase emulator logs
 *-debug.log
+
+# graphify output and its agent rules (generated per machine)
+.agents/
+
+# IDE
+*.iml
+
+# Claude Code local settings
+.claude/settings.local.json
