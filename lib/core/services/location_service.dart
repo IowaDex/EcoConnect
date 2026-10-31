@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
@@ -93,8 +94,14 @@ class LocationService {
     );
   }
 
-  Future<Position?> getLastKnownPosition() =>
-      Geolocator.getLastKnownPosition();
+  /// Get the last known location (faster but may be stale).
+  ///
+  /// Not supported by the web implementation of geolocator, so on web this
+  /// simply returns null and the caller falls back to a fresh GPS reading.
+  Future<Position?> getLastKnownPosition() async {
+    if (kIsWeb) return null;
+    return Geolocator.getLastKnownPosition();
+  }
 
   Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
 

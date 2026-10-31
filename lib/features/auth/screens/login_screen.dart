@@ -216,8 +216,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: _handleLogin,
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               const Text(
                                 'No account?',

@@ -10,6 +10,7 @@ build/
 # Environment variables (keep secrets out of git)
 .env
 .env.*
+!.env.example
 
 # IDE
 .idea/
@@ -30,6 +31,9 @@ android/gradle-app.setting
 
 # iOS
 ios/.gitignore
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_export_environment.sh
 ios/Pods/
 ios/Podfile.lock
 ios/Runner/GeneratedPluginRegistrant.m
@@ -44,6 +48,7 @@ ios/Runner/GeneratedPluginRegistrant.h
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Secrets
 *.jks

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:eco_connect/core/utils/validators.dart';
 import 'package:eco_connect/core/widgets/brand_wordmark.dart';
 import 'package:eco_connect/core/widgets/hex_leaf_logo.dart';
 import 'package:eco_connect/core/widgets/primary_button.dart';
@@ -15,10 +16,10 @@ void main() {
 
     // "Ec" + hex-leaf mark standing in for the O + "Connect", set as one
     // rich span so the mark can sit on the text baseline.
-    // ￼ is the object-replacement character Flutter emits for a
-    // WidgetSpan, so this pins the mark exactly where the O belongs.
+    // The object-replacement character Flutter emits for a WidgetSpan,
+    // so this pins the mark exactly where the O belongs.
     final text = tester.widget<Text>(find.byType(Text));
-    expect(text.textSpan!.toPlainText(), 'Ec￼Connect');
+    expect(text.textSpan!.toPlainText(), 'Ec\uFFFCConnect');
     expect(find.byType(HexLeafLogo), findsOneWidget);
   });
 
@@ -35,5 +36,22 @@ void main() {
 
     await tester.tap(find.text('Log in'));
     expect(tapped, 1);
+  });
+
+  group('Validators', () {
+    test('rejects empty or malformed email', () {
+      expect(Validators.validateEmail(''), isNotNull);
+      expect(Validators.validateEmail('not-an-email'), isNotNull);
+    });
+
+    test('accepts a valid email', () {
+      expect(Validators.validateEmail('aaron@example.com'), isNull);
+    });
+
+    test('enforces password strength', () {
+      expect(Validators.validatePasswordStrength('short'), isNotNull);
+      expect(Validators.validatePasswordStrength('alllowercase1'), isNotNull);
+      expect(Validators.validatePasswordStrength('GoodPass1'), isNull);
+    });
   });
 }

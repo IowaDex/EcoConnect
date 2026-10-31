@@ -240,8 +240,9 @@ class _SignupScreenState extends State<SignupScreen> {
         const SizedBox(height: 10),
         PrimaryButton(label: 'Continue', onPressed: _toCredentials),
         const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
               'Already have an account?',
@@ -322,8 +323,9 @@ class _SignupScreenState extends State<SignupScreen> {
             onPressed: _toProfile,
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               const Text(
                 'Already have an account?',
@@ -501,8 +503,9 @@ class _SignupScreenState extends State<SignupScreen> {
             onPressed: _submit,
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               const Text(
                 'Already have an account?',
