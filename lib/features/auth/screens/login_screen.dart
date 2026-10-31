@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/services/auth_service.dart';
-import '../../../core/models/user.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/primary_button.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -43,41 +47,44 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
       _showUnverifiedDialog(_emailController.text.trim());
     } else if (authProvider.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _snack(authProvider.error!, isError: true);
+    }
+  }
+
+  void _snack(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
         SnackBar(
-          content: Text(authProvider.error!),
-          backgroundColor: Colors.red,
+          content: Text(message),
+          backgroundColor: isError ? AppColors.danger : AppColors.forest,
         ),
       );
-    }
   }
 
   void _showUnverifiedDialog(String email) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Email Not Verified'),
+        title: const Text('Email not verified'),
         content: const Text(
-          'Your email is not verified yet. Please check your inbox and click the verification link before logging in.\n\nVerification links expire after 10 minutes.',
+          'Your email is not verified yet. Check your inbox and tap the '
+          'verification link before logging in.\n\nVerification links expire '
+          'after 10 minutes.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () async {
               if (_lastResendAttempt != null) {
                 final elapsed = DateTime.now().difference(_lastResendAttempt!);
                 if (elapsed.inMinutes < 10) {
                   final remaining = 10 - elapsed.inMinutes;
                   Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Please wait $remaining more minute(s) before resending.'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
+                  _snack('Please wait $remaining more minute(s) before resending.');
                   return;
                 }
               }
@@ -89,23 +96,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 );
                 _lastResendAttempt = DateTime.now();
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Verification email sent! It expires in 10 minutes.'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+                _snack('Verification email sent! It expires in 10 minutes.');
               } catch (e) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to resend: ${e.toString().replaceFirst('Exception: ', '')}'),
-                    backgroundColor: Colors.red,
-                  ),
+                _snack(
+                  'Failed to resend: ${e.toString().replaceFirst('Exception: ', '')}',
+                  isError: true,
                 );
               }
             },
-            child: const Text('Resend Verification Email'),
+            child: const Text('Resend email'),
           ),
         ],
       ),
@@ -115,148 +115,266 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // App Logo/Icon
-                  Icon(
-                    Icons.eco,
-                    size: 80,
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // App Title
-                  Text(
-                    'EcoConnect',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.primary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-
-                  Text(
-                    'Welcome back!',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 48),
-
-                  // Email Field
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'Enter your email',
-                      prefixIcon: Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: Validators.validateEmail,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Password Field
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) => _handleLogin(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'Enter your password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                    validator: Validators.validatePassword,
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Forgot Password (future feature)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
-                        // TODO: Implement forgot password
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Forgot password feature coming soon'),
-                          ),
-                        );
-                      },
-                      child: const Text('Forgot Password?'),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Login Button
-                  FilledButton(
-                    onPressed: authProvider.isLoading ? null : _handleLogin,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: authProvider.isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Login',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Sign Up Link
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "Don't have an account? ",
-                        style: TextStyle(color: colorScheme.onSurfaceVariant),
-                      ),
-                      TextButton(
-                        onPressed: () => context.go('/signup'),
-                        child: const Text('Sign Up'),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppColors.heroGradient),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const Expanded(flex: 4, child: _LoginHero()),
+              Expanded(
+                flex: 7,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.cream,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.forest.withValues(alpha: 0.08),
+                        blurRadius: 24,
+                        offset: const Offset(0, -6),
                       ),
                     ],
                   ),
-                ],
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 26, 24, 24),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Center(
+                            child: Text(
+                              'Log in Account',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          AppTextField(
+                            label: 'Email',
+                            hint: 'you@email.com',
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            validator: Validators.validateEmail,
+                            autofillHints: const [AutofillHints.email],
+                          ),
+                          const SizedBox(height: 14),
+                          AppTextField(
+                            label: 'Password',
+                            hint: 'Input password',
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.done,
+                            validator: Validators.validatePassword,
+                            autofillHints: const [AutofillHints.password],
+                            onFieldSubmitted: (_) => _handleLogin(),
+                            suffix: IconButton(
+                              padding: EdgeInsets.zero,
+                              splashRadius: 18,
+                              iconSize: 18,
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                                color: AppColors.inkMuted,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () => _snack('Password reset coming soon'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.only(top: 6, bottom: 2),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'forgot password',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.inkMuted,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          PrimaryButton(
+                            label: 'Log in',
+                            loading: authProvider.isLoading,
+                            onPressed: _handleLogin,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'No account?',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.inkMuted,
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () => context.go('/signup'),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Sign up',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const _ContinueWithDivider(),
+                          const SizedBox(height: 14),
+                          const _SocialRow(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginHero extends StatelessWidget {
+  const _LoginHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          BrandLockup(fontSize: 27),
+          SizedBox(height: 14),
+          Text(
+            'Know When, Know Where!',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.forest,
+            ),
+          ),
+          SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 52),
+            child: Text(
+              'Real-time garbage truck tracking and timely notifications, making '
+              'waste disposal easier and more convenient.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 8, height: 1.5, color: AppColors.inkMuted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContinueWithDivider extends StatelessWidget {
+  const _ContinueWithDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Divider()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            'continue with',
+            style: TextStyle(
+              fontSize: 8.5,
+              letterSpacing: 0.4,
+              color: AppColors.inkMuted.withValues(alpha: 0.9),
             ),
           ),
         ),
+        const Expanded(child: Divider()),
+      ],
+    );
+  }
+}
+
+class _SocialRow extends StatelessWidget {
+  const _SocialRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _SocialButton(
+          icon: Icons.g_mobiledata_rounded,
+          color: const Color(0xFFDB4437),
+          onTap: () => _notice(context),
+        ),
+        const SizedBox(width: 14),
+        _SocialButton(
+          icon: Icons.facebook,
+          color: const Color(0xFF1877F2),
+          onTap: () => _notice(context),
+        ),
+      ],
+    );
+  }
+
+  void _notice(BuildContext context) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Social sign-in is coming soon')),
+      );
+  }
+}
+
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        height: 34,
+        width: 34,
+        decoration: BoxDecoration(
+          color: AppColors.creamBright,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.sage),
+        ),
+        child: Icon(icon, size: 19, color: color),
       ),
     );
   }

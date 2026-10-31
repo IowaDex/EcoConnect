@@ -26,7 +26,13 @@ class AuthProvider extends ChangeNotifier {
 
   void _initAuth() {
     _authService.authStateChanges.listen((AppUser? user) {
-      if (user != null && !user.emailVerified && user.role != UserRole.admin) {
+      if (user != null && user.isPendingApproval) {
+        _currentUser = null;
+        _userData = null;
+        _userRole = null;
+      } else if (user != null &&
+          !user.emailVerified &&
+          user.role == UserRole.user) {
         // Do not auto-login unverified users
         _currentUser = null;
         _userData = null;
@@ -59,6 +65,7 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
     required UserRole role,
+    Map<String, dynamic>? profile,
   }) async {
     _setLoading(true);
     _clearError();
@@ -69,6 +76,7 @@ class AuthProvider extends ChangeNotifier {
         password: password,
         name: name,
         role: role,
+        profile: profile,
       );
       return true;
     } catch (e) {
@@ -105,6 +113,11 @@ class AuthProvider extends ChangeNotifier {
           _setError('Incorrect password. Please try again.');
         case AuthErrorType.emailNotVerified:
           _setError('Please verify your email before logging in.');
+        case AuthErrorType.accountPending:
+          _setError(
+            'Your account is waiting for barangay staff approval. '
+            'Please try again once you are approved.',
+          );
       }
       return false;
     } catch (e) {

@@ -17,7 +17,6 @@ linter:
 
     # Design rules
     avoid_empty_else: true
-    avoid_print: warning
     curly_braces_in_flow_control_structures: true
     one_member_abstracts: warning
     prefer_if_null_operators: true
@@ -35,6 +34,10 @@ analyzer:
     - .dart_tool/**
     - '**/*.g.dart'
     - '**/*.freezed.dart'
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
   errors:
     missing_required_param: warning
     missing_return: warning

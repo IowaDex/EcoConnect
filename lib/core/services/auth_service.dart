@@ -3,7 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
 export '../models/user.dart';
 
-enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified }
+enum AuthErrorType {
+  emailNotFound,
+  wrongPassword,
+  emailNotVerified,
+  accountPending,
+}
 
 class AuthException implements Exception {
   final AuthErrorType type;
@@ -39,7 +44,9 @@ class AuthService {
 
   Future<AppUser> _getAppUser(User firebaseUser) async {
     final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
-    final roleStr = doc.data()?['role'] ?? 'user';
+    final data = doc.data() ?? <String, dynamic>{};
+    final roleStr = data['role'] ?? 'user';
+    final rawAge = data['age'];
     return AppUser(
       uid: firebaseUser.uid,
       email: firebaseUser.email,
@@ -49,6 +56,13 @@ class AuthService {
         (e) => e.name == roleStr,
         orElse: () => UserRole.user,
       ),
+      accountStatus: data['accountStatus'] as String? ?? 'active',
+      age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
+      phone: data['phone'] as String?,
+      houseStreet: data['houseStreet'] as String?,
+      barangay: data['barangay'] as String?,
+      city: data['city'] as String?,
+      province: data['province'] as String?,
     );
   }
 
@@ -58,6 +72,7 @@ class AuthService {
     required String password,
     required String name,
     required UserRole role,
+    Map<String, dynamic>? profile,
   }) async {
     // Create Firebase user
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -78,6 +93,9 @@ class AuthService {
       'role': role.name,
       'createdAt': FieldValue.serverTimestamp(),
       'emailVerified': false,
+      // Drivers and barangay staff need approval before they can sign in.
+      'accountStatus': role == UserRole.user ? 'active' : 'pending',
+      if (profile != null) ...profile,
     });
 
     // Do not keep them logged in until email is verified
@@ -101,7 +119,15 @@ class AuthService {
 
       final appUser = await _getAppUser(credential.user!);
 
-      if (!credential.user!.emailVerified && appUser.role != UserRole.admin) {
+      if (appUser.isPendingApproval) {
+        await _auth.signOut();
+        _currentUser = null;
+        throw const AuthException(AuthErrorType.accountPending);
+      }
+
+      // Residents must verify their email. Drivers and staff are provisioned
+      // by the barangay, so staff approval (accountStatus) is the gate instead.
+      if (!credential.user!.emailVerified && appUser.role == UserRole.user) {
         await _auth.signOut();
         _currentUser = null;
         throw const AuthException(AuthErrorType.emailNotVerified);
@@ -152,6 +178,25 @@ class AuthService {
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
     return doc.data();
+  }
+
+  // Accounts waiting for barangay staff approval
+  Future<List<Map<String, dynamic>>> getPendingAccounts() async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('accountStatus', isEqualTo: 'pending')
+        .get();
+    return snapshot.docs
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .toList();
+  }
+
+  // Approve a driver / staff account
+  Future<void> approveAccount(String uid) async {
+    await _firestore.collection('users').doc(uid).update({
+      'accountStatus': 'active',
+      'approvedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // Get all users (for admin panel)

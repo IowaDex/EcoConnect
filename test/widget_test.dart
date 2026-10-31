@@ -1,30 +1,39 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:eco_connect/main.dart';
+import 'package:eco_connect/core/widgets/brand_wordmark.dart';
+import 'package:eco_connect/core/widgets/hex_leaf_logo.dart';
+import 'package:eco_connect/core/widgets/primary_button.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('brand wordmark uses the logo as the O', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Center(child: BrandWordmark())),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // "Ec" + hex-leaf mark standing in for the O + "Connect", set as one
+    // rich span so the mark can sit on the text baseline.
+    // ￼ is the object-replacement character Flutter emits for a
+    // WidgetSpan, so this pins the mark exactly where the O belongs.
+    final text = tester.widget<Text>(find.byType(Text));
+    expect(text.textSpan!.toPlainText(), 'Ec￼Connect');
+    expect(find.byType(HexLeafLogo), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('primary button invokes its callback', (tester) async {
+    var tapped = 0;
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PrimaryButton(label: 'Log in', onPressed: () => tapped++),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Log in'));
+    expect(tapped, 1);
   });
 }

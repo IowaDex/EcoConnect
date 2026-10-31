@@ -3,32 +3,90 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
-    // Users can only read/write their own profile
-    match /users/{userId} {
-      // A user can read their own profile if they are authenticated
-      // or if the userId matches the authenticated user
-      allow read: if request.auth != null && request.auth.uid == userId;
-
-      // A user can update their own profile (name, emailVerified)
-      // but cannot change their role
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId
-        && request.auth.uid == userId
-        && !request.resource.data.keys().hasAny(['role']);
-
-      // Admin can create new users (only during signup flow handled by auth)
-      allow create: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can read all users
-      allow read: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can update role
-      allow update: if request.auth != null && request.auth.token.admin == true;
-
-      // Admin can delete
-      allow delete: if request.auth != null && request.auth.token.admin == true;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Public can only read public data (if any)
+    function myRole() {
+      return signedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : '';
+    }
+
+    function isStaff() {
+      return signedIn() && myRole() == 'admin';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
+      allow create: if signedIn() && request.auth.uid == userId;
+      // A user may edit their own profile but never escalate role or status.
+      allow update: if signedIn() && (
+        (request.auth.uid == userId
+          && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt']))
+        || isStaff()
+      );
+      allow delete: if isStaff();
+    }
+
+    // Staff schedule a driver's day here. The driver may only flip their own
+    // assignment from scheduled -> active/completed; everything else is staff.
+    match /routePlans/{planId} {
+      allow read: if signedIn()
+        && (isStaff() || resource.data.driverId == request.auth.uid);
+      allow create: if isStaff()
+        || (signedIn()
+            && request.resource.data.driverId == request.auth.uid
+            && request.resource.data.adHoc == true
+            && request.resource.data.status == 'scheduled');
+      allow update: if isStaff()
+        || (signedIn()
+            && resource.data.driverId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'activatedAt', 'completedAt', 'sessionId'])
+            && request.resource.data.status in ['active', 'completed']);
+      allow delete: if isStaff();
+    }
+
+    // Live driver locations: any signed-in user can watch, only the driver
+    // (or staff) can publish. Drivers cannot rewrite identity fields.
+    match /routes/{driverId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && (request.auth.uid == driverId || isStaff());
+      allow update: if signedIn() && (
+        (request.auth.uid == driverId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
+               'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
+               'phone', 'zone'
+             ])
+          && request.resource.data.status in
+               ['inTransit', 'delayed', 'completed', 'idle'])
+        || isStaff()
+      );
+      allow delete: if isStaff();
+    }
+
+    // Recycling station ledger. Staff credit points here; the balance itself
+    // lives on users/{uid}.points and can only be changed by staff.
+    match /dropOffs/{dropOffId} {
+      allow read: if signedIn()
+        && (isStaff() || resource.data.residentId == request.auth.uid);
+      allow create: if isStaff()
+        && request.resource.data.points is int
+        && request.resource.data.points > 0
+        && request.resource.data.weightKg is number
+        && request.resource.data.weightKg > 0;
+      allow update, delete: if isStaff();
+    }
+
+    // Incident reports: residents create and read their own, staff see all.
+    match /incidents/{incidentId} {
+      allow read: if signedIn() && (isStaff() || resource.data.residentId == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.residentId == request.auth.uid;
+      allow update, delete: if isStaff();
+    }
   }
 }
