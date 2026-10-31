@@ -57,6 +57,72 @@ A comprehensive Flutter mobile application featuring user authentication, email 
 - **Xcode** (for iOS development - macOS only)
   - Install via App Store
 
+## 🐳 Quick Start with Docker
+
+The fastest way to run the app — no Flutter SDK, no `flutter doctor`, no platform toolchains. Docker builds the web bundle and serves it with nginx.
+
+### 1. Provide your Firebase config
+
+The app reads its Firebase credentials from `.env` (gitignored, so it is **not** in the repo). Copy the template and fill in your own values:
+
+```bash
+cp .env.example .env
+```
+
+```ini
+FIREBASE_API_KEY=...
+FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=...
+FIREBASE_APP_ID=1:...:web:...
+```
+
+> These values are compiled into the JavaScript bundle and are visible to anyone who loads the site. That is normal for Firebase web apps — protect your data with Firestore rules, not by hiding the config. Never put service-account keys or private secrets in `.env`.
+
+### 2. Build and run
+
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:8080**.
+
+Stop with `Ctrl+C` (or `docker compose down`). Rebuild after changing code with `docker compose up --build`.
+
+### Without Docker Compose
+
+```bash
+docker build \
+  --build-arg FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+  --build-arg FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
+  --build-arg FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+  --build-arg FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
+  --build-arg FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+  --build-arg FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+  -t ecoconnect:latest .
+
+docker run --rm -p 8080:80 ecoconnect:latest
+```
+
+### Changing the port
+
+Edit the `ports` mapping in `docker-compose.yml`, e.g. `"3000:80"` to serve on port 3000.
+
+### Files
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | Two stages: Flutter SDK builds the web bundle, nginx serves it |
+| `docker/nginx.conf` | SPA routing (`try_files`), gzip, cache headers |
+| `docker-compose.yml` | One-command build + run on port 8080 |
+| `.dockerignore` | Keeps `build/`, `.dart_tool/`, mobile folders and `.env` out of the image |
+| `.env.example` | Template for the required Firebase config |
+
+> The Docker image targets **web** only. Android/iOS builds still need the native toolchains described below.
+
+---
+
 ## 🚀 Installation & Setup
 
 ### 1. Clone and Navigate to Project
