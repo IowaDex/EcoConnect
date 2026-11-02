@@ -131,6 +131,43 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Saves profile edits from the profile sheet. Only the fields that were
+  /// actually changed are written, so a resident cannot wipe data that another
+  /// screen (staff views) still reads.
+  Future<bool> updateProfile({
+    String? phone,
+    String? houseStreet,
+    String? photoUrl,
+  }) async {
+    final user = _currentUser;
+    if (user == null) return false;
+
+    final data = <String, dynamic>{
+      if (phone != null) 'phone': phone,
+      if (houseStreet != null) 'houseStreet': houseStreet,
+      if (photoUrl != null) 'photoUrl': photoUrl,
+    };
+    if (data.isEmpty) return true;
+
+    _setLoading(true);
+    try {
+      await _authService.updateUserProfile(user.uid, data);
+      _currentUser = user.copyWith(
+        phone: phone,
+        houseStreet: houseStreet,
+        photoUrl: photoUrl,
+      );
+      return true;
+    } catch (e) {
+      String message = e.toString();
+      if (message.contains(']')) message = message.split(']').last.trim();
+      _setError(message);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<void> logout() async {
     _setLoading(true);
     try {

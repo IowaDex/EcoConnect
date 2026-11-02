@@ -10,6 +10,10 @@ class AppUser {
   /// Profile details collected on the second signup step.
   final int? age;
   final String? phone;
+
+  /// Avatar. Either an http(s) URL or an inline `data:image/...;base64,`
+  /// string when the picture was uploaded from the device.
+  final String? photoUrl;
   final String? houseStreet;
   final String? barangay;
   final String? city;
@@ -27,6 +31,7 @@ class AppUser {
     this.role = UserRole.user,
     this.age,
     this.phone,
+    this.photoUrl,
     this.houseStreet,
     this.barangay,
     this.city,
@@ -35,6 +40,36 @@ class AppUser {
   });
 
   bool get isPendingApproval => accountStatus == 'pending';
+
+  AppUser copyWith({
+    String? displayName,
+    bool? emailVerified,
+    UserRole? role,
+    int? age,
+    String? phone,
+    String? photoUrl,
+    String? houseStreet,
+    String? barangay,
+    String? city,
+    String? province,
+    String? accountStatus,
+  }) {
+    return AppUser(
+      uid: uid,
+      email: email,
+      displayName: displayName ?? this.displayName,
+      emailVerified: emailVerified ?? this.emailVerified,
+      role: role ?? this.role,
+      age: age ?? this.age,
+      phone: phone ?? this.phone,
+      photoUrl: photoUrl ?? this.photoUrl,
+      houseStreet: houseStreet ?? this.houseStreet,
+      barangay: barangay ?? this.barangay,
+      city: city ?? this.city,
+      province: province ?? this.province,
+      accountStatus: accountStatus ?? this.accountStatus,
+    );
+  }
 
   /// First name used for the "Welcome, ..." greeting.
   String get firstName {

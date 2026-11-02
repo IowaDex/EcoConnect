@@ -59,6 +59,7 @@ class AuthService {
       accountStatus: data['accountStatus'] as String? ?? 'active',
       age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
       phone: data['phone'] as String?,
+      photoUrl: data['photoUrl'] as String?,
       houseStreet: data['houseStreet'] as String?,
       barangay: data['barangay'] as String?,
       city: data['city'] as String?,
@@ -172,6 +173,11 @@ class AuthService {
   // Send password reset email
   Future<void> sendPasswordResetEmail(String email) async {
     await _auth.sendPasswordResetEmail(email: email);
+  }
+
+  // Persist profile edits made from the profile sheet.
+  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
+    await _firestore.collection('users').doc(uid).update(data);
   }
 
   // Get user data

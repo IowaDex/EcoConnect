@@ -13,6 +13,7 @@ import '../../../core/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../user/widgets/profile_sheet.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
@@ -553,20 +554,12 @@ class _DriverSheet extends StatelessWidget {
                 case 1:
                   break;
                 case 2:
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(content: Text('You have no new alerts')),
-                    );
+                  context.go('/community');
                 case 3:
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(
-                          content: Text('Open Profile from the home tab')),
-                    );
+                  showProfileSheet(context);
               }
             },
+            onAskAi: () => context.push('/ask-ai'),
           ),
         ],
       ),

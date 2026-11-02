@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/models/user.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
-import '../../../core/widgets/hex_leaf_logo.dart';
+import '../../../core/widgets/user_avatar.dart';
+import '../widgets/profile_sheet.dart';
 
 class UserScreen extends StatelessWidget {
   const UserScreen({super.key});
@@ -17,49 +19,47 @@ class UserScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Header(firstName: user?.firstName ?? 'there'),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 4, 22, 16),
-                children: [
-                  _SectionLabel(
-                    title: "WHAT'S NEW?",
-                    action: 'View all',
-                    onAction: () => _toast(context, 'No more updates right now'),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Hero(user: user, onEditProfile: () => _showProfile(context)),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+              children: [
+                _SectionLabel(
+                  title: "WHAT'S NEW?",
+                  action: 'View all',
+                  onAction: () => _toast(context, 'No more updates right now'),
+                ),
+                const SizedBox(height: 12),
+                const _WhatsNewRow(),
+                const SizedBox(height: 26),
+                const Text(
+                  'Announcements!',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.forest,
                   ),
-                  const SizedBox(height: 10),
-                  const _WhatsNewRow(),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Announcements!',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const _AnnouncementCard(),
-                  const SizedBox(height: 18),
-                  _TrackPrompt(onTap: () => context.go('/tracking')),
-                  const SizedBox(height: 12),
-                  _ReportPrompt(onTap: () => context.go('/report-incident')),
-                  const SizedBox(height: 12),
-                  _WalletPrompt(onTap: () => context.go('/wallet')),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                const _AnnouncementCard(),
+                const SizedBox(height: 18),
+                _TrackPrompt(onTap: () => context.go('/tracking')),
+                const SizedBox(height: 12),
+                _ReportPrompt(onTap: () => context.go('/report-incident')),
+                const SizedBox(height: 12),
+                _WalletPrompt(onTap: () => context.go('/wallet')),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 0,
         onTap: (i) => _onNav(context, i),
+        onAskAi: () => context.push('/ask-ai'),
       ),
     );
   }
@@ -71,7 +71,7 @@ class UserScreen extends StatelessWidget {
       case 1:
         context.go('/tracking');
       case 2:
-        _toast(context, 'You have no new alerts');
+        context.go('/community');
       case 3:
         _showProfile(context);
     }
@@ -83,142 +83,193 @@ class UserScreen extends StatelessWidget {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showProfile(BuildContext context) {
-    final auth = context.read<AuthProvider>();
-    final user = auth.currentUser;
+  void _showProfile(BuildContext context) => showProfileSheet(context);
+}
 
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.cream,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+/// Dark hero panel: wordmark, avatar, greeting and the two quick pills.
+class _Hero extends StatelessWidget {
+  const _Hero({required this.user, required this.onEditProfile});
+
+  final AppUser? user;
+  final VoidCallback onEditProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final address = user?.fullAddress ?? 'No address on file';
+    final hasAddress = address != 'No address on file';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(22, topInset + 16, 22, 22),
+      decoration: const BoxDecoration(
+        gradient: AppColors.forestGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              height: 4,
-              width: 44,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
+              const Spacer(),
+              _HeroBell(onTap: () => context.push('/alerts')),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              UserAvatar(
+                photoUrl: user?.photoUrl,
+                size: 62,
+                background: AppColors.creamBright,
               ),
-            ),
-            const SizedBox(height: 22),
-            const CircleAvatar(
-              radius: 34,
-              backgroundColor: AppColors.mint,
-              child: Icon(Icons.person, size: 34, color: AppColors.forest),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              user?.displayName ?? 'EcoConnect user',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              user?.email ?? '',
-              style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.creamBright,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Address',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.inkMuted,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome back,',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.creamBright.withValues(alpha: 0.72),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    user?.fullAddress ?? 'No address on file',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: AppColors.forest,
+                    const SizedBox(height: 3),
+                    Text(
+                      user?.displayName ?? 'EcoConnect user',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        height: 1.1,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.creamBright,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      user?.email ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: AppColors.creamBright.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await auth.logout();
-                  if (context.mounted) context.go('/login');
-                },
-                style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-                child: const Text('Log out'),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Flexible(
+                child: _HeroPill(
+                  label: hasAddress ? address : 'No address yet',
+                  icon: Icons.location_on_outlined,
+                  onTap: onEditProfile,
+                ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 10),
+              _HeroPill(label: 'Edit profile', onTap: onEditProfile),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.firstName});
+/// Bell button in the hero's top-right corner with an unread dot.
+class _HeroBell extends StatelessWidget {
+  const _HeroBell({required this.onTap});
 
-  final String firstName;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 18, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const BrandWordmark(fontSize: 10.5),
-                const SizedBox(height: 12),
-                Text(
-                  'Welcome,\n$firstName!',
-                  style: const TextStyle(
-                    fontSize: 26,
-                    height: 1.15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-              ],
+          Container(
+            height: 38,
+            width: 38,
+            decoration: BoxDecoration(
+              color: AppColors.creamBright.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.notifications_none_rounded,
+              size: 19,
+              color: AppColors.creamBright,
             ),
           ),
-          const HexLeafLogo(size: 58, strokeWidth: 3.2),
-          const SizedBox(width: 10),
-          Container(
-            width: 4,
-            height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.sage,
-              borderRadius: BorderRadius.circular(2),
+          Positioned(
+            right: 1,
+            top: 1,
+            child: Container(
+              height: 10,
+              width: 10,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2574C),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.forestDeep, width: 2),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Outline pill used inside the dark hero.
+class _HeroPill extends StatelessWidget {
+  const _HeroPill({required this.label, required this.onTap, this.icon});
+
+  final String label;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: AppColors.creamBright.withValues(alpha: 0.45),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: AppColors.creamBright),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.creamBright,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -250,7 +301,11 @@ class _SectionLabel extends StatelessWidget {
             onTap: onAction,
             child: Text(
               action!,
-              style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.forest,
+              ),
             ),
           ),
       ],
@@ -284,7 +339,7 @@ class _WhatsNewRow extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [AppColors.mint, Color(0xFFCDE8B4)],
+                colors: [Color(0xFFE9F5DC), Color(0xFFD5EDBE)],
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.sage.withValues(alpha: 0.6)),
@@ -325,10 +380,10 @@ class _AnnouncementCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: AppColors.forestGradient,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,9 +391,9 @@ class _AnnouncementCard extends StatelessWidget {
           Row(
             children: [
               const CircleAvatar(
-                radius: 13,
+                radius: 14,
                 backgroundColor: Colors.white,
-                child: Icon(Icons.person, size: 15, color: AppColors.forest),
+                child: Icon(Icons.person, size: 16, color: AppColors.forest),
               ),
               const SizedBox(width: 9),
               Column(
@@ -347,7 +402,7 @@ class _AnnouncementCard extends StatelessWidget {
                   const Text(
                     'Barangay EcoConnect',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     ),
@@ -355,7 +410,7 @@ class _AnnouncementCard extends StatelessWidget {
                   Text(
                     '2 hours ago',
                     style: TextStyle(
-                      fontSize: 8,
+                      fontSize: 8.5,
                       color: Colors.white.withValues(alpha: 0.65),
                     ),
                   ),
@@ -367,7 +422,7 @@ class _AnnouncementCard extends StatelessWidget {
           const Text(
             'Daily Notice!',
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 12.5,
               fontWeight: FontWeight.w700,
               color: Colors.white,
             ),
@@ -378,9 +433,9 @@ class _AnnouncementCard extends StatelessWidget {
             'biodegradable and non-biodegradable waste to keep the collection '
             'fast and safe for everyone.',
             style: TextStyle(
-              fontSize: 8.5,
-              height: 1.55,
-              color: Colors.white.withValues(alpha: 0.78),
+              fontSize: 9.5,
+              height: 1.5,
+              color: Colors.white.withValues(alpha: 0.8),
             ),
           ),
         ],

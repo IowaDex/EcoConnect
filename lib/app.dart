@@ -6,6 +6,9 @@ import 'core/models/user.dart';
 import 'core/providers/auth_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
+import 'features/ai/screens/ask_ai_screen.dart';
+import 'features/alerts/screens/alerts_screen.dart';
+import 'features/community/screens/community_screen.dart';
 import 'features/admin/screens/admin_panel_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
@@ -37,6 +40,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
     '/tracking',
     '/report-incident',
     '/wallet',
+    '/community',
+    '/ask-ai',
+    '/alerts',
   };
 
   static const _driverRoutes = {'/dashboard', '/driver'};
@@ -100,6 +106,11 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
             path: '/report-incident',
             builder: (_, __) => const ReportIncidentScreen()),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
+        GoRoute(
+            path: '/community',
+            builder: (_, __) => const CommunityScreen()),
+        GoRoute(path: '/ask-ai', builder: (_, __) => const AskAiScreen()),
+        GoRoute(path: '/alerts', builder: (_, __) => const AlertsScreen()),
         GoRoute(
             path: '/incidents', builder: (_, __) => const IncidentDeskScreen()),
         GoRoute(

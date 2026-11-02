@@ -8,6 +8,7 @@ import '../../../core/services/recycling_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../widgets/profile_sheet.dart';
 
 /// Resident-facing view of the points earned at the barangay drop-off station.
 class WalletScreen extends StatefulWidget {
@@ -143,15 +144,12 @@ class _WalletScreenState extends State<WalletScreen> {
             case 1:
               context.go('/tracking');
             case 2:
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  const SnackBar(content: Text('You have no new alerts')),
-                );
+              context.go('/community');
             case 3:
-              break;
+              showProfileSheet(context);
           }
         },
+        onAskAi: () => context.push('/ask-ai'),
       ),
     );
   }
