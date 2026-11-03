@@ -5,11 +5,14 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/user.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/services/psgc_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/phone.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/psgc_field.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -35,6 +38,10 @@ class _SignupScreenState extends State<SignupScreen> {
   int _step = 0;
   bool _obscure = true;
   UserRole _role = UserRole.user;
+
+  PsgcOption? _provinceOption;
+  PsgcOption? _cityOption;
+  PsgcOption? _barangayOption;
 
   @override
   void dispose() {
@@ -75,6 +82,67 @@ class _SignupScreenState extends State<SignupScreen> {
     _next();
   }
 
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _pickProvince() async {
+    final picked = await showPsgcPicker(
+      context,
+      title: 'Select province',
+      load: PsgcService.instance.provinces,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _provinceOption = picked;
+      _province.text = picked.name;
+      _cityOption = null;
+      _city.clear();
+      _barangayOption = null;
+      _barangay.clear();
+    });
+  }
+
+  Future<void> _pickCity() async {
+    final province = _provinceOption;
+    if (province == null) {
+      _toast('Select your province first');
+      return;
+    }
+    final picked = await showPsgcPicker(
+      context,
+      title: 'Select city / municipality',
+      load: () => PsgcService.instance.cities(province.code),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _cityOption = picked;
+      _city.text = picked.name;
+      _barangayOption = null;
+      _barangay.clear();
+    });
+  }
+
+  Future<void> _pickBarangay() async {
+    final city = _cityOption;
+    if (city == null) {
+      _toast('Select your city first');
+      return;
+    }
+    final picked = await showPsgcPicker(
+      context,
+      title: 'Select barangay',
+      load: () => PsgcService.instance.barangays(city.code),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _barangayOption = picked;
+      _barangay.text = picked.name;
+    });
+  }
+
   Future<void> _submit() async {
     if (!_profileKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -87,11 +155,11 @@ class _SignupScreenState extends State<SignupScreen> {
       role: _role,
       profile: {
         'age': int.tryParse(_age.text.trim()),
-        'phone': '+63' + _phone.text.trim(),
+        'phone': Phone.toE164(_phone.text),
         'houseStreet': _houseStreet.text.trim(),
-        'barangay': _barangay.text.trim(),
-        'city': _city.text.trim(),
-        'province': _province.text.trim(),
+        'barangay': _barangayOption?.name ?? '',
+        'city': _cityOption?.name ?? '',
+        'province': _provinceOption?.name ?? '',
       },
     );
 
@@ -428,26 +496,15 @@ class _SignupScreenState extends State<SignupScreen> {
                 flex: 2,
                 child: AppTextField(
                   label: 'Phone number',
-                  hint: '912 345 6789',
+                  hint: '09XX XXX XXXX',
                   controller: _phone,
                   keyboardType: TextInputType.phone,
                   textInputAction: TextInputAction.next,
                   inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')),
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(11),
                   ],
-                  prefix: const Text(
-                    '+63',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  validator: (v) {
-                    final digits = (v ?? '').replaceAll(' ', '');
-                    if (digits.length < 10) return 'Enter a valid number';
-                    return null;
-                  },
+                  validator: Phone.validate,
                 ),
               ),
             ],
@@ -464,36 +521,38 @@ class _SignupScreenState extends State<SignupScreen> {
                 : null,
           ),
           const SizedBox(height: 14),
-          AppTextField(
-            label: 'Barangay',
-            hint: 'Barangay',
-            controller: _barangay,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
+          PsgcField(
+            label: 'Province',
+            hint: 'Select province',
+            controller: _province,
+            onTap: _pickProvince,
             validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please enter your barangay'
+                ? 'Please select your province'
                 : null,
           ),
           const SizedBox(height: 14),
-          AppTextField(
+          PsgcField(
             label: 'City',
-            hint: 'City',
+            hint: _provinceOption == null
+                ? 'Select province first'
+                : 'Select city / municipality',
             controller: _city,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
+            enabled: _provinceOption != null,
+            onTap: _pickCity,
             validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Please enter your city' : null,
+                (v == null || v.trim().isEmpty) ? 'Please select your city' : null,
           ),
           const SizedBox(height: 14),
-          AppTextField(
-            label: 'Province',
-            hint: 'Province',
-            controller: _province,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _submit(),
+          PsgcField(
+            label: 'Barangay',
+            hint: _cityOption == null
+                ? 'Select city first'
+                : 'Select barangay',
+            controller: _barangay,
+            enabled: _cityOption != null,
+            onTap: _pickBarangay,
             validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please enter your province'
+                ? 'Please select your barangay'
                 : null,
           ),
           const SizedBox(height: 26),

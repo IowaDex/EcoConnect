@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/phone.dart';
 import '../../../core/widgets/user_avatar.dart';
 
 /// Opens the editable profile sheet: avatar, address and mobile number.
@@ -46,7 +47,8 @@ class _ProfileSheetState extends State<_ProfileSheet> {
     super.initState();
     final user = widget.auth.currentUser;
     _addressController = TextEditingController(text: user?.houseStreet ?? '');
-    _phoneController = TextEditingController(text: user?.phone ?? '');
+    _phoneController =
+        TextEditingController(text: Phone.localDigits(user?.phone));
     _photoUrl = user?.photoUrl;
   }
 
@@ -81,9 +83,18 @@ class _ProfileSheetState extends State<_ProfileSheet> {
   }
 
   Future<void> _save() async {
+    final digits = _phoneController.text.trim();
+    if (digits.isNotEmpty) {
+      final error = Phone.validate(digits);
+      if (error != null) {
+        _toast(error);
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     final ok = await widget.auth.updateProfile(
-      phone: _phoneController.text.trim(),
+      phone: digits.isEmpty ? null : Phone.toE164(digits),
       houseStreet: _addressController.text.trim(),
       photoUrl: _photoUrl,
     );
@@ -168,11 +179,12 @@ class _ProfileSheetState extends State<_ProfileSheet> {
             const SizedBox(height: 12),
             _ProfileField(
               label: 'Mobile number',
-              hint: 'Add your number',
+              hint: '09XX XXX XXXX',
               controller: _phoneController,
               keyboardType: TextInputType.phone,
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-() ]')),
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(11),
               ],
             ),
             const SizedBox(height: 24),

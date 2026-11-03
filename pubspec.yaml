@@ -18,6 +18,9 @@ dependencies:
   firebase_auth: ^4.17.4
   cloud_firestore: ^4.15.4
 
+  # Networking
+  http: ^1.2.0
+
   # Location services
   geolocator: ^10.1.0
   permission_handler: ^11.1.0
