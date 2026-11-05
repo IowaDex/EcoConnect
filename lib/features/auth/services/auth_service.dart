@@ -153,6 +153,19 @@ class AuthService {
   // location) before calling this.
   Future<void> logout() => _auth.signOut();
 
+  // Sends Firebase's password reset email. An unknown address is treated as
+  // success so the screen cannot be used to find out who has an account.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
+      AppLogger.info('Password reset requested');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') return;
+      AppLogger.error('Password reset failed (${e.code})', e.message);
+      rethrow;
+    }
+  }
+
   // Resend email verification by signing in temporarily
   Future<void> resendVerificationEmail(String email, String password) async {
     final credential = await _auth.signInWithEmailAndPassword(

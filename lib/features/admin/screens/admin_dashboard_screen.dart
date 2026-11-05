@@ -10,6 +10,7 @@ import '../../incident/services/incident_service.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/confirm_logout.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -36,6 +37,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _logout() async {
+    if (!await confirmLogout(context) || !mounted) return;
     final authProvider = context.read<AuthProvider>();
     // Delete the shared pin while still signed in; rules reject it afterwards.
     await context.read<LocationProvider>().endSession();

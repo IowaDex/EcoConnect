@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/auth_provider.dart';
+import 'features/auth/screens/forgot_password_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/user/screens/user_screen.dart';
@@ -63,7 +64,9 @@ String? authRedirect({
   // logged-in user never sees the login screen flash.
   if (!initialized) return location == '/splash' ? null : '/splash';
 
-  final isAuthRoute = location == '/login' || location == '/signup';
+  final isAuthRoute = location == '/login' ||
+      location == '/signup' ||
+      location == '/forgot-password';
 
   if (role == null) return isAuthRoute ? null : '/login';
   if (isAuthRoute || location == '/splash') return _homeFor(role);
@@ -101,6 +104,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
+        GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
         GoRoute(path: '/driver', builder: (_, __) => const DriverScreen()),
         GoRoute(path: '/admin-dashboard', builder: (_, __) => const AdminDashboardScreen()),

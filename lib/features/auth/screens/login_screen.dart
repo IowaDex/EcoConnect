@@ -192,14 +192,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () => _snack('Password reset coming soon'),
+                              onPressed: () => context.go('/forgot-password'),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.only(top: 6, bottom: 2),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: const Text(
-                                'forgot password',
+                                'Forgot password?',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w500,

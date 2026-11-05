@@ -12,6 +12,7 @@ import '../../location/providers/location_provider.dart';
 import '../../location/widgets/location_controls.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
@@ -388,27 +389,12 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-          'If your route is running, end it first so residents stop seeing '
-          'your location.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Stay'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Log out'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmLogout(
+      context,
+      message: 'If your route is running, end it first so residents stop '
+          'seeing your location.',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final uid = _uid;
     _broadcastTimer?.cancel();

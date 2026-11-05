@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 
@@ -143,6 +144,24 @@ class AuthProvider extends ChangeNotifier {
     required Future<void> Function() deleteLocationData,
   }) =>
       _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
+
+  /// Returns an error message to show, or null when the reset email was sent.
+  Future<String?> sendPasswordReset(String email) async {
+    try {
+      await _authService.sendPasswordReset(email);
+      return null;
+    } on FirebaseAuthException catch (e) {
+      return switch (e.code) {
+        'invalid-email' => 'Please enter a valid email address.',
+        'too-many-requests' => 'Too many attempts. Please try again later.',
+        'network-request-failed' => 'No connection. Check your internet and retry.',
+        _ => 'Could not send the reset email. Please try again.',
+      };
+    } catch (e) {
+      AppLogger.error('Password reset request failed', e);
+      return 'Could not send the reset email. Please try again.';
+    }
+  }
 
   Future<void> resendVerificationEmail(String email, String password) =>
       _authService.resendVerificationEmail(email, password);

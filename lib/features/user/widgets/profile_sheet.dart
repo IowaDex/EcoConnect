@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/confirm_logout.dart';
 import '../../auth/utils/phone.dart';
 import 'user_avatar.dart';
 
@@ -121,6 +122,7 @@ class _ProfileSheetState extends State<_ProfileSheet> {
   }
 
   Future<void> _logOut() async {
+    if (!await confirmLogout(context) || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final location = context.read<LocationProvider>();
     Navigator.of(context).pop();
