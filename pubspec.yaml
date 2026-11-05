@@ -38,6 +38,12 @@ dependencies:
 
   # UI
   google_fonts: ^6.1.0
+  image_picker: ^1.2.4
+  image: ^4.12.0
+  video_player: ^2.14.1
+
+  # Networking
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:

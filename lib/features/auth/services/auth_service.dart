@@ -4,7 +4,13 @@ import '../models/user.dart';
 import '../../../core/utils/app_logger.dart';
 export '../models/user.dart';
 
-enum AuthErrorType { emailNotFound, wrongPassword, emailNotVerified, accountRemoved }
+enum AuthErrorType {
+  emailNotFound,
+  wrongPassword,
+  emailNotVerified,
+  accountRemoved,
+  accountPending,
+}
 
 class AuthException implements Exception {
   final AuthErrorType type;
@@ -38,6 +44,7 @@ class AuthService {
     final data = doc.data();
     if (data == null) return null;
     final roleStr = data['role'] ?? 'user';
+    final rawAge = data['age'];
     return AppUser(
       uid: firebaseUser.uid,
       email: firebaseUser.email,
@@ -47,6 +54,14 @@ class AuthService {
         (e) => e.name == roleStr,
         orElse: () => UserRole.user,
       ),
+      accountStatus: data['accountStatus'] as String? ?? 'active',
+      age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
+      phone: data['phone'] as String?,
+      photoUrl: data['photoUrl'] as String?,
+      houseStreet: data['houseStreet'] as String?,
+      barangay: data['barangay'] as String?,
+      city: data['city'] as String?,
+      province: data['province'] as String?,
     );
   }
 
@@ -56,6 +71,7 @@ class AuthService {
     required String password,
     required String name,
     required UserRole role,
+    Map<String, dynamic>? profile,
   }) async {
     // Create Firebase user
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -76,6 +92,9 @@ class AuthService {
       'role': role.name,
       'createdAt': FieldValue.serverTimestamp(),
       'emailVerified': false,
+      // Drivers and barangay staff need approval before they can sign in.
+      'accountStatus': role == UserRole.user ? 'active' : 'pending',
+      if (profile != null) ...profile,
     });
 
     // Do not keep them logged in until email is verified
@@ -105,7 +124,14 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountRemoved);
       }
 
-      if (!credential.user!.emailVerified && appUser.role != UserRole.admin) {
+      if (appUser.isPendingApproval) {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.accountPending);
+      }
+
+      // Residents must verify their email. Drivers and staff are provisioned
+      // by the barangay, so staff approval (accountStatus) is the gate instead.
+      if (!credential.user!.emailVerified && appUser.role == UserRole.user) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.emailNotVerified);
       }
@@ -138,6 +164,40 @@ class AuthService {
     AppLogger.info('Verification email resent');
   }
 
+  // Append-only record of admin actions. Written before the action, so a failed
+  // log stops the change instead of leaving it untracked.
+  Future<void> _audit(String action, String targetUid) {
+    return _firestore.collection('admin_audit').add({
+      'action': action,
+      'targetUid': targetUid,
+      'actorUid': _auth.currentUser?.uid,
+      'at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Persist profile edits made from the profile sheet.
+  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
+    await _firestore.collection('users').doc(uid).update(data);
+  }
+
+  // Accounts waiting for barangay staff approval
+  Future<List<Map<String, dynamic>>> getPendingAccounts() async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('accountStatus', isEqualTo: 'pending')
+        .get();
+    return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
+  }
+
+  // Approve a driver / staff account
+  Future<void> approveAccount(String uid) async {
+    await _audit('approve', uid);
+    await _firestore.collection('users').doc(uid).update({
+      'accountStatus': 'active',
+      'approvedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // Get all users (for admin panel)
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     final snapshot = await _firestore.collection('users').get();
@@ -149,6 +209,7 @@ class AuthService {
 
   // Update user role (for admin)
   Future<void> updateUserRole(String uid, UserRole role) async {
+    await _audit('role:${role.name}', uid);
     await _firestore.collection('users').doc(uid).update({
       'role': role.name,
     });
@@ -162,6 +223,7 @@ class AuthService {
     String uid, {
     required Future<void> Function() deleteLocationData,
   }) async {
+    await _audit('delete', uid);
     // Tombstone first: the rules then refuse to let them re-create a profile.
     await _firestore.collection('removed_users').doc(uid).set({
       'removedAt': FieldValue.serverTimestamp(),

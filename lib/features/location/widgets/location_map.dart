@@ -4,7 +4,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/location_provider.dart';
-import '../../auth/services/auth_service.dart';
 import '../models/shared_location.dart';
 
 class LocationMap extends StatefulWidget {

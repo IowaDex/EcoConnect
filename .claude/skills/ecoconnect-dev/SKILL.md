@@ -19,7 +19,8 @@ lib/
     models/  providers/  repositories/  services/  database/  widgets/  screens/
 ```
 
-Create only the subfolders a feature needs. Today: `auth`, `location`, `admin`,
+Create only the subfolders a feature needs. Today: `auth`, `location`, `route`,
+`recycling`, `incident`, `staff`, `tracking`, `community`, `alerts`, `ai`, `admin`,
 `user`, `driver`, `splash`. `user`, `driver` and `admin` are role screens whose
 real features are still to come; the user and driver screens look alike only
 because they are placeholders, so do not merge them.
@@ -103,3 +104,9 @@ Commit or push only when asked.
 - Open item: the auth module (A1) still mixes session handling with admin user
   management in `AuthService`, and has no tests. Prefer fixing that before
   adding more auth features.
+- Admin roles: the first admin is promoted by hand in the Firebase console
+  (set `role: "admin"` on their `users/{uid}` doc); after that admins promote
+  others in the app. Role changes, approvals and deletes are logged to the
+  append-only `admin_audit` collection.
+- Avatars are inline base64 in `users/{uid}.photoUrl`, capped at 150 KB by the
+  rules. Move them to Firebase Storage if profiles grow.

@@ -2,7 +2,6 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../auth/services/auth_service.dart';
 import '../../location/repositories/location_repository.dart';
 import '../../../core/utils/app_logger.dart';
 
@@ -31,7 +30,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _error = null;
     });
     try {
-      final users = await AuthService().getAllUsers();
+      final users = await context.read<AuthProvider>().getAllUsers();
       if (!mounted) return;
       setState(() {
         _allUsers = users;
@@ -61,7 +60,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   Future<void> _setRole(String uid, UserRole newRole) async {
     try {
-      await AuthService().updateUserRole(uid, newRole);
+      await context.read<AuthProvider>().updateUserRole(uid, newRole);
     } catch (e) {
       AppLogger.error('Role update failed', e);
       _showResult('Could not change role (${_reason(e)}).', success: false);
@@ -98,7 +97,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() => _isLoading = true);
     String? failure;
     try {
-      await AuthService().deleteUser(
+      await context.read<AuthProvider>().deleteUser(
         uid,
         deleteLocationData: () => LocationRepository().deleteAllFor(uid),
       );

@@ -64,8 +64,51 @@ test('only verified accounts can read shared locations', async () => {
 });
 
 test('signup cannot choose the admin role', async () => {
-  await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin'}));
-  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user'}));
+  await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin', accountStatus: 'active'}));
+  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'active'}));
+});
+
+test('signup cannot skip approval, self-credit points or upload a huge photo', async () => {
+  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active'}));
+  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'active', points: 999}));
+  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'active', photoUrl: 'x'.repeat(150000)}));
+  await assertSucceeds(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
+});
+
+test('users cannot approve themselves, edit points or set a huge photo', async () => {
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'users/pd'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(updateDoc(doc(as('pd'), 'users/pd'), {accountStatus: 'active'}));
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {points: 100}));
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {photoUrl: 'x'.repeat(150000)}));
+  await assertSucceeds(updateDoc(doc(as('alice'), 'users/alice'), {photoUrl: 'data:image/jpeg;base64,AAAA'}));
+  await assertSucceeds(updateDoc(doc(as('root'), 'users/pd'), {accountStatus: 'active'}));
+});
+
+test('a pending driver cannot publish a route, plan or shared location until approved', async () => {
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'users/pd'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
+  const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
+  const plan = {driverId: 'pd', adHoc: true, status: 'scheduled'};
+  await assertFails(setDoc(doc(as('pd'), 'routes/pd'), live));
+  await assertFails(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
+  await assertFails(setDoc(doc(as('pd'), 'shared_locations/pd'), shared('driver')));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'users/pd'), {accountStatus: 'active'}));
+  await assertSucceeds(setDoc(doc(as('pd'), 'routes/pd'), live));
+  await assertSucceeds(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
+  await assertSucceeds(setDoc(doc(as('pd'), 'shared_locations/pd'), shared('driver')));
+});
+
+test('only admins write the audit log, only as themselves, and entries are permanent', async () => {
+  const entry = (actorUid) => ({action: 'approve', targetUid: 'dan', actorUid});
+  await assertFails(setDoc(doc(as('alice'), 'admin_audit/a1'), entry('alice')));
+  await assertFails(setDoc(doc(as('root'), 'admin_audit/a1'), entry('someone-else')));
+  await assertSucceeds(setDoc(doc(as('root'), 'admin_audit/a1'), entry('root')));
+  await assertFails(updateDoc(doc(as('root'), 'admin_audit/a1'), {action: 'x'}));
+  await assertFails(deleteDoc(doc(as('root'), 'admin_audit/a1')));
+  await assertFails(getDoc(doc(as('alice'), 'admin_audit/a1')));
+  await assertSucceeds(getDoc(doc(as('root'), 'admin_audit/a1')));
 });
 
 test('users cannot change their own role but can edit other fields', async () => {

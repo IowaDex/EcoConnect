@@ -22,5 +22,16 @@ void main() {
 
   test('logged-in users stay on their own pages', () {
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/user'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/wallet'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/routes'), isNull);
+  });
+
+  test('a role cannot open another role\'s pages by typing the URL', () {
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/incidents'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/admin'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/user'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/pending-accounts'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/wallet'), '/admin-dashboard');
   });
 }
