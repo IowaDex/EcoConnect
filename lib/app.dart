@@ -10,6 +10,7 @@ import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/alerts/screens/alerts_screen.dart';
 import 'features/community/screens/community_screen.dart';
 import 'features/admin/screens/admin_panel_screen.dart';
+import 'features/admin/screens/live_routes_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
@@ -56,6 +57,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
     '/routes',
     '/dropoff',
     '/tracking',
+    '/live-routes',
   };
 
   static String _homeFor(UserRole? role) => switch (role) {
@@ -126,6 +128,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
             path: '/admin-dashboard',
             builder: (_, __) => const AdminDashboardScreen()),
         GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
+        GoRoute(
+            path: '/live-routes',
+            builder: (_, __) => const LiveRoutesScreen()),
       ],
     );
   }

@@ -38,7 +38,19 @@ class RouteService {
         .snapshots()
         .map((snap) => snap.docs.isEmpty
             ? null
-            : CollectionRoute.fromDoc(snap.docs.first.id, snap.docs.first.data()));
+            : CollectionRoute.fromDoc(
+                snap.docs.first.id, snap.docs.first.data()));
+  }
+
+  /// Every driver currently collecting, for the staff dispatch map.
+  Stream<List<CollectionRoute>> watchLiveRoutes() {
+    return _routes
+        .where('status', whereIn: ['inTransit', 'delayed'])
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => CollectionRoute.fromDoc(doc.id, doc.data()))
+            .whereType<CollectionRoute>()
+            .toList());
   }
 
   Stream<CollectionRoute?> watchDriverRoute(String driverId) {
@@ -80,13 +92,14 @@ class RouteService {
   Stream<List<RoutePlan>> watchPlansForToday() {
     final today = routeDateKey(DateTime.now());
     return _plans.where('date', isEqualTo: today).snapshots().map((snap) {
-      final plans = snap.docs
-          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final byWindow = a.windowStart.compareTo(b.windowStart);
-          return byWindow != 0 ? byWindow : a.driverName.compareTo(b.driverName);
-        });
+      final plans =
+          snap.docs.map((doc) => RoutePlan.fromDoc(doc.id, doc.data())).toList()
+            ..sort((a, b) {
+              final byWindow = a.windowStart.compareTo(b.windowStart);
+              return byWindow != 0
+                  ? byWindow
+                  : a.driverName.compareTo(b.driverName);
+            });
       return plans;
     });
   }
@@ -200,8 +213,8 @@ class RouteService {
       final current = routeSnap.data();
       if (current != null) {
         final status = RouteStatusX.fromName(current['status'] as String?);
-        final running = status == RouteStatus.inTransit ||
-            status == RouteStatus.delayed;
+        final running =
+            status == RouteStatus.inTransit || status == RouteStatus.delayed;
         if (running && !CollectionRoute.isStaleData(current)) {
           throw const RouteActivationException(
             'already-running',
@@ -259,12 +272,15 @@ class RouteService {
   /// Closes the run and marks the assignment completed in the same batch.
   Future<void> endRoute(String driverId, {String? planId}) async {
     final batch = _db.batch();
-    batch.set(_routes.doc(driverId), {
-      'status': RouteStatus.completed.name,
-      'endedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'lastSeenAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    batch.set(
+        _routes.doc(driverId),
+        {
+          'status': RouteStatus.completed.name,
+          'endedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastSeenAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true));
     if (planId != null) {
       batch.update(_plans.doc(planId), {
         'status': RoutePlanStatus.completed.name,

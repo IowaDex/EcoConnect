@@ -46,118 +46,251 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Hero(
+              name: user?.displayName ?? 'Staff',
+              routeStream: _routeStream,
+              onLogout: _logout,
+              onAssign: () => context.go('/routes'),
+              onOpenMap: () => context.push('/live-routes'),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                22,
+                22,
+                22,
+                MediaQuery.paddingOf(context).bottom + 28,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  InkWell(
-                    onTap: _logout,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.logout_rounded,
-                          size: 18, color: AppColors.inkMuted),
-                    ),
+                  const _SectionLabel('NEEDS ATTENTION'),
+                  const SizedBox(height: 12),
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _pendingFuture,
+                    builder: (context, snapshot) {
+                      final count = snapshot.data?.length ?? 0;
+                      return _PendingCard(
+                        count: count,
+                        loading:
+                            snapshot.connectionState == ConnectionState.waiting,
+                        onTap: () => context.go('/pending-accounts'),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 22),
+                  StreamBuilder<List<Incident>>(
+                    stream: _incidentStream,
+                    builder: (context, snapshot) {
+                      final pending = (snapshot.data ?? const <Incident>[])
+                          .where((i) => i.status == IncidentStatus.pending)
+                          .length;
+                      return _QuickActions(
+                        incidentBadge: pending,
+                        onIncidents: () => context.go('/incidents'),
+                        onRoutes: () => context.go('/routes'),
+                        onRecycling: () => context.go('/dropoff'),
+                        onUsers: () => context.go('/admin'),
+                      );
+                    },
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              const Text(
-                'Barangay staff',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dark hero: wordmark, sign-out, title and the live-route card.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.name,
+    required this.routeStream,
+    required this.onLogout,
+    required this.onAssign,
+    required this.onOpenMap,
+  });
+
+  final String name;
+  final Stream<CollectionRoute?> routeStream;
+  final VoidCallback onLogout;
+  final VoidCallback onAssign;
+  final VoidCallback onOpenMap;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(22, topInset + 16, 22, 20),
+      decoration: const BoxDecoration(
+        gradient: AppColors.forestGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
+              const Spacer(),
+              InkWell(
+                onTap: onLogout,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  height: 38,
+                  width: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.creamBright.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    size: 18,
+                    color: AppColors.creamBright,
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                user?.displayName ?? 'Staff',
-                style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-              ),
-              const SizedBox(height: 20),
-              StreamBuilder<List<Incident>>(
-                stream: _incidentStream,
-                builder: (context, snapshot) {
-                  final pending = (snapshot.data ?? const <Incident>[])
-                      .where((i) => i.status == IncidentStatus.pending)
-                      .length;
-                  return _ActionTile(
-                    icon: Icons.report_outlined,
-                    title: 'Incident desk',
-                    subtitle: snapshot.hasData
-                        ? pending.toString() +
-                            (pending == 1 ? ' report needs review' : ' reports need review')
-                        : 'Loading reports…',
-                    accent: pending > 0,
-                    onTap: () => context.go('/incidents'),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              FutureBuilder<List<Map<String, dynamic>>>(
-                future: _pendingFuture,
-                builder: (context, snapshot) {
-                  final count = snapshot.data?.length ?? 0;
-                  return _ActionTile(
-                    icon: Icons.how_to_reg_outlined,
-                    title: 'Pending accounts',
-                    subtitle: snapshot.connectionState == ConnectionState.waiting
-                        ? 'Loading accounts…'
-                        : count.toString() +
-                            (count == 1 ? ' account awaiting approval' : ' accounts awaiting approval'),
-                    accent: count > 0,
-                    onTap: () => context.go('/pending-accounts'),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              StreamBuilder<CollectionRoute?>(
-                stream: _routeStream,
-                builder: (context, snapshot) {
-                  final route = snapshot.data;
-                  return _ActionTile(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'Live routes',
-                    subtitle: route != null
-                        ? '${route.driverName} · '
-                            '${route.isStale ? 'signal lost' : route.status.label}'
-                        : 'No driver is collecting right now',
-                    accent: route != null,
-                    onTap: () => context.go('/tracking'),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _ActionTile(
-                icon: Icons.route_outlined,
-                title: 'Route assignments',
-                subtitle: 'Assign today’s collection runs to drivers',
-                onTap: () => context.go('/routes'),
-              ),
-              const SizedBox(height: 12),
-              _ActionTile(
-                icon: Icons.recycling_outlined,
-                title: 'Recycling drop-off',
-                subtitle: 'Weigh recyclables and credit resident points',
-                onTap: () => context.go('/dropoff'),
-              ),
-              const SizedBox(height: 12),
-              _ActionTile(
-                icon: Icons.manage_accounts_outlined,
-                title: 'Manage users',
-                subtitle: 'Roles, accounts and access',
-                onTap: () => context.go('/admin'),
-              ),
-              const SizedBox(height: 22),
-              const _RoadmapCard(),
             ],
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Barangay staff',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              height: 1.15,
+              color: AppColors.creamBright,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            name,
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.creamBright.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 18),
+          _LiveRoutesCard(
+            routeStream: routeStream,
+            onAssign: onAssign,
+            onOpenMap: onOpenMap,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveRoutesCard extends StatelessWidget {
+  const _LiveRoutesCard({
+    required this.routeStream,
+    required this.onAssign,
+    required this.onOpenMap,
+  });
+
+  final Stream<CollectionRoute?> routeStream;
+  final VoidCallback onAssign;
+  final VoidCallback onOpenMap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.creamBright,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 92,
+            child: GestureDetector(
+              onTap: onOpenMap,
+              behavior: HitTestBehavior.opaque,
+              child: const _MapPreview(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: StreamBuilder<CollectionRoute?>(
+              stream: routeStream,
+              builder: (context, snapshot) {
+                final route = snapshot.data;
+                final subtitle = route == null
+                    ? 'No driver is collecting right now'
+                    : '${route.driverName} · ${route.isStale ? 'signal lost' : route.status.label}';
+
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Live routes',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _AssignButton(onTap: onAssign),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssignButton extends StatelessWidget {
+  const _AssignButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.forest,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'Assign runs',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.creamBright,
           ),
         ),
       ),
@@ -165,59 +298,174 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.accent = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final bool accent;
+/// Stylised map tile behind the live-route summary.
+class _MapPreview extends StatelessWidget {
+  const _MapPreview();
 
   @override
   Widget build(BuildContext context) {
+    return const CustomPaint(
+      painter: _MapPainter(),
+      child: SizedBox.expand(),
+    );
+  }
+}
+
+class _MapPainter extends CustomPainter {
+  const _MapPainter();
+
+  static const _ground = Color(0xFFE9F3DD);
+  static const _dash = Color(0xFFCBD9BC);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    canvas.drawRect(Offset.zero & size, Paint()..color = _ground);
+
+    final road = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Main avenue across the tile.
+    road.strokeWidth = 15;
+    canvas.drawLine(Offset(-4, h * 0.34), Offset(w + 4, h * 0.58), road);
+
+    // Cross street.
+    road.strokeWidth = 11;
+    canvas.drawLine(Offset(w * 0.3, -4), Offset(w * 0.36, h + 4), road);
+
+    // Side street near the bottom.
+    road.strokeWidth = 7;
+    canvas.drawLine(Offset(-4, h * 0.9), Offset(w + 4, h * 0.78), road);
+
+    final dash = Paint()
+      ..color = _dash
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+
+    _dashed(canvas, Offset(-4, h * 0.34), Offset(w + 4, h * 0.58), dash);
+    _dashed(canvas, Offset(w * 0.3, -4), Offset(w * 0.36, h + 4), dash);
+
+    // Location pin.
+    final centre = Offset(w * 0.55, h * 0.46);
+    canvas.drawCircle(
+      centre,
+      13,
+      Paint()..color = AppColors.forest.withValues(alpha: 0.16),
+    );
+    canvas.drawCircle(centre, 7.5, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      centre,
+      7.5,
+      Paint()
+        ..color = AppColors.forest
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4,
+    );
+    canvas.drawCircle(centre, 2.4, Paint()..color = AppColors.forest);
+  }
+
+  void _dashed(Canvas canvas, Offset from, Offset to, Paint paint) {
+    const dash = 6.0;
+    const gap = 6.0;
+    final total = (to - from).distance;
+    if (total == 0) return;
+    final step = (to - from) / total;
+
+    var travelled = 0.0;
+    while (travelled < total) {
+      final end = (travelled + dash).clamp(0.0, total);
+      canvas.drawLine(
+        from + step * travelled,
+        from + step * end,
+        paint,
+      );
+      travelled += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MapPainter oldDelegate) => false;
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 9.5,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.1,
+        color: AppColors.inkMuted,
+      ),
+    );
+  }
+}
+
+class _PendingCard extends StatelessWidget {
+  const _PendingCard({
+    required this.count,
+    required this.loading,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool loading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = loading
+        ? 'Loading accounts…'
+        : count.toString() +
+            (count == 1
+                ? ' account awaiting approval'
+                : ' accounts awaiting approval');
+
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         decoration: BoxDecoration(
-          color: accent ? AppColors.mint : AppColors.cream,
-          borderRadius: BorderRadius.circular(18),
+          color: AppColors.creamBright,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: accent ? AppColors.forest : AppColors.sage.withValues(alpha: 0.8),
-            width: accent ? 1.3 : 1,
+            color: AppColors.forest.withValues(alpha: 0.45),
+            width: 1.2,
           ),
         ),
         child: Row(
           children: [
             Container(
-              height: 40,
-              width: 40,
-              decoration: BoxDecoration(
-                color: accent ? AppColors.forest : AppColors.mint,
+              height: 38,
+              width: 38,
+              decoration: const BoxDecoration(
+                color: AppColors.mint,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                icon,
-                size: 19,
-                color: accent ? Colors.white : AppColors.forest,
+              child: const Icon(
+                Icons.person_add_alt_1_rounded,
+                size: 18,
+                color: AppColors.forest,
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
+                  const Text(
+                    'Pending accounts',
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: AppColors.forest,
@@ -234,8 +482,32 @@ class _ActionTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.moss),
+            if (count > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                height: 22,
+                width: 22,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppColors.danger,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  count.toString(),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.moss,
+            ),
           ],
         ),
       ),
@@ -243,38 +515,139 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-class _RoadmapCard extends StatelessWidget {
-  const _RoadmapCard();
+class _QuickActions extends StatelessWidget {
+  const _QuickActions({
+    required this.incidentBadge,
+    required this.onIncidents,
+    required this.onRoutes,
+    required this.onRecycling,
+    required this.onUsers,
+  });
+
+  final int incidentBadge;
+  final VoidCallback onIncidents;
+  final VoidCallback onRoutes;
+  final VoidCallback onRecycling;
+  final VoidCallback onUsers;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.cream,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.6)),
-      ),
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickTile(
+            icon: Icons.error_outline_rounded,
+            label: 'Incidents',
+            badge: incidentBadge,
+            onTap: onIncidents,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickTile(
+            icon: Icons.route_rounded,
+            label: 'Routes',
+            onTap: onRoutes,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickTile(
+            icon: Icons.recycling_rounded,
+            label: 'Recycling',
+            onTap: onRecycling,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _QuickTile(
+            icon: Icons.person_add_alt_1_rounded,
+            label: 'Users',
+            onTap: onUsers,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickTile extends StatelessWidget {
+  const _QuickTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.badge = 0,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final int badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Next up',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: AppColors.forest,
+          SizedBox(
+            height: 56,
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.cream,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.sage.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(icon, size: 20, color: AppColors.forest),
+                      ),
+                    ),
+                    if (badge > 0)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          height: 14,
+                          constraints: const BoxConstraints(minWidth: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppColors.danger,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            badge > 9 ? '9+' : badge.toString(),
+                            style: const TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 7),
           Text(
-            'Zone & schedule assignment, recycling drop-off points and campaign '
-            'management are not wired to Firestore yet.',
-            style: TextStyle(
-              fontSize: 9.5,
-              height: 1.5,
-              color: AppColors.forest.withValues(alpha: 0.75),
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w500,
+              color: AppColors.inkMuted,
             ),
           ),
         ],
