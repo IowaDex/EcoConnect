@@ -513,17 +513,6 @@ class _SignupScreenState extends State<SignupScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          AppTextField(
-            label: 'House no/Unit/street',
-            hint: 'House no/Unit/street',
-            controller: _houseStreet,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please enter your street address'
-                : null,
-          ),
-          const SizedBox(height: 14),
           PsgcField(
             label: 'Province',
             hint: 'Select province',
@@ -556,6 +545,17 @@ class _SignupScreenState extends State<SignupScreen> {
             onTap: _pickBarangay,
             validator: (v) => (v == null || v.trim().isEmpty)
                 ? 'Please select your barangay'
+                : null,
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
+            label: 'House no/Unit/street',
+            hint: 'House no/Unit/street',
+            controller: _houseStreet,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Please enter your street address'
                 : null,
           ),
           const SizedBox(height: 26),

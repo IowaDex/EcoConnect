@@ -83,7 +83,7 @@ class AppUser {
   }
 
   String get fullAddress {
-    final parts = [houseStreet, barangay, city, province]
+    final parts = [province, city, barangay, houseStreet]
         .where((p) => p != null && p.trim().isNotEmpty)
         .cast<String>();
     return parts.isEmpty ? 'No address on file' : parts.join(', ');

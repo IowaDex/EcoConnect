@@ -9,14 +9,14 @@ void main() {
   });
 
   test('a restored session skips the login screen', () {
-    expect(authRedirect(initialized: true, role: UserRole.user, location: '/splash'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/splash'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/login'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/forgot-password'), '/user');
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), '/admin-dashboard');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), isNull);
   });
 
   test('no session goes to login and stays on auth screens', () {
-    expect(authRedirect(initialized: true, role: null, location: '/splash'), '/login');
+    expect(authRedirect(initialized: true, role: null, location: '/splash'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/user'), '/login');
     expect(authRedirect(initialized: true, role: null, location: '/signup'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/forgot-password'), isNull);

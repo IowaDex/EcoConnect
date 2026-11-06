@@ -52,7 +52,13 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _next() {
     if (!mounted) return;
-    final user = context.read<AuthProvider>().currentUser;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isInitialized) {
+      // Session still restoring; /login would bounce back here, so wait.
+      _timer = Timer(const Duration(milliseconds: 200), _next);
+      return;
+    }
+    final user = auth.currentUser;
     if (user == null) {
       context.go('/login');
       return;

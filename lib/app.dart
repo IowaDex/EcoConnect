@@ -63,13 +63,15 @@ String? authRedirect({
   // Stay on the splash until the saved session is restored, so a
   // logged-in user never sees the login screen flash.
   if (!initialized) return location == '/splash' ? null : '/splash';
+  // The splash plays its animation, then navigates itself (see SplashScreen._next).
+  if (location == '/splash') return null;
 
   final isAuthRoute = location == '/login' ||
       location == '/signup' ||
       location == '/forgot-password';
 
   if (role == null) return isAuthRoute ? null : '/login';
-  if (isAuthRoute || location == '/splash') return _homeFor(role);
+  if (isAuthRoute) return _homeFor(role);
   // A driver must not reach the staff desk by typing the URL, and vice versa.
   if (!_allowedFor(role).contains(location)) return _homeFor(role);
   return null;
