@@ -12,8 +12,7 @@ linter:
     always_declare_return_types: true
     avoid_print: warning
     empty_statements: true
-    iterable_contains_unrelated_type: true
-    list_remove_unrelated_type: true
+    collection_methods_unrelated_type: true
 
     # Design rules
     avoid_empty_else: true

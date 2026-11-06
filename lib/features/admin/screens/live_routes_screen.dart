@@ -5,9 +5,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../../core/models/collection_route.dart';
-import '../../../core/models/route_plan.dart';
-import '../../../core/services/route_service.dart';
+import '../../route/models/collection_route.dart';
+import '../../route/models/route_plan.dart';
+import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 
 const _fallbackCentre = LatLng(14.5995, 120.9842);

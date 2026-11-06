@@ -6,10 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
-import '../../../core/providers/auth_provider.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/phone.dart';
-import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/confirm_logout.dart';
+import '../../auth/utils/phone.dart';
+import 'user_avatar.dart';
 
 /// Opens the editable profile sheet: avatar, address and mobile number.
 void showProfileSheet(BuildContext context) {
@@ -120,9 +122,21 @@ class _ProfileSheetState extends State<_ProfileSheet> {
   }
 
   Future<void> _logOut() async {
+    if (!await confirmLogout(context) || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final location = context.read<LocationProvider>();
     Navigator.of(context).pop();
+    // Delete the shared pin while still signed in; rules reject it afterwards.
+    final removed = await location.endSession();
     await widget.auth.logout();
+    if (!removed) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Signed out, but your shared location could not be '
+            'removed. Sign in when online and turn sharing off.'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
     messenger.clearSnackBars();
   }
 

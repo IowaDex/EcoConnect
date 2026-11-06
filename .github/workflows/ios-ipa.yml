@@ -1,0 +1,68 @@
+# Builds an unsigned IPA on a macOS runner. Sign and install it with
+# Sideloadly (free Apple Account) or re-sign it with a paid account.
+name: Build iOS IPA (unsigned)
+
+on:
+  # Push a tag like ios-v1 to build; works from any branch, e.g. test.
+  push:
+    tags:
+      - 'ios-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Third-party and runs next to the DOTENV secret, so pinned to a commit.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+
+      # .env is gitignored but bundled as an asset; it comes from the DOTENV secret.
+      - name: Create .env
+        env:
+          DOTENV: ${{ secrets.DOTENV }}
+        run: |
+          if [ -z "$DOTENV" ]; then
+            echo "::error::Add a DOTENV repository secret with the contents of .env"
+            exit 1
+          fi
+          # Secrets pasted from Windows may carry CRLF line endings.
+          DOTENV="${DOTENV//$'\r'/}"
+          # The app reads these at startup and refuses to start without them.
+          for key in FIREBASE_API_KEY FIREBASE_PROJECT_ID FIREBASE_MESSAGING_SENDER_ID FIREBASE_IOS_APP_ID; do
+            if ! grep -qE "^${key}=[\"']?[^\"'[:space:]]" <<< "$DOTENV"; then
+              echo "::error::DOTENV is missing a value for ${key}"
+              exit 1
+            fi
+          done
+          if grep -qE "=[\"']?your_" <<< "$DOTENV"; then
+            echo "::error::DOTENV still contains README placeholder values (your_...)"
+            exit 1
+          fi
+          printf '%s\n' "$DOTENV" > .env
+
+      - run: flutter pub get
+
+      - run: flutter test
+
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry EcoConnect-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EcoConnect-unsigned-ipa
+          path: EcoConnect-unsigned.ipa
+          retention-days: 7

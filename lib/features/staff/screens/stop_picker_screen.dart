@@ -3,8 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/route_plan.dart';
-import '../../../core/providers/location_provider.dart';
+import '../../route/models/route_plan.dart';
+import '../../location/providers/location_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/primary_button.dart';
 

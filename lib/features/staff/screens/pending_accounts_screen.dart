@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../auth/providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/services/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 
@@ -13,27 +15,27 @@ class PendingAccountsScreen extends StatefulWidget {
 }
 
 class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
-  final _authService = AuthService();
+  AuthProvider get _auth => context.read<AuthProvider>();
   late Future<List<Map<String, dynamic>>> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = _authService.getPendingAccounts();
+    _future = _auth.getPendingAccounts();
   }
 
   void _reload() {
-    setState(() => _future = _authService.getPendingAccounts());
+    setState(() => _future = _auth.getPendingAccounts());
   }
 
   Future<void> _approve(Map<String, dynamic> account) async {
-    await _authService.approveAccount(account['uid'] as String);
+    await _auth.approveAccount(account['uid'] as String);
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(((account['name'] ?? 'Account') as String) + ' approved'),
+          content: Text('${account['name'] ?? 'Account'} approved'),
         ),
       );
     _reload();
@@ -107,7 +109,7 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          'Could not load accounts: ' + snapshot.error.toString(),
+                          'Could not load accounts: ${snapshot.error}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.danger),
@@ -156,9 +158,8 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              ((account['email'] as String?) ?? '') +
-                                  ' · ' +
-                                  (role == 'admin' ? 'Barangay staff' : 'Driver'),
+                              '${(account['email'] as String?) ?? ''} · '
+                              '${role == 'admin' ? 'Barangay staff' : 'Driver'}',
                               style: const TextStyle(
                                   fontSize: 10, color: AppColors.inkMuted),
                             ),

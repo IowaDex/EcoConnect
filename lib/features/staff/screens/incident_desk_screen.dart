@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/models/incident.dart';
-import '../../../core/services/incident_service.dart';
+import '../../incident/models/incident.dart';
+import '../../incident/services/incident_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 
@@ -74,7 +74,7 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          'Could not load reports: ' + snapshot.error.toString(),
+                          'Could not load reports: ${snapshot.error}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.danger),
@@ -167,7 +167,7 @@ class _IncidentTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      incident.residentName + ' · ' + _ago(incident.createdAt),
+                      '${incident.residentName} · ${_ago(incident.createdAt)}',
                       style: const TextStyle(
                           fontSize: 9, color: AppColors.inkMuted),
                     ),
@@ -211,9 +211,8 @@ class _IncidentTile extends StatelessWidget {
                     size: 12, color: AppColors.inkMuted),
                 const SizedBox(width: 4),
                 Text(
-                  incident.latitude!.toStringAsFixed(5) +
-                      ', ' +
-                      incident.longitude!.toStringAsFixed(5),
+                  '${incident.latitude!.toStringAsFixed(5)}, '
+                  '${incident.longitude!.toStringAsFixed(5)}',
                   style: const TextStyle(
                       fontSize: 9, color: AppColors.inkMuted),
                 ),

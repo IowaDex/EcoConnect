@@ -7,55 +7,115 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function myRole() {
-      return signedIn()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : '';
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
     }
 
-    function isStaff() {
-      return signedIn() && myRole() == 'admin';
+    function profile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    // Admin is the `role` field on the user's own profile; signup can't set it.
+    function isAdmin() {
+      return signedIn() && profile(request.auth.uid).role == 'admin';
+    }
+
+    // A deleted user keeps their login, so access also requires a profile.
+    function hasProfile(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    // Drivers start 'pending' and must be approved by an admin. Profiles made
+    // before approval existed have no field and count as active.
+    function isActive() {
+      return signedIn() && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
+    }
+
+    // Avatars are stored inline in the profile, so cap their size.
+    function photoOk(data) {
+      return !('photoUrl' in data) || data.photoUrl == null
+        || (data.photoUrl is string && data.photoUrl.size() < 150000);
+    }
+
+    function isRemoved(uid) {
+      return exists(/databases/$(database)/documents/removed_users/$(uid));
     }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
-      allow create: if signedIn() && request.auth.uid == userId;
-      // A user may edit their own profile but never escalate role or status.
-      allow update: if signedIn() && (
-        (request.auth.uid == userId
+      allow read: if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId)
+        && !isRemoved(userId)
+        // Drivers start 'pending' until an admin approves; nobody self-credits points.
+        && ((request.resource.data.role == 'user'
+              && request.resource.data.accountStatus == 'active')
+            || (request.resource.data.role == 'driver'
+              && request.resource.data.accountStatus == 'pending'))
+        && !('points' in request.resource.data)
+        && photoOk(request.resource.data);
+      allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt']))
-        || isStaff()
-      );
-      allow delete: if isStaff();
+                .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt'])
+          && photoOk(request.resource.data))
+        || isAdmin();
+      // Not their own profile: that would lock the admin out for good.
+      allow delete: if isAdmin() && request.auth.uid != userId;
+
+      match /locations/{locationId} {
+        allow read: if isSelf(userId);
+        // !isRemoved also covers the window while an admin delete is running.
+        allow write: if isSelf(userId) && hasProfile(userId) && !isRemoved(userId);
+        allow read, delete: if isAdmin();
+      }
     }
 
-    // Staff schedule a driver's day here. The driver may only flip their own
-    // assignment from scheduled -> active/completed; everything else is staff.
+    // Written by an admin when deleting a user; blocks re-creating the profile.
+    match /removed_users/{userId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /shared_locations/{userId} {
+      allow read: if signedIn()
+        && request.auth.token.email_verified == true
+        && hasProfile(request.auth.uid);
+      allow create, update: if isSelf(userId)
+        && isActive()
+        && !isRemoved(userId)
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.accuracy is number
+        && request.resource.data.recordedAt is timestamp
+        && request.resource.data.displayName is string
+        && request.resource.data.role == profile(userId).role;
+      allow delete: if isSelf(userId) || isAdmin();
+    }
+
+    // Staff (admin) schedule a driver's day here. The driver may only flip
+    // their own assignment from scheduled -> active/completed.
     match /routePlans/{planId} {
       allow read: if signedIn()
-        && (isStaff() || resource.data.driverId == request.auth.uid);
-      allow create: if isStaff()
-        || (signedIn()
+        && (isAdmin() || resource.data.driverId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isActive()
             && request.resource.data.driverId == request.auth.uid
             && request.resource.data.adHoc == true
             && request.resource.data.status == 'scheduled');
-      allow update: if isStaff()
-        || (signedIn()
+      allow update: if isAdmin()
+        || (isActive()
             && resource.data.driverId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'activatedAt', 'completedAt', 'sessionId'])
             && request.resource.data.status in ['active', 'completed']);
-      allow delete: if isStaff();
+      allow delete: if isAdmin();
     }
 
     // Live driver locations: any signed-in user can watch, only the driver
-    // (or staff) can publish. Drivers cannot rewrite identity fields.
+    // (or an admin) can publish. Drivers cannot rewrite identity fields.
     match /routes/{driverId} {
       allow read: if signedIn();
-      allow create: if signedIn() && (request.auth.uid == driverId || isStaff());
-      allow update: if signedIn() && (
-        (request.auth.uid == driverId
+      allow create: if (isSelf(driverId) && isActive()) || isAdmin();
+      allow update: if (isSelf(driverId)
+          && isActive()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                'status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
                'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
@@ -63,30 +123,37 @@ service cloud.firestore {
              ])
           && request.resource.data.status in
                ['inTransit', 'delayed', 'completed', 'idle'])
-        || isStaff()
-      );
-      allow delete: if isStaff();
+        || isAdmin();
+      allow delete: if isAdmin();
     }
 
     // Recycling station ledger. Staff credit points here; the balance itself
-    // lives on users/{uid}.points and can only be changed by staff.
+    // lives on users/{uid}.points and can only be changed by an admin.
     match /dropOffs/{dropOffId} {
       allow read: if signedIn()
-        && (isStaff() || resource.data.residentId == request.auth.uid);
-      allow create: if isStaff()
+        && (isAdmin() || resource.data.residentId == request.auth.uid);
+      allow create: if isAdmin()
         && request.resource.data.points is int
         && request.resource.data.points > 0
         && request.resource.data.weightKg is number
         && request.resource.data.weightKg > 0;
-      allow update, delete: if isStaff();
+      allow update, delete: if isAdmin();
     }
 
     // Incident reports: residents create and read their own, staff see all.
     match /incidents/{incidentId} {
-      allow read: if signedIn() && (isStaff() || resource.data.residentId == request.auth.uid);
-      allow create: if signedIn()
-        && request.resource.data.residentId == request.auth.uid;
-      allow update, delete: if isStaff();
+      allow read: if signedIn()
+        && (isAdmin() || resource.data.residentId == request.auth.uid);
+      allow create: if isSelf(request.resource.data.residentId);
+      allow update, delete: if isAdmin();
+    }
+
+    // Who changed roles, approved or deleted accounts. Append-only: admins can
+    // add entries naming themselves, and nobody can edit or delete them.
+    match /admin_audit/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

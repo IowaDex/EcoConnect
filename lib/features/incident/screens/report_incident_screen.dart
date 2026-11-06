@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/incident.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/services/incident_service.dart';
+import '../models/incident.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
+import '../services/incident_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
@@ -73,7 +73,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('Could not send report: ' + e.toString()),
+            content: Text('Could not send report: $e'),
             backgroundColor: AppColors.danger,
           ),
         );

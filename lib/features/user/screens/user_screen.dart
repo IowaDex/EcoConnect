@@ -2,16 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/user.dart';
-import '../../../core/providers/auth_provider.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
+import '../../location/widgets/location_controls.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
-import '../../../core/widgets/user_avatar.dart';
+import '../widgets/user_avatar.dart';
 import '../widgets/profile_sheet.dart';
 
-class UserScreen extends StatelessWidget {
+class UserScreen extends StatefulWidget {
   const UserScreen({super.key});
+
+  @override
+  State<UserScreen> createState() => _UserScreenState();
+}
+
+class _UserScreenState extends State<UserScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final location = context.read<LocationProvider>();
+      location.startSharedLocationUpdates();
+      if (!location.hasLocation) location.getCurrentLocation();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +67,8 @@ class UserScreen extends StatelessWidget {
                 _ReportPrompt(onTap: () => context.go('/report-incident')),
                 const SizedBox(height: 12),
                 _WalletPrompt(onTap: () => context.go('/wallet')),
+                const SizedBox(height: 18),
+                const LocationControls(),
               ],
             ),
           ),

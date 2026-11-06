@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
-import '../../../core/providers/auth_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
@@ -39,8 +38,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
       location: 'Sat · 8 AM · Barangay hall',
       reactions: {'👍': 12, '❤️': 3, '♻️': 5},
       comments: [
-        _Comment('Marites D.', 'Sige po, dadalhin namin ang mga bote!'),
-        _Comment('Jun P.', 'May plastic cups din po ba?'),
+        const _Comment('Marites D.', 'Sige po, dadalhin namin ang mga bote!'),
+        const _Comment('Jun P.', 'May plastic cups din po ba?'),
       ],
       shares: 3,
     ),
@@ -52,7 +51,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
       category: _Category.questions,
       location: 'Sampaguita St.',
       reactions: {'👍': 18, '❤️': 6},
-      comments: [_Comment('Jun P.', 'Buti pa kayo, samin mamaya pa.')],
+      comments: [const _Comment('Jun P.', 'Buti pa kayo, samin mamaya pa.')],
       shares: 1,
     ),
     _Post(

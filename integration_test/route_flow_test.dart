@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:eco_connect/core/models/drop_off.dart';
-import 'package:eco_connect/core/models/route_plan.dart';
-import 'package:eco_connect/core/services/recycling_service.dart';
-import 'package:eco_connect/core/services/route_service.dart';
+import 'package:eco_connect/features/recycling/models/drop_off.dart';
+import 'package:eco_connect/features/route/models/route_plan.dart';
+import 'package:eco_connect/features/recycling/services/recycling_service.dart';
+import 'package:eco_connect/features/route/services/route_service.dart';
 import 'package:eco_connect/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';

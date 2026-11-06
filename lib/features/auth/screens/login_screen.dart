@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/auth_service.dart';
+import '../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/validators.dart';
-import '../../../core/widgets/app_text_field.dart';
+import '../utils/validators.dart';
+import '../widgets/app_text_field.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 
@@ -90,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
               }
               Navigator.of(ctx).pop();
               try {
-                await AuthService().resendVerificationEmail(
+                await context.read<AuthProvider>().resendVerificationEmail(
                   email,
                   _passwordController.text,
                 );
@@ -193,14 +192,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () => _snack('Password reset coming soon'),
+                              onPressed: () => context.go('/forgot-password'),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.only(top: 6, bottom: 2),
                                 minimumSize: Size.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: const Text(
-                                'forgot password',
+                                'Forgot password?',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w500,

@@ -5,15 +5,17 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/collection_route.dart';
-import '../../../core/models/route_plan.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/services/route_service.dart';
+import '../../route/models/collection_route.dart';
+import '../../route/models/route_plan.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
+import '../../location/widgets/location_controls.dart';
+import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
-import '../../../core/widgets/route_preview_map.dart';
+import '../../route/widgets/route_preview_map.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -49,6 +51,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _bootstrap() async {
     final location = context.read<LocationProvider>();
+    location.startSharedLocationUpdates();
     if (!location.hasLocation) await location.getCurrentLocation();
     if (!location.isTracking) location.startTracking();
 
@@ -386,27 +389,12 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-          'If your route is running, end it first so residents stop seeing '
-          'your location.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Stay'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Log out'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmLogout(
+      context,
+      message: 'If your route is running, end it first so residents stop '
+          'seeing your location.',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final uid = _uid;
     _broadcastTimer?.cancel();
@@ -418,8 +406,10 @@ class _DriverScreenState extends State<DriverScreen> {
       }
     }
     if (!mounted) return;
-    context.read<LocationProvider>().stopTracking();
-    await context.read<AuthProvider>().logout();
+    // Delete the shared pin while still signed in; rules reject it afterwards.
+    final auth = context.read<AuthProvider>();
+    await context.read<LocationProvider>().endSession();
+    await auth.logout();
     if (mounted) context.go('/login');
   }
 
@@ -534,6 +524,8 @@ class _DriverScreenState extends State<DriverScreen> {
                   }
                 },
               ),
+              const SizedBox(height: 16),
+              const LocationControls(),
               const SizedBox(height: 16),
               const _TipCard(),
             ],

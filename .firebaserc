@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "ecoconnect-ecaf8"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

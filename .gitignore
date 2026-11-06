@@ -7,6 +7,11 @@
 build/
 .packages
 
+# Local analysis and dependency output
+graphify-out/
+firestore-tests/node_modules/
+*.db
+
 # Environment variables (keep secrets out of git)
 .env
 .env.*
@@ -38,7 +43,6 @@ ios/Pods/
 ios/Podfile.lock
 ios/Runner/GeneratedPluginRegistrant.m
 ios/Runner/GeneratedPluginRegistrant.h
-*.xcworkspace
 *.xcuserstate
 
 # Firebase
@@ -75,3 +79,15 @@ coverage/
 # Misc
 *.pyc
 *.class
+# Firebase emulator logs
+*-debug.log
+
+# graphify output and its agent rules (generated per machine)
+.agents/
+
+# IDE
+*.iml
+
+# Claude Code local settings
+.claude/settings.local.json
+node_modules/

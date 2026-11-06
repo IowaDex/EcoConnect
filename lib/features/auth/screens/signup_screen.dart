@@ -3,16 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/user.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/psgc_service.dart';
+import '../providers/auth_provider.dart';
+import '../services/psgc_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/phone.dart';
-import '../../../core/utils/validators.dart';
-import '../../../core/widgets/app_text_field.dart';
+import '../utils/phone.dart';
+import '../utils/validators.dart';
+import '../widgets/app_text_field.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
-import '../../../core/widgets/psgc_field.dart';
+import '../widgets/psgc_field.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -28,6 +27,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _name = TextEditingController();
+  final _confirmPassword = TextEditingController();
   final _age = TextEditingController();
   final _phone = TextEditingController();
   final _houseStreet = TextEditingController();
@@ -48,6 +48,7 @@ class _SignupScreenState extends State<SignupScreen> {
     for (final c in [
       _email,
       _password,
+      _confirmPassword,
       _name,
       _age,
       _phone,
@@ -174,13 +175,11 @@ class _SignupScreenState extends State<SignupScreen> {
           title: Text(needsApproval ? 'Account submitted' : 'Check your inbox'),
           content: Text(
             needsApproval
-                ? 'Your ' +
-                    (_role == UserRole.driver ? 'driver' : 'barangay staff') +
-                    ' account is waiting for approval. Verify your email, then '
-                    'sign in once barangay staff approves your account.'
-                : 'We sent a verification link to ' +
-                    _email.text.trim() +
-                    '. Verify your email within 10 minutes, then log in.',
+                ? 'Your driver account is waiting for approval. Verify your '
+                    'email, then sign in once barangay staff approves your '
+                    'account.'
+                : 'We sent a verification link to ${_email.text.trim()}. '
+                    'Verify your email within 10 minutes, then log in.',
           ),
           actions: [
             FilledButton(
@@ -267,12 +266,8 @@ class _SignupScreenState extends State<SignupScreen> {
         subtitle: 'Run your assigned route and broadcast your location',
         icon: Icons.local_shipping_outlined
       ),
-      (
-        role: UserRole.admin,
-        title: 'Barangay Staff',
-        subtitle: 'Manage routes, incidents and resident accounts',
-        icon: Icons.badge_outlined
-      ),
+      // No self-service staff signup: the rules only let a profile be created
+      // as user/driver, so staff accounts are promoted to admin by an admin.
     ];
 
     return Column(
@@ -290,7 +285,7 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Driver and staff accounts are reviewed by barangay staff before '
+          'Driver accounts are reviewed by barangay staff before '
           'they can sign in.',
           style: TextStyle(fontSize: 11, height: 1.5, color: AppColors.inkMuted),
         ),
@@ -357,6 +352,15 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           const SizedBox(height: 26),
           AppTextField(
+            label: 'Name',
+            hint: 'Full name',
+            controller: _name,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            validator: (v) => Validators.validateName(v?.trim()),
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
             label: 'Email',
             hint: 'you@email.com',
             controller: _email,
@@ -370,9 +374,8 @@ class _SignupScreenState extends State<SignupScreen> {
             hint: 'Input password',
             controller: _password,
             obscureText: _obscure,
-            textInputAction: TextInputAction.done,
+            textInputAction: TextInputAction.next,
             validator: Validators.validatePassword,
-            onFieldSubmitted: (_) => _toProfile(),
             suffix: IconButton(
               padding: EdgeInsets.zero,
               splashRadius: 18,
@@ -383,6 +386,17 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               onPressed: () => setState(() => _obscure = !_obscure),
             ),
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
+            label: 'Confirm password',
+            hint: 'Re-enter password',
+            controller: _confirmPassword,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.done,
+            validator: (v) =>
+                Validators.validateConfirmPassword(v, _password.text),
+            onFieldSubmitted: (_) => _toProfile(),
           ),
           const SizedBox(height: 26),
           PrimaryButton(
@@ -462,17 +476,6 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ),
           const SizedBox(height: 22),
-          AppTextField(
-            label: 'Name',
-            hint: 'Full name',
-            controller: _name,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please enter your name'
-                : null,
-          ),
-          const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

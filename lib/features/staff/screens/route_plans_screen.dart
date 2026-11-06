@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/route_plan.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/auth_service.dart';
-import '../../../core/services/route_service.dart';
+import '../../route/models/route_plan.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../route/services/route_service.dart';
 import 'stop_picker_screen.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
@@ -22,7 +21,7 @@ class RoutePlansScreen extends StatefulWidget {
 
 class _RoutePlansScreenState extends State<RoutePlansScreen> {
   final _routeService = RouteService();
-  final _authService = AuthService();
+  AuthProvider get _auth => context.read<AuthProvider>();
   final _zoneController = TextEditingController();
   List<RouteStop> _stops = [];
 
@@ -47,7 +46,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
 
   Future<void> _loadDrivers() async {
     try {
-      final users = await _authService.getAllUsers();
+      final users = await _auth.getAllUsers();
       final drivers = users
           .where((u) =>
               u['role'] == 'driver' &&

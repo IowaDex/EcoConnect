@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/collection_route.dart';
-import '../../../core/models/incident.dart';
-import '../../../core/providers/auth_provider.dart';
-import '../../../core/services/auth_service.dart';
-import '../../../core/services/incident_service.dart';
-import '../../../core/services/route_service.dart';
+import '../../route/models/collection_route.dart';
+import '../../incident/models/incident.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../location/providers/location_provider.dart';
+import '../../incident/services/incident_service.dart';
+import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/confirm_logout.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -21,7 +22,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final _incidentService = IncidentService();
   final _routeService = RouteService();
-  final _authService = AuthService();
+  AuthProvider get _auth => context.read<AuthProvider>();
 
   late final Stream<List<Incident>> _incidentStream;
   late final Stream<CollectionRoute?> _routeStream;
@@ -32,11 +33,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     super.initState();
     _incidentStream = _incidentService.watchAll();
     _routeStream = _routeService.watchActiveRoute();
-    _pendingFuture = _authService.getPendingAccounts();
+    _pendingFuture = _auth.getPendingAccounts();
   }
 
   Future<void> _logout() async {
-    await context.read<AuthProvider>().logout();
+    if (!await confirmLogout(context) || !mounted) return;
+    final authProvider = context.read<AuthProvider>();
+    // Delete the shared pin while still signed in; rules reject it afterwards.
+    await context.read<LocationProvider>().endSession();
+    await authProvider.logout();
     if (mounted) context.go('/login');
   }
 

@@ -6,10 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/models/collection_route.dart';
-import '../../../core/models/route_plan.dart';
-import '../../../core/providers/location_provider.dart';
-import '../../../core/services/route_service.dart';
+import '../../route/models/collection_route.dart';
+import '../../route/models/route_plan.dart';
+import '../../location/providers/location_provider.dart';
+import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
