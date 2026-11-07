@@ -60,6 +60,9 @@ backed by Firestore; there is no demo data.
   zoomable route map with per-stop details and one-tap Google Maps directions.
 - Drivers are notified when staff add, remove, deactivate or reassign a point
   on their route, and the stop list is shown even before a run starts.
+- The full-screen map follows real roads through OSRM (OpenStreetMap), showing
+  total distance and time plus the drive to each stop. Navigate opens Google
+  Maps with every stop queued as a waypoint, from the truck to the last stop.
 
 ### Barangay staff
 - Announcements: create, edit, publish/unpublish, delete, optional cover photo.

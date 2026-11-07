@@ -5,10 +5,12 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/maps.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../models/route_directions.dart';
 import '../models/route_plan.dart';
+import '../services/directions_service.dart';
 
-/// Full-screen route map for the driver: every pinned stop, the path between
-/// them, and the truck when it is already reporting.
+/// Full-screen route map for the driver: every pinned stop in order, the road
+/// route between them, and the truck when it is already reporting.
 class RouteMapScreen extends StatefulWidget {
   const RouteMapScreen({
     super.key,
@@ -27,15 +29,25 @@ class RouteMapScreen extends StatefulWidget {
 
 class _RouteMapScreenState extends State<RouteMapScreen> {
   final _map = MapController();
+  final _directions = DirectionsService();
+  RouteDirections? _roadRoute;
+  bool _loadingRoute = false;
   int? _selected;
 
   List<RouteStop> get _mapped =>
       [for (final stop in widget.stops) if (stop.hasCoordinates) stop];
 
+  /// Truck first (when known), then the stops in collection order.
+  List<LatLng> get _waypoints => [
+        if (widget.truck != null) widget.truck!,
+        for (final stop in _mapped) LatLng(stop.latitude!, stop.longitude!),
+      ];
+
   @override
   void initState() {
     super.initState();
     if (_mapped.isNotEmpty) _selected = 0;
+    _loadRoadRoute();
   }
 
   @override
@@ -51,6 +63,38 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     return stops[index];
   }
 
+  /// The drive that ends at [stopIndex]. With a truck position the first leg
+  /// leads to the first stop; otherwise the first stop has no leg.
+  RouteLeg? _legFor(int? stopIndex) {
+    final route = _roadRoute;
+    if (route == null || stopIndex == null) return null;
+    final legIndex = widget.truck != null ? stopIndex : stopIndex - 1;
+    if (legIndex < 0 || legIndex >= route.legs.length) return null;
+    return route.legs[legIndex];
+  }
+
+  String? get _statusLabel {
+    if (_loadingRoute) return 'Calculating the road route…';
+    final route = _roadRoute;
+    if (route != null) {
+      return '${route.distanceLabel} · ${route.durationLabel} along roads';
+    }
+    if (_waypoints.length > 1) return 'Straight-line preview';
+    return null;
+  }
+
+  Future<void> _loadRoadRoute() async {
+    final waypoints = _waypoints;
+    if (waypoints.length < 2) return;
+    setState(() => _loadingRoute = true);
+    final route = await _directions.drivingRoute(waypoints);
+    if (!mounted) return;
+    setState(() {
+      _roadRoute = route;
+      _loadingRoute = false;
+    });
+  }
+
   void _select(int index, {bool recenter = true}) {
     setState(() => _selected = index);
     if (!recenter) return;
@@ -58,13 +102,24 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     _map.move(LatLng(stop.latitude!, stop.longitude!), 17);
   }
 
-  Future<void> _directions(RouteStop stop) async {
-    final opened = await openDirections(stop.latitude!, stop.longitude!);
+  Future<void> _openLink(Future<bool> action) async {
+    final opened = await action;
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open Google Maps.')),
       );
     }
+  }
+
+  Future<void> _directionsTo(RouteStop stop) {
+    return _openLink(openDirections(stop.latitude!, stop.longitude!));
+  }
+
+  Future<void> _navigateAll() {
+    final stops = [
+      for (final stop in _mapped) LatLng(stop.latitude!, stop.longitude!),
+    ];
+    return _openLink(openRouteDirections(stops: stops, origin: widget.truck));
   }
 
   void _fit(List<LatLng> all) {
@@ -76,7 +131,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     _map.fitCamera(
       CameraFit.bounds(
         bounds: LatLngBounds.fromPoints(all),
-        padding: const EdgeInsets.all(60),
+        // Leave room for the app bar and the details panel.
+        padding: const EdgeInsets.fromLTRB(56, 70, 56, 210),
       ),
     );
   }
@@ -88,6 +144,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       for (final stop in stops) LatLng(stop.latitude!, stop.longitude!),
     ];
     final all = [...points, if (widget.truck != null) widget.truck!];
+    final road = _roadRoute?.polyline ?? const <LatLng>[];
     final selected = _selectedStop;
 
     return Scaffold(
@@ -95,6 +152,12 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          if (stops.isNotEmpty)
+            IconButton(
+              tooltip: 'Navigate all stops',
+              onPressed: _navigateAll,
+              icon: const Icon(Icons.navigation_rounded),
+            ),
           if (all.isNotEmpty)
             IconButton(
               tooltip: 'Fit all stops',
@@ -120,7 +183,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                       initialCameraFit: all.length > 1
                           ? CameraFit.bounds(
                               bounds: LatLngBounds.fromPoints(all),
-                              padding: const EdgeInsets.all(60),
+                              padding:
+                                  const EdgeInsets.fromLTRB(56, 70, 56, 210),
                             )
                           : null,
                       interactionOptions: const InteractionOptions(
@@ -134,13 +198,23 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         userAgentPackageName: 'com.example.ecoconnect',
                         maxZoom: 19,
                       ),
-                      if (points.length > 1)
+                      if (road.length > 1)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: road,
+                              strokeWidth: 5,
+                              color: AppColors.primary,
+                            ),
+                          ],
+                        )
+                      else if (points.length > 1)
                         PolylineLayer(
                           polylines: [
                             Polyline(
                               points: points,
                               strokeWidth: 4,
-                              color: AppColors.primary.withValues(alpha: 0.75),
+                              color: AppColors.primary.withValues(alpha: 0.35),
                             ),
                           ],
                         ),
@@ -178,9 +252,12 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   stops: stops,
                   selected: _selected,
                   stop: selected,
+                  status: _statusLabel,
+                  loading: _loadingRoute,
+                  leg: _legFor(_selected),
                   onSelect: _select,
                   onDirections:
-                      selected == null ? null : () => _directions(selected),
+                      selected == null ? null : () => _directionsTo(selected),
                   onCenter:
                       selected == null ? null : () => _select(_selected!),
                 ),
@@ -195,6 +272,9 @@ class _StopPanel extends StatelessWidget {
     required this.stops,
     required this.selected,
     required this.stop,
+    required this.status,
+    required this.loading,
+    required this.leg,
     required this.onSelect,
     required this.onDirections,
     required this.onCenter,
@@ -203,6 +283,9 @@ class _StopPanel extends StatelessWidget {
   final List<RouteStop> stops;
   final int? selected;
   final RouteStop? stop;
+  final String? status;
+  final bool loading;
+  final RouteLeg? leg;
   final void Function(int index) onSelect;
   final VoidCallback? onDirections;
   final VoidCallback? onCenter;
@@ -230,6 +313,34 @@ class _StopPanel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (status != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    if (loading)
+                      const SizedBox(
+                        height: 10,
+                        width: 10,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )
+                    else
+                      const Icon(Icons.alt_route_rounded,
+                          size: 12, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        status!,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (stops.length > 1) ...[
               SizedBox(
                 height: 32,
@@ -245,9 +356,8 @@ class _StopPanel extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: active
-                              ? AppColors.primary
-                              : AppColors.lightGreen,
+                          color:
+                              active ? AppColors.primary : AppColors.lightGreen,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
@@ -279,6 +389,12 @@ class _StopPanel extends StatelessWidget {
                   color: AppColors.darkGreen,
                 ),
               ),
+              if (leg != null)
+                _detail(
+                  Icons.turn_right_rounded,
+                  '${leg!.distanceLabel} · ${leg!.durationLabel} from the '
+                  'previous point',
+                ),
               if (current.address != null)
                 _detail(Icons.place_outlined, current.address!),
               if (current.schedule != null)
