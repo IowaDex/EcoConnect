@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/collection_route.dart';
 import '../models/route_plan.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
+import '../../collection_points/models/collection_point.dart';
+import '../../collection_points/services/collection_point_service.dart';
 
 /// Raised when a driver's route cannot be activated. The [code] lets the UI
 /// react without string-matching the message.
@@ -28,6 +32,7 @@ class RouteService {
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final NotificationService _notifications = NotificationService();
+  final CollectionPointService _points = CollectionPointService();
 
   CollectionReference<Map<String, dynamic>> get _routes =>
       _db.collection('routes');
@@ -76,9 +81,13 @@ class RouteService {
   }
 
   /// The assignment the driver should be running today, if staff created one.
+  ///
+  /// Active collection points assigned to this driver are merged in as stops,
+  /// so a location pinned by staff after the plan was created still shows up
+  /// on the driver's map. On a name clash the plan's own stop wins.
   Stream<RoutePlan?> watchTodayPlan(String driverId) {
     final today = routeDateKey(DateTime.now());
-    return _plans
+    final plans = _plans
         .where('driverId', isEqualTo: driverId)
         .where('date', isEqualTo: today)
         .snapshots()
@@ -92,6 +101,100 @@ class RouteService {
         ..sort((a, b) => a.windowStart.compareTo(b.windowStart));
       return open.isEmpty ? null : open.first;
     });
+    return _withAssignedStops(plans, _points.watchForDriver(driverId));
+  }
+
+  /// Collection points assigned to [driverId] as stops, for ad-hoc runs.
+  Future<List<RouteStop>> stopsForDriver(String driverId) async {
+    return mergeAssignedStops(const [], await _points.forDriver(driverId));
+  }
+
+  /// Turns assigned [points] into stops and appends them after [planStops],
+  /// skipping inactive points and names that are already listed.
+  static List<RouteStop> mergeAssignedStops(
+    List<RouteStop> planStops,
+    List<CollectionPoint> points,
+  ) {
+    final extra = <RouteStop>[
+      for (final point in points)
+        if (point.isActive)
+          RouteStop(
+            name: point.name,
+            latitude: point.latitude,
+            longitude: point.longitude,
+          ),
+    ];
+    return mergeStops(planStops, extra);
+  }
+
+  /// Appends stops from [extra] that are not already named in [base].
+  static List<RouteStop> mergeStops(
+    List<RouteStop> base,
+    List<RouteStop> extra,
+  ) {
+    final merged = <RouteStop>[...base];
+    final seen = base.map((stop) => stop.name.trim().toLowerCase()).toSet();
+    for (final stop in extra) {
+      final key = stop.name.trim().toLowerCase();
+      if (key.isEmpty || !seen.add(key)) continue;
+      merged.add(stop);
+    }
+    return merged;
+  }
+
+  /// Combines plan snapshots with the assigned points stream. Points start as
+  /// an empty list and never surface errors, so a slow or denied points read
+  /// can never hide the driver's assignment.
+  Stream<RoutePlan?> _withAssignedStops(
+    Stream<RoutePlan?> plans,
+    Stream<List<CollectionPoint>> points,
+  ) {
+    late StreamController<RoutePlan?> controller;
+    StreamSubscription<RoutePlan?>? planSub;
+    StreamSubscription<List<CollectionPoint>>? pointSub;
+    RoutePlan? latestPlan;
+    var latestPoints = const <CollectionPoint>[];
+    var hasPlan = false;
+    var closed = 0;
+
+    void emit() {
+      if (!hasPlan) return;
+      final plan = latestPlan;
+      controller.add(
+        plan?.withStops(mergeAssignedStops(plan.stops, latestPoints)),
+      );
+    }
+
+    void finish() {
+      if (++closed == 2) controller.close();
+    }
+
+    controller = StreamController<RoutePlan?>(
+      onListen: () {
+        planSub = plans.listen(
+          (plan) {
+            latestPlan = plan;
+            hasPlan = true;
+            emit();
+          },
+          onError: controller.addError,
+          onDone: finish,
+        );
+        pointSub = points.listen(
+          (value) {
+            latestPoints = value;
+            emit();
+          },
+          onError: (_) {},
+          onDone: finish,
+        );
+      },
+      onCancel: () async {
+        await planSub?.cancel();
+        await pointSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// Everything scheduled for today, for the staff dispatch board.

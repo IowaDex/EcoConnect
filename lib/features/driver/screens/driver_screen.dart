@@ -335,6 +335,8 @@ class _DriverScreenState extends State<DriverScreen> {
         date: now,
         windowStart: routeTimeKey(now),
         windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
+        // Collection points staff assigned to this driver become the stops.
+        stops: await _routeService.stopsForDriver(user.uid),
         adHoc: true,
         createdBy: user.uid,
       );

@@ -144,10 +144,25 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
   }
 
   Future<void> _pickStops() async {
+    // Points already assigned to this driver seed the picker, so staff do not
+    // have to pin the same location twice.
+    var initial = _stops;
+    final driverId = _driverId;
+    if (driverId != null) {
+      try {
+        initial = RouteService.mergeStops(
+          _stops,
+          await _routeService.stopsForDriver(driverId),
+        );
+      } catch (_) {
+        // Assigned points are optional here; the picker still works without.
+      }
+    }
+    if (!mounted) return;
     final result = await Navigator.of(context).push<List<RouteStop>>(
       MaterialPageRoute(
         builder: (_) => StopPickerScreen(
-          initialStops: _stops,
+          initialStops: initial,
           zone: _zoneController.text.trim(),
         ),
       ),

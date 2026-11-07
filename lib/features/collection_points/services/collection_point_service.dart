@@ -23,6 +23,31 @@ class CollectionPointService {
     });
   }
 
+  /// Active points assigned to one driver, alphabetically. Single-field query
+  /// so no composite index is needed.
+  Stream<List<CollectionPoint>> watchForDriver(String driverId) {
+    return _col
+        .where('driverId', isEqualTo: driverId)
+        .snapshots()
+        .map(_activeSorted);
+  }
+
+  /// One-shot variant used when a driver opens an ad-hoc route.
+  Future<List<CollectionPoint>> forDriver(String driverId) async {
+    final snap = await _col.where('driverId', isEqualTo: driverId).get();
+    return _activeSorted(snap);
+  }
+
+  List<CollectionPoint> _activeSorted(
+    QuerySnapshot<Map<String, dynamic>> snap,
+  ) {
+    return snap.docs
+        .map((doc) => CollectionPoint.fromDoc(doc.id, doc.data()))
+        .where((point) => point.isActive)
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
   Future<String> save({
     String? id,
     required String name,

@@ -186,6 +186,25 @@ class RoutePlan {
       ? 'No stops listed'
       : '${stops.length} stop${stops.length == 1 ? '' : 's'}';
 
+  /// Copy with a different stop list. Used when assigned collection points are
+  /// merged into the plan at read time.
+  RoutePlan withStops(List<RouteStop> stops) => RoutePlan(
+        id: id,
+        driverId: driverId,
+        driverName: driverName,
+        zone: zone,
+        date: date,
+        windowStart: windowStart,
+        windowEnd: windowEnd,
+        stops: stops,
+        status: status,
+        adHoc: adHoc,
+        createdBy: createdBy,
+        createdAt: createdAt,
+        activatedAt: activatedAt,
+        completedAt: completedAt,
+      );
+
   Map<String, dynamic> toMap() => {
         'driverId': driverId,
         'driverName': driverName,

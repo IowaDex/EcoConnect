@@ -66,7 +66,9 @@ backed by Firestore; there is no demo data.
   document preview, resident verification.
 - Waste validation: photo review, approve or reject with remarks.
 - Designated collection points: interactive map, tap-to-pin editor, driver
-  assignment, weekly schedules, active/inactive state, route lines.
+  assignment, weekly schedules, active/inactive state, route lines. Points
+  assigned to a driver are merged into that driver's route as stops, so the
+  driver map, stop list and ad-hoc runs pick them up without re-pinning.
 
 ### Resident
 - Waste upload with camera/gallery photos, category, quantity and location.
