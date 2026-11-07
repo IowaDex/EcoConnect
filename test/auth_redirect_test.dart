@@ -15,11 +15,18 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), '/admin-dashboard');
   });
 
-  test('no session goes to login and stays on auth screens', () {
-    expect(authRedirect(initialized: true, role: null, location: '/splash'), '/login');
+  test('no session goes to the landing page and stays on public screens', () {
+    expect(authRedirect(initialized: true, role: null, location: '/splash'), '/welcome');
     expect(authRedirect(initialized: true, role: null, location: '/user'), '/login');
+    expect(authRedirect(initialized: true, role: null, location: '/welcome'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/signup'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/forgot-password'), isNull);
+  });
+
+  test('a signed-in user never sees the landing page', () {
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/welcome'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/welcome'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/welcome'), '/admin-dashboard');
   });
 
   test('logged-in users stay on their own pages', () {
@@ -35,5 +42,7 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/user'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/pending-accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/wallet'), '/admin-dashboard');
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/staff-requests'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/verification'), '/driver');
   });
 }

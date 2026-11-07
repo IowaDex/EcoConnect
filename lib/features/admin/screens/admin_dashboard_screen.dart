@@ -96,7 +96,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       return _QuickActions(
                         incidentBadge: pending,
                         onIncidents: () => context.go('/incidents'),
+                        onRequests: () => context.go('/staff-requests'),
                         onRoutes: () => context.go('/routes'),
+                        onVerification: () => context.go('/verification'),
+                        onWaste: () => context.go('/waste-validation'),
+                        onPoints: () => context.go('/collection-points'),
+                        onAnnouncements: () => context.go('/announcements'),
+                        onEvents: () => context.go('/events'),
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
                       );
@@ -146,6 +152,24 @@ class _Hero extends StatelessWidget {
             children: [
               const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
               const Spacer(),
+              InkWell(
+                onTap: () => context.push('/notifications'),
+                customBorder: const CircleBorder(),
+                child: Container(
+                  height: 38,
+                  width: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.creamBright.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    size: 18,
+                    color: AppColors.creamBright,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               InkWell(
                 onTap: onLogout,
                 customBorder: const CircleBorder(),
@@ -524,54 +548,93 @@ class _QuickActions extends StatelessWidget {
   const _QuickActions({
     required this.incidentBadge,
     required this.onIncidents,
+    required this.onRequests,
     required this.onRoutes,
+    required this.onVerification,
+    required this.onWaste,
+    required this.onPoints,
+    required this.onAnnouncements,
+    required this.onEvents,
     required this.onRecycling,
     required this.onUsers,
   });
 
   final int incidentBadge;
   final VoidCallback onIncidents;
+  final VoidCallback onRequests;
   final VoidCallback onRoutes;
+  final VoidCallback onVerification;
+  final VoidCallback onWaste;
+  final VoidCallback onPoints;
+  final VoidCallback onAnnouncements;
+  final VoidCallback onEvents;
   final VoidCallback onRecycling;
   final VoidCallback onUsers;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _QuickTile(
-            icon: Icons.error_outline_rounded,
-            label: 'Incidents',
-            badge: incidentBadge,
-            onTap: onIncidents,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickTile(
-            icon: Icons.route_rounded,
-            label: 'Routes',
-            onTap: onRoutes,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickTile(
-            icon: Icons.recycling_rounded,
-            label: 'Recycling',
-            onTap: onRecycling,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickTile(
-            icon: Icons.person_add_alt_1_rounded,
-            label: 'Users',
-            onTap: onUsers,
-          ),
-        ),
-      ],
+    final items = <Widget>[
+      _QuickTile(
+        icon: Icons.error_outline_rounded,
+        label: 'Incidents',
+        badge: incidentBadge,
+        onTap: onIncidents,
+      ),
+      _QuickTile(
+        icon: Icons.assignment_outlined,
+        label: 'Requests',
+        onTap: onRequests,
+      ),
+      _QuickTile(
+        icon: Icons.route_rounded,
+        label: 'Routes',
+        onTap: onRoutes,
+      ),
+      _QuickTile(
+        icon: Icons.verified_user_outlined,
+        label: 'Verify',
+        onTap: onVerification,
+      ),
+      _QuickTile(
+        icon: Icons.inventory_2_outlined,
+        label: 'Waste',
+        onTap: onWaste,
+      ),
+      _QuickTile(
+        icon: Icons.add_location_alt_outlined,
+        label: 'Points',
+        onTap: onPoints,
+      ),
+      _QuickTile(
+        icon: Icons.campaign_outlined,
+        label: 'Notices',
+        onTap: onAnnouncements,
+      ),
+      _QuickTile(
+        icon: Icons.event_available_outlined,
+        label: 'Events',
+        onTap: onEvents,
+      ),
+      _QuickTile(
+        icon: Icons.recycling_rounded,
+        label: 'Recycling',
+        onTap: onRecycling,
+      ),
+      _QuickTile(
+        icon: Icons.person_add_alt_1_rounded,
+        label: 'Users',
+        onTap: onUsers,
+      ),
+    ];
+
+    return GridView.count(
+      crossAxisCount: 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 14,
+      crossAxisSpacing: 6,
+      childAspectRatio: 0.82,
+      children: items,
     );
   }
 }

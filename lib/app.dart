@@ -6,6 +6,7 @@ import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
+import 'features/landing/screens/landing_screen.dart';
 import 'features/user/screens/user_screen.dart';
 import 'features/user/screens/wallet_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
@@ -20,8 +21,33 @@ import 'features/staff/screens/drop_off_station_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
 import 'features/staff/screens/pending_accounts_screen.dart';
 import 'features/staff/screens/route_plans_screen.dart';
+import 'features/staff/screens/verification_screen.dart';
+import 'features/staff/screens/collection_requests_screen.dart';
+import 'features/staff/screens/waste_validation_screen.dart';
+import 'features/staff/screens/collection_points_screen.dart';
+import 'features/announcements/screens/announcements_screen.dart';
+import 'features/events/screens/events_screen.dart';
+import 'features/waste/screens/waste_upload_screen.dart';
+import 'features/waste/screens/waste_history_screen.dart';
+import 'features/requests/screens/request_form_screen.dart';
+import 'features/requests/screens/my_requests_screen.dart';
+import 'features/notifications/screens/notifications_screen.dart';
 import 'features/splash/screens/splash_screen.dart';
 import 'features/tracking/screens/tracking_screen.dart';
+
+const _publicRoutes = {
+  '/splash',
+  '/welcome',
+  '/login',
+  '/signup',
+  '/forgot-password',
+};
+
+const _sharedRoutes = {
+  '/announcements',
+  '/events',
+  '/notifications',
+};
 
 const _residentRoutes = {
   '/user',
@@ -31,8 +57,18 @@ const _residentRoutes = {
   '/community',
   '/ask-ai',
   '/alerts',
+  '/waste-upload',
+  '/waste-history',
+  '/request-collection',
+  '/my-requests',
+  ..._sharedRoutes,
 };
-const _driverRoutes = {'/driver'};
+
+const _driverRoutes = {
+  '/driver',
+  ..._sharedRoutes,
+};
+
 const _staffRoutes = {
   '/admin-dashboard',
   '/admin',
@@ -42,6 +78,11 @@ const _staffRoutes = {
   '/dropoff',
   '/tracking',
   '/live-routes',
+  '/verification',
+  '/staff-requests',
+  '/waste-validation',
+  '/collection-points',
+  ..._sharedRoutes,
 };
 
 String _homeFor(UserRole role) => switch (role) {
@@ -66,12 +107,17 @@ String? authRedirect({
   // logged-in user never sees the login screen flash.
   if (!initialized) return location == '/splash' ? null : '/splash';
 
-  final isAuthRoute = location == '/login' ||
-      location == '/signup' ||
-      location == '/forgot-password';
+  final isPublic = _publicRoutes.contains(location);
 
-  if (role == null) return isAuthRoute ? null : '/login';
-  if (isAuthRoute || location == '/splash') return _homeFor(role);
+  if (role == null) {
+    // Signed-out visitors may browse the landing and auth screens only.
+    if (location == '/splash') return '/welcome';
+    return isPublic ? null : '/login';
+  }
+
+  if (location == '/splash' || location == '/welcome' || isPublic) {
+    return _homeFor(role);
+  }
   // A driver must not reach the staff desk by typing the URL, and vice versa.
   if (!_allowedFor(role).contains(location)) return _homeFor(role);
   return null;
@@ -104,24 +150,87 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       },
       routes: [
         GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
+        GoRoute(path: '/welcome', builder: (_, __) => const LandingScreen()),
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
-        GoRoute(path: '/forgot-password', builder: (_, __) => const ForgotPasswordScreen()),
+        GoRoute(
+          path: '/forgot-password',
+          builder: (_, __) => const ForgotPasswordScreen(),
+        ),
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
         GoRoute(path: '/driver', builder: (_, __) => const DriverScreen()),
-        GoRoute(path: '/admin-dashboard', builder: (_, __) => const AdminDashboardScreen()),
+        GoRoute(
+          path: '/admin-dashboard',
+          builder: (_, __) => const AdminDashboardScreen(),
+        ),
         GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
         GoRoute(path: '/tracking', builder: (_, __) => const TrackingScreen()),
-        GoRoute(path: '/live-routes', builder: (_, __) => const LiveRoutesScreen()),
-        GoRoute(path: '/report-incident', builder: (_, __) => const ReportIncidentScreen()),
+        GoRoute(
+          path: '/live-routes',
+          builder: (_, __) => const LiveRoutesScreen(),
+        ),
+        GoRoute(
+          path: '/report-incident',
+          builder: (_, __) => const ReportIncidentScreen(),
+        ),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
         GoRoute(path: '/community', builder: (_, __) => const CommunityScreen()),
         GoRoute(path: '/ask-ai', builder: (_, __) => const AskAiScreen()),
         GoRoute(path: '/alerts', builder: (_, __) => const AlertsScreen()),
-        GoRoute(path: '/incidents', builder: (_, __) => const IncidentDeskScreen()),
-        GoRoute(path: '/pending-accounts', builder: (_, __) => const PendingAccountsScreen()),
+        GoRoute(
+          path: '/incidents',
+          builder: (_, __) => const IncidentDeskScreen(),
+        ),
+        GoRoute(
+          path: '/pending-accounts',
+          builder: (_, __) => const PendingAccountsScreen(),
+        ),
         GoRoute(path: '/routes', builder: (_, __) => const RoutePlansScreen()),
-        GoRoute(path: '/dropoff', builder: (_, __) => const DropOffStationScreen()),
+        GoRoute(
+          path: '/dropoff',
+          builder: (_, __) => const DropOffStationScreen(),
+        ),
+        GoRoute(
+          path: '/verification',
+          builder: (_, __) => const VerificationScreen(),
+        ),
+        GoRoute(
+          path: '/staff-requests',
+          builder: (_, __) => const CollectionRequestsScreen(),
+        ),
+        GoRoute(
+          path: '/waste-validation',
+          builder: (_, __) => const WasteValidationScreen(),
+        ),
+        GoRoute(
+          path: '/collection-points',
+          builder: (_, __) => const CollectionPointsScreen(),
+        ),
+        GoRoute(
+          path: '/announcements',
+          builder: (_, __) => const AnnouncementsScreen(),
+        ),
+        GoRoute(path: '/events', builder: (_, __) => const EventsScreen()),
+        GoRoute(
+          path: '/waste-upload',
+          builder: (_, __) => const WasteUploadScreen(),
+        ),
+        GoRoute(
+          path: '/waste-history',
+          builder: (_, __) => const WasteHistoryScreen(),
+        ),
+        GoRoute(
+          path: '/request-collection',
+          builder: (_, __) => const RequestFormScreen(),
+        ),
+        GoRoute(
+          path: '/my-requests',
+          builder: (_, __) => const MyRequestsScreen(),
+        ),
+        GoRoute(
+          path: '/notifications',
+          builder: (_, __) => const NotificationsScreen(),
+        ),
       ],
     );
   }

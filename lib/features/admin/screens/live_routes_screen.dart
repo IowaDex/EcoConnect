@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import '../../route/models/collection_route.dart';
 import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
+import '../../driver/services/driver_session_service.dart';
 import '../../../core/theme/app_colors.dart';
 
 const _fallbackCentre = LatLng(14.5995, 120.9842);
@@ -632,6 +633,11 @@ class _DriverCard extends StatelessWidget {
     final zone =
         (route.zone ?? '').trim().isEmpty ? 'Unassigned zone' : route.zone!;
     final status = route.isStale ? 'Signal lost' : route.status.label;
+    final attention = route.status == RouteStatus.paused
+        ? 'Route paused'
+        : route.locationState.needsAttention
+            ? route.locationState.label
+            : null;
     final stops = plan?.stops ?? const <RouteStop>[];
     final next = stops.isEmpty ? null : stops.first.name;
     final eta = route.etaMinutes;
@@ -702,6 +708,28 @@ class _DriverCard extends StatelessWidget {
                       color: AppColors.inkMuted,
                     ),
                   ),
+                  if (attention != null) ...[
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded,
+                            size: 11, color: AppColors.warning),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            attention,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (next != null) ...[
                     const SizedBox(height: 5),
                     Text(

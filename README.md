@@ -34,6 +34,117 @@ A comprehensive Flutter mobile application featuring user authentication, email 
   - Google Fonts integration
   - Responsive design
 
+## 🚛 Smart Waste Management Modules
+
+EcoConnect now covers the full barangay collection workflow. Every screen is
+backed by Firestore; there is no demo data.
+
+### Landing page
+- Animated garbage truck on a highway, drawn entirely with CustomPainter.
+- Rotating wheels, scrolling lane markings, drifting clouds, trees and
+  floating recycling marks.
+- Tagline, Get Started and Login entry points.
+- Signed-out users land here; signed-in users are routed straight to their
+  role dashboard.
+
+### Driver
+- Start, pause, resume and end an assigned route with recorded timestamps
+  (startedAt, pausedAt, resumedAt, completedAt).
+- Location health monitoring distinguishes GPS off, permission denied,
+  offline and unknown states. Staff see the same neutral wording, so a driver
+  is never falsely reported for disabling tracking.
+- "Enable location" deep-links to the right device settings.
+- Staff are notified on pause, resume, completion and lost location.
+
+### Barangay staff
+- Announcements: create, edit, publish/unpublish, delete, optional cover photo.
+- Community events: posters, schedules, registration details, upcoming and
+  completed tabs.
+- Collection requests: search, status/date/barangay filters, approve, reject
+  with a reason, assign an active driver and a collection schedule.
+- User validation: pending driver/staff accounts, government ID review with
+  document preview, resident verification.
+- Waste validation: photo review, approve or reject with remarks.
+- Designated collection points: interactive map, tap-to-pin editor, driver
+  assignment, weekly schedules, active/inactive state, route lines.
+
+### Resident
+- Waste upload with camera/gallery photos, category, quantity and location.
+- Upload history with validation status and staff remarks.
+- Standard collection requests and request history with a progress timeline.
+- Verified government personnel additionally unlock **special collection
+  requests**; the check is enforced in Firestore, not just by hiding the UI.
+- Live announcements and upcoming events on the dashboard.
+- Notification centre with unread badges and deep links.
+
+### Notifications
+- Personal notifications for account, waste, request, route, announcement and
+  event updates.
+- Operational alerts are written to a shared "staff" channel so residents and
+  drivers never need read access to the user directory.
+
+## 🔐 Backend setup
+
+### Deploy the rules
+
+The new collections are protected by firestore.rules. Deploy them before
+testing the features:
+
+~~~bash
+firebase deploy --only firestore:rules --project ecoconnect-ecaf8
+~~~
+
+The emulator compiles the same file during CI, so a syntax error fails fast.
+
+### Collections
+
+| Collection | Purpose |
+| --- | --- |
+| users | Profile, role, account type, verification status |
+| verificationRequests | Government ID submissions (owner + staff only) |
+| announcements | Barangay announcements |
+| events | Community environmental events |
+| collectionRequests | Standard and special collection requests |
+| wasteSubmissions | Resident waste photos and validation |
+| collectionPoints | Designated pickup locations |
+| notifications | Personal and shared staff notifications |
+| routes / routePlans | Driver presence and staff assignments |
+| shared_locations | Resident location sharing |
+| dropOffs / incidents | Recycling ledger and incident reports |
+
+### Uploads
+
+The project does not require a Firebase Storage bucket. Photos and ID
+documents are compressed on-device (UploadCodec), capped at 190 KB per photo
+(500 KB for an ID image, 600 KB for a PDF) and stored as data URLs inside the
+owning document. This keeps every file under the same security rules as its
+record and keeps a three-photo record below Firestore's 1 MiB limit.
+
+For production traffic, move uploads to Firebase Storage and keep only the
+download URL in Firestore:
+
+1. Enable Storage in the Firebase console.
+2. Add firebase_storage to pubspec.yaml.
+3. Replace UploadCodec calls with an upload that returns a download URL.
+4. Add Storage rules that mirror the Firestore checks (owner + staff only for
+   ID documents).
+
+### Required platform configuration
+
+- Android: ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION,
+  ACCESS_BACKGROUND_LOCATION, INTERNET and ACCESS_NETWORK_STATE are already
+  declared.
+- Android 13+: the photo picker used by image_picker does not need storage
+  permission.
+- Map tiles come from OpenStreetMap; devices need internet access to render
+  the staff and resident maps.
+
+### Indexes
+
+Queries intentionally avoid composite indexes: filtering and sorting happen in
+Dart after a single-field query. If the data set grows, add the matching
+composite indexes in the Firebase console and move the filters into the query.
+
 ## 📋 Prerequisites
 
 - **Flutter SDK**: 3.44 or higher (Dart 3.12+)

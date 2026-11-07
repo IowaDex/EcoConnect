@@ -1,8 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
+import '../models/account_type.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/image_payload.dart';
 export '../models/user.dart';
+export '../models/account_type.dart';
 
 enum AuthErrorType {
   emailNotFound,
@@ -62,7 +65,19 @@ class AuthService {
       barangay: data['barangay'] as String?,
       city: data['city'] as String?,
       province: data['province'] as String?,
+      accountType: AccountTypeX.fromName(data['accountType'] as String?),
+      verificationStatus:
+          VerificationStatusX.fromName(data['verificationStatus'] as String?),
+      rejectionReason: data['rejectionReason'] as String?,
     );
+  }
+
+  /// Re-reads the signed-in profile. Used after staff approve a verification
+  /// so the new permissions appear without a sign-out.
+  Future<AppUser?> refreshProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    return _getAppUser(user);
   }
 
   // Sign up with email and password and role
@@ -72,7 +87,16 @@ class AuthService {
     required String name,
     required UserRole role,
     Map<String, dynamic>? profile,
+    AccountType accountType = AccountType.resident,
+    UploadPayload? verificationDocument,
   }) async {
+    // Government personnel must supply an ID before the account is created;
+    // otherwise the Firestore rules would reject the follow-up write and
+    // leave an orphaned login.
+    if (accountType == AccountType.government && verificationDocument == null) {
+      throw Exception('Please upload your government ID to continue.');
+    }
+
     // Create Firebase user
     final credential = await _auth.createUserWithEmailAndPassword(
       email: email,
@@ -85,8 +109,11 @@ class AuthService {
     // Send Firebase Authentication's built-in verification email
     await credential.user?.sendEmailVerification();
 
+    final uid = credential.user!.uid;
+    final isGovernment = accountType == AccountType.government;
+
     // Store user data in Firestore
-    await _firestore.collection('users').doc(credential.user!.uid).set({
+    await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
       'role': role.name,
@@ -94,8 +121,29 @@ class AuthService {
       'emailVerified': false,
       // Drivers and barangay staff need approval before they can sign in.
       'accountStatus': role == UserRole.user ? 'active' : 'pending',
+      'accountType': accountType.name,
+      // Government personnel stay unverified until staff review their ID.
+      'verificationStatus': isGovernment
+          ? VerificationStatus.pending.name
+          : VerificationStatus.unverified.name,
       if (profile != null) ...profile,
     });
+
+    // The ID lives in its own collection so only the owner and barangay staff
+    // can read it. Written while the new account is still signed in.
+    if (isGovernment) {
+      await _firestore.collection('verificationRequests').doc(uid).set({
+        'userId': uid,
+        'name': name,
+        'email': email,
+        'phone': profile?['phone'],
+        'barangay': profile?['barangay'],
+        'accountType': AccountType.government.name,
+        'document': verificationDocument?.toMap(),
+        'status': VerificationStatus.pending.name,
+        'submittedAt': FieldValue.serverTimestamp(),
+      });
+    }
 
     // Do not keep them logged in until email is verified
     await _auth.signOut();
@@ -209,6 +257,19 @@ class AuthService {
       'accountStatus': 'active',
       'approvedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Active driver accounts, used when staff assign a collection request.
+  Future<List<Map<String, dynamic>>> getDrivers() async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'driver')
+        .get();
+    return snapshot.docs
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .where((driver) =>
+            (driver['accountStatus'] as String? ?? 'active') == 'active')
+        .toList();
   }
 
   // Get all users (for admin panel)

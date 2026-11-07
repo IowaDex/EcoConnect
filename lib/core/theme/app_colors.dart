@@ -1,49 +1,98 @@
 import 'package:flutter/material.dart';
 
-/// Palette sampled directly from the EcoConnect design reference video.
+/// EcoConnect brand palette — a sustainability-inspired green system.
+///
+/// The palette is intentionally small: one primary, one accent, a neutral
+/// surface stack and three semantic colours. Every screen reads from these
+/// values so the product stays visually consistent.
 abstract final class AppColors {
-  /// Deep forest green — primary brand colour, buttons, headings.
-  static const forest = Color(0xFF064121);
+  /// Primary green — primary actions, brand marks, active states.
+  static const primary = Color(0xFF2E7D32);
 
-  /// Slightly darker forest used for gradients and pressed states.
-  static const forestDeep = Color(0xFF03301A);
+  /// Secondary green — supportive accents and illustrations.
+  static const secondary = Color(0xFF4CAF50);
+
+  /// Dark green — headings, pressed states and dark hero gradients.
+  static const darkGreen = Color(0xFF1B5E20);
+
+  /// Light green — tinted surfaces, selected chips and icon wells.
+  static const lightGreen = Color(0xFFE8F5E9);
+
+  /// Page background.
+  static const background = Color(0xFFF7FAF7);
+
+  /// Primary body text.
+  static const textDark = Color(0xFF263238);
+
+  /// Warning amber — paused routes, pending states, cautions.
+  static const warning = Color(0xFFF9A825);
+
+  /// Error red — destructive actions and validation failures.
+  static const error = Color(0xFFD32F2F);
+
+  // ---------------------------------------------------------------------------
+  // Legacy aliases. The original screens were written against these names, so
+  // they are kept as aliases to the new palette instead of rewriting 17k lines
+  // of UI code. New code should prefer the semantic names above.
+  // ---------------------------------------------------------------------------
+
+  /// Deep forest green — primary brand colour, buttons, headings.
+  static const forest = primary;
+
+  /// Darker forest used for gradients and pressed states.
+  static const forestDeep = darkGreen;
 
   /// Muted moss green — secondary accents, icons.
-  static const moss = Color(0xFF5C8149);
+  static const moss = secondary;
 
   /// Bright lime accent used on badges and highlights.
-  static const lime = Color(0xFF97C65D);
+  static const lime = Color(0xFF66BB6A);
 
-  /// Pale mint — splash / hero backgrounds.
-  static const mint = Color(0xFFE2F2D3);
+  /// Pale mint — hero backgrounds and icon wells.
+  static const mint = lightGreen;
 
   /// Lighter mint for gradient ends.
   static const mintSoft = Color(0xFFF1F8E9);
 
-  /// Warm cream — auth sheets and card surfaces.
-  static const cream = Color(0xFFF7F7D6);
+  /// Soft neutral green — secondary card surfaces.
+  static const cream = Color(0xFFEDF3ED);
 
-  /// Bright cream — page background.
-  static const creamBright = Color(0xFFFBFBEA);
+  /// Page background.
+  static const creamBright = background;
 
   /// Sage outline / divider colour.
-  static const sage = Color(0xFFC6D5B3);
+  static const sage = Color(0xFFC9D8CA);
 
-  /// Muted body text on cream.
-  static const inkMuted = Color(0xFF6F7F69);
+  /// Muted body text.
+  static const inkMuted = Color(0xFF5F6F64);
 
   /// Error red.
-  static const danger = Color(0xFFB3261E);
+  static const danger = error;
 
   static const heroGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [mint, mintSoft],
+    colors: [lightGreen, background],
   );
 
   static const forestGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [forest, forestDeep],
+    colors: [primary, darkGreen],
   );
+
+  static const skyGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFFE3F2E4), Color(0xFFF7FAF7)],
+  );
+
+  /// Soft elevation used by cards. Kept subtle so dense dashboards stay calm.
+  static List<BoxShadow> get cardShadow => [
+        BoxShadow(
+          color: darkGreen.withValues(alpha: 0.06),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
+        ),
+      ];
 }

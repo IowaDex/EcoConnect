@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/collection_route.dart';
 import '../models/route_plan.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 
 /// Raised when a driver's route cannot be activated. The [code] lets the UI
 /// react without string-matching the message.
@@ -17,23 +19,27 @@ class RouteActivationException implements Exception {
 
 /// Driver collection runs.
 ///
-/// - `routePlans/{planId}` — staff assignment (zone, day, shift window).
-/// - `routes/{driverId}` — the driver's live presence for residents.
+/// - routePlans/{planId} — staff assignment (zone, day, shift window).
+/// - routes/{driverId} — the driver's live presence for residents.
 class RouteService {
   static final RouteService _instance = RouteService._internal();
   factory RouteService() => _instance;
   RouteService._internal();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final NotificationService _notifications = NotificationService();
+
   CollectionReference<Map<String, dynamic>> get _routes =>
       _db.collection('routes');
   CollectionReference<Map<String, dynamic>> get _plans =>
       _db.collection('routePlans');
 
   /// The single live route residents should see, if any driver is running.
+  /// Paused runs stay visible at their last known position so residents are
+  /// not left guessing whether the truck is still coming.
   Stream<CollectionRoute?> watchActiveRoute() {
     return _routes
-        .where('status', whereIn: ['inTransit', 'delayed'])
+        .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
         .limit(1)
         .snapshots()
         .map((snap) => snap.docs.isEmpty
@@ -41,10 +47,11 @@ class RouteService {
             : CollectionRoute.fromDoc(snap.docs.first.id, snap.docs.first.data()));
   }
 
-  /// Every driver currently collecting, for the staff dispatch map.
+  /// Every driver currently collecting (including paused runs), for the staff
+  /// dispatch map.
   Stream<List<CollectionRoute>> watchLiveRoutes() {
     return _routes
-        .where('status', whereIn: ['inTransit', 'delayed'])
+        .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => CollectionRoute.fromDoc(doc.id, doc.data()))
@@ -212,7 +219,8 @@ class RouteService {
       if (current != null) {
         final status = RouteStatusX.fromName(current['status'] as String?);
         final running = status == RouteStatus.inTransit ||
-            status == RouteStatus.delayed;
+            status == RouteStatus.delayed ||
+            status == RouteStatus.paused;
         if (running && !CollectionRoute.isStaleData(current)) {
           throw const RouteActivationException(
             'already-running',
@@ -235,6 +243,13 @@ class RouteService {
           'planId': plan.id,
           'sessionId': sessionId,
           'startedAt': FieldValue.serverTimestamp(),
+          'pausedAt': null,
+          'resumedAt': null,
+          'completedAt': null,
+          'locationState': 'ok',
+          'lastKnownLat': latitude,
+          'lastKnownLng': longitude,
+          'locationUpdatedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
           'lastSeenAt': FieldValue.serverTimestamp(),
         },
@@ -254,6 +269,10 @@ class RouteService {
     await _routes.doc(driverId).set({
       'lat': latitude,
       'lng': longitude,
+      'lastKnownLat': latitude,
+      'lastKnownLng': longitude,
+      'locationState': 'ok',
+      'locationUpdatedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -267,12 +286,64 @@ class RouteService {
     }, SetOptions(merge: true));
   }
 
+  /// Temporarily stops progress tracking while keeping the last position.
+  Future<void> pauseRoute({
+    required String driverId,
+    required String driverName,
+    String? zone,
+    String? reason,
+  }) async {
+    await _routes.doc(driverId).set({
+      'status': RouteStatus.paused.name,
+      'pausedAt': FieldValue.serverTimestamp(),
+      'pauseReason': reason?.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _notifications.notifyStaff(
+      title: 'Route paused',
+      body:
+          '$driverName paused the ${zone ?? 'assigned'} route. The last known position is still visible.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId},
+    );
+  }
+
+  /// Restarts a paused run and records the resume timestamp.
+  Future<void> resumeRoute({
+    required String driverId,
+    required String driverName,
+    String? zone,
+  }) async {
+    await _routes.doc(driverId).set({
+      'status': RouteStatus.inTransit.name,
+      'resumedAt': FieldValue.serverTimestamp(),
+      'pausedAt': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastSeenAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _notifications.notifyStaff(
+      title: 'Route resumed',
+      body: '$driverName resumed the ${zone ?? 'assigned'} route.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId},
+    );
+  }
+
   /// Closes the run and marks the assignment completed in the same batch.
-  Future<void> endRoute(String driverId, {String? planId}) async {
+  Future<void> endRoute(
+    String driverId, {
+    String? planId,
+    String? driverName,
+    String? zone,
+  }) async {
     final batch = _db.batch();
     batch.set(_routes.doc(driverId), {
       'status': RouteStatus.completed.name,
       'endedAt': FieldValue.serverTimestamp(),
+      'completedAt': FieldValue.serverTimestamp(),
+      'pausedAt': null,
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -283,5 +354,13 @@ class RouteService {
       });
     }
     await batch.commit();
+
+    await _notifications.notifyStaff(
+      title: 'Route completed',
+      body:
+          '${driverName ?? 'A driver'} completed the ${zone ?? 'assigned'} collection route.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId, 'planId': planId},
+    );
   }
 }

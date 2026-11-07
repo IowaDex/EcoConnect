@@ -1,0 +1,135 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../models/verification_request.dart';
+import '../../auth/models/account_type.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
+
+class VerificationService {
+  static final VerificationService _instance = VerificationService._internal();
+  factory VerificationService() => _instance;
+  VerificationService._internal();
+
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final NotificationService _notifications = NotificationService();
+
+  CollectionReference<Map<String, dynamic>> get _col =>
+      _db.collection('verificationRequests');
+
+  Stream<List<VerificationRequest>> watchAll() {
+    return _col.snapshots().map((snap) {
+      final items = snap.docs
+          .map((doc) => VerificationRequest.fromDoc(doc.id, doc.data()))
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.submittedAt ?? DateTime(2000);
+          final bDate = b.submittedAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
+      return items;
+    });
+  }
+
+  Stream<VerificationRequest?> watchMine(String userId) {
+    return _col
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snap) {
+      if (snap.docs.isEmpty) return null;
+      return VerificationRequest.fromDoc(
+        snap.docs.first.id,
+        snap.docs.first.data(),
+      );
+    });
+  }
+
+  Future<void> approve({
+    required VerificationRequest request,
+    required String reviewerId,
+    required String reviewerName,
+  }) async {
+    final batch = _db.batch();
+    batch.update(_col.doc(request.id), {
+      'status': VerificationStatus.verified.name,
+      'reviewedBy': reviewerName,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'rejectionReason': null,
+    });
+    batch.update(_db.collection('users').doc(request.userId), {
+      'accountType': AccountType.government.name,
+      'verificationStatus': VerificationStatus.verified.name,
+      'verifiedBy': reviewerId,
+      'verificationDate': FieldValue.serverTimestamp(),
+      'rejectionReason': null,
+    });
+    await batch.commit();
+
+    await _notifications.push(
+      userId: request.userId,
+      title: 'Account verified',
+      body:
+          'Your government personnel account is verified. You can now submit special collection requests.',
+      type: AppNotificationType.verification,
+      data: {'verificationId': request.id},
+    );
+  }
+
+  Future<void> reject({
+    required VerificationRequest request,
+    required String reviewerId,
+    required String reviewerName,
+    required String reason,
+  }) async {
+    final batch = _db.batch();
+    batch.update(_col.doc(request.id), {
+      'status': VerificationStatus.rejected.name,
+      'reviewedBy': reviewerName,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'rejectionReason': reason.trim(),
+    });
+    batch.update(_db.collection('users').doc(request.userId), {
+      'verificationStatus': VerificationStatus.rejected.name,
+      'rejectionReason': reason.trim(),
+    });
+    await batch.commit();
+
+    await _notifications.push(
+      userId: request.userId,
+      title: 'Verification needs attention',
+      body: reason.trim().isEmpty
+          ? 'Your government ID could not be verified. Please upload a clearer document.'
+          : reason.trim(),
+      type: AppNotificationType.verification,
+      data: {'verificationId': request.id},
+    );
+  }
+
+  /// Marks a regular resident account verified (or rejected) without an ID.
+  Future<void> setUserVerification({
+    required String userId,
+    required VerificationStatus status,
+    required String reviewerId,
+    required String reviewerName,
+    String? reason,
+  }) async {
+    await _db.collection('users').doc(userId).update({
+      'verificationStatus': status.name,
+      'verifiedBy': reviewerId,
+      'verificationDate': FieldValue.serverTimestamp(),
+      'rejectionReason': status == VerificationStatus.rejected ? reason : null,
+    });
+
+    await _notifications.push(
+      userId: userId,
+      title: status == VerificationStatus.verified
+          ? 'Account verified'
+          : 'Verification rejected',
+      body: status == VerificationStatus.verified
+          ? 'Barangay staff verified your account.'
+          : (reason?.trim().isNotEmpty == true
+              ? reason!.trim()
+              : 'Barangay staff could not verify your account.'),
+      type: AppNotificationType.verification,
+    );
+  }
+}

@@ -15,7 +15,7 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid)).data;
     }
 
-    // Admin is the `role` field on the user's own profile; signup can't set it.
+    // Admin is the role field on the user's own profile; signup can't set it.
     function isAdmin() {
       return signedIn() && profile(request.auth.uid).role == 'admin';
     }
@@ -32,10 +32,32 @@ service cloud.firestore {
         && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
     }
 
+    // Government-only features are gated here, not just in the UI.
+    function isVerifiedGovernment() {
+      return isActive()
+        && profile(request.auth.uid).get('accountType', 'resident') == 'government'
+        && profile(request.auth.uid).get('verificationStatus', 'unverified') == 'verified';
+    }
+
     // Avatars are stored inline in the profile, so cap their size.
     function photoOk(data) {
       return !('photoUrl' in data) || data.photoUrl == null
         || (data.photoUrl is string && data.photoUrl.size() < 150000);
+    }
+
+    // Inline uploads (images / PDFs) are capped below Firestore's 1 MiB limit.
+    function uploadOk(data, field) {
+      return !(field in data) || data[field] == null
+        || (data[field] is map
+            && data[field].dataUrl is string
+            && data[field].dataUrl.size() < 900000);
+    }
+
+    function uploadListOk(data, field) {
+      return !(field in data) || data[field] == null
+        || (data[field] is list
+            && data[field].size() <= 3
+            && data[field][0].dataUrl is string);
     }
 
     function isRemoved(uid) {
@@ -46,16 +68,26 @@ service cloud.firestore {
       allow read: if isSelf(userId) || isAdmin();
       allow create: if isSelf(userId)
         && !isRemoved(userId)
-        // Drivers start 'pending' until an admin approves; nobody self-credits points.
+        // Drivers start 'pending' until an admin approves; nobody self-credits
+        // points or self-verifies a government account.
         && ((request.resource.data.role == 'user'
               && request.resource.data.accountStatus == 'active')
             || (request.resource.data.role == 'driver'
               && request.resource.data.accountStatus == 'pending'))
+        && (!('accountType' in request.resource.data)
+            || request.resource.data.accountType in ['resident', 'government'])
+        && (!('verificationStatus' in request.resource.data)
+            || request.resource.data.verificationStatus
+                 == (request.resource.data.get('accountType', 'resident') == 'government'
+                      ? 'pending'
+                      : 'unverified'))
         && !('points' in request.resource.data)
         && photoOk(request.resource.data);
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt'])
+                .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
+                         'accountType', 'verificationStatus', 'verifiedBy',
+                         'verificationDate', 'rejectionReason', 'approvedAt'])
           && photoOk(request.resource.data))
         || isAdmin();
       // Not their own profile: that would lock the admin out for good.
@@ -119,10 +151,15 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                'status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
                'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
-               'phone', 'zone'
+               'phone', 'zone', 'pausedAt', 'resumedAt', 'completedAt',
+               'pauseReason', 'locationState', 'locationUpdatedAt',
+               'lastKnownLat', 'lastKnownLng'
              ])
           && request.resource.data.status in
-               ['inTransit', 'delayed', 'completed', 'idle'])
+               ['inTransit', 'delayed', 'paused', 'completed', 'idle']
+          && (!('locationState' in request.resource.data)
+              || request.resource.data.locationState in
+                   ['ok', 'disabled', 'permission', 'offline', 'unknown']))
         || isAdmin();
       allow delete: if isAdmin();
     }
@@ -146,6 +183,118 @@ service cloud.firestore {
         && (isAdmin() || resource.data.residentId == request.auth.uid);
       allow create: if isSelf(request.resource.data.residentId);
       allow update, delete: if isAdmin();
+    }
+
+    // Barangay announcements. Residents read published posts, staff manage all.
+    match /announcements/{announcementId} {
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && (isAdmin() || resource.data.status == 'published');
+      allow create, update: if isAdmin()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 4000
+        && request.resource.data.status in ['draft', 'published']
+        && uploadOk(request.resource.data, 'image');
+      allow delete: if isAdmin();
+    }
+
+    // Community events.
+    match /events/{eventId} {
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && (isAdmin() || resource.data.status == 'published');
+      allow create, update: if isAdmin()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 6000
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.status in ['draft', 'published']
+        && uploadOk(request.resource.data, 'image');
+      allow delete: if isAdmin();
+    }
+
+    // Collection requests. Special requests require a verified government
+    // profile; that check is repeated here so hiding the UI is not enough.
+    match /collectionRequests/{requestId} {
+      allow read: if signedIn() && (
+        isAdmin()
+        || resource.data.requesterId == request.auth.uid
+        || resource.data.assignedDriverId == request.auth.uid
+      );
+      allow create: if isActive()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.kind in ['resident', 'special']
+        && (request.resource.data.kind == 'resident' || isVerifiedGovernment())
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 4000
+        && request.resource.data.estimatedQuantity is string
+        && request.resource.data.location is string
+        && request.resource.data.preferredDate is timestamp
+        && uploadListOk(request.resource.data, 'images');
+      allow update: if isAdmin();
+      allow delete: if isAdmin()
+        || (isSelf(resource.data.requesterId)
+            && resource.data.status == 'pending');
+    }
+
+    // Waste uploads and their validation.
+    match /wasteSubmissions/{submissionId} {
+      allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isActive()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 2000
+        && request.resource.data.images is list
+        && request.resource.data.images.size() >= 1
+        && request.resource.data.images.size() <= 3;
+      allow update, delete: if isAdmin();
+    }
+
+    // Government ID submissions. Readable only by the applicant and staff.
+    match /verificationRequests/{requestId} {
+      allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isSelf(request.resource.data.userId)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.accountType == 'government'
+        && request.resource.data.document is map
+        && request.resource.data.document.dataUrl is string
+        && request.resource.data.document.dataUrl.size() < 900000;
+      allow update, delete: if isAdmin();
+    }
+
+    // In-app notifications. Everyone writes their own fan-out; only the
+    // recipient (or staff) can read a notification.
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isActive()
+        && request.resource.data.userId is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 1000
+        && request.resource.data.read == false;
+      allow update: if (signedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
+        || isAdmin();
+      allow delete: if signedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Designated collection points.
+    match /collectionPoints/{pointId} {
+      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow create, update: if isAdmin()
+        && request.resource.data.name is string
+        && request.resource.data.lat is number
+        && request.resource.data.lng is number
+        && request.resource.data.status in ['active', 'inactive'];
+      allow delete: if isAdmin();
     }
 
     // Who changed roles, approved or deleted accounts. Append-only: admins can

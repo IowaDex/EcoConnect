@@ -8,6 +8,19 @@ import '../repositories/location_repository.dart';
 import '../services/location_service.dart';
 import '../../../core/utils/app_logger.dart';
 
+/// Why the device is not producing a usable position.
+///
+/// Kept distinct so the driver UI and staff monitoring can say what actually
+/// happened instead of blaming the driver for turning tracking off.
+enum LocationIssue {
+  none,
+  serviceDisabled,
+  permissionDenied,
+  permissionDeniedForever,
+  offline,
+  unavailable,
+}
+
 class LocationProvider extends ChangeNotifier {
   final LocationService _locationService;
   final LocationRepository _locationRepository;
@@ -28,6 +41,7 @@ class LocationProvider extends ChangeNotifier {
   StreamSubscription<String?>? _authSubscription;
   // Seeded so the stream's first event (the same user) isn't seen as a change.
   late String? _userId;
+  LocationIssue _issue = LocationIssue.none;
 
   /// The arguments exist so tests can swap in fakes; the app uses the defaults.
   LocationProvider({
@@ -66,6 +80,53 @@ class LocationProvider extends ChangeNotifier {
   int get pendingCount => _pendingCount;
   bool get isSharingLocation => _isSharingLocation;
   List<SharedLocation> get sharedLocations => _sharedLocations;
+
+  /// Last diagnosed device/location problem. [LocationIssue.none] when healthy.
+  LocationIssue get issue => _issue;
+
+  bool get hasLocationIssue => _issue != LocationIssue.none;
+
+  /// Checks GPS, permission and connectivity in that order and records the
+  /// first blocking cause. Safe to call while a route is running.
+  Future<LocationIssue> refreshLocationHealth() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _setIssue(LocationIssue.serviceDisabled);
+        return _issue;
+      }
+
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.deniedForever) {
+        _setIssue(LocationIssue.permissionDeniedForever);
+        return _issue;
+      }
+      if (permission == LocationPermission.denied) {
+        _setIssue(LocationIssue.permissionDenied);
+        return _issue;
+      }
+
+      final results = await Connectivity().checkConnectivity();
+      final offline =
+          results.isEmpty || results.every((r) => r == ConnectivityResult.none);
+      if (offline) {
+        _setIssue(LocationIssue.offline);
+        return _issue;
+      }
+
+      _setIssue(LocationIssue.none);
+    } catch (error) {
+      AppLogger.error('Location health check failed', error);
+      _setIssue(LocationIssue.unavailable);
+    }
+    return _issue;
+  }
+
+  void _setIssue(LocationIssue issue) {
+    if (_issue == issue) return;
+    _issue = issue;
+    notifyListeners();
+  }
 
   // Convenience getters
   double? get latitude => _currentPosition?.latitude;

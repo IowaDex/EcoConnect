@@ -1,3 +1,5 @@
+import 'account_type.dart';
+
 enum UserRole { user, driver, admin }
 
 class AppUser {
@@ -11,7 +13,7 @@ class AppUser {
   final int? age;
   final String? phone;
 
-  /// Avatar. Either an http(s) URL or an inline `data:image/...;base64,`
+  /// Avatar. Either an http(s) URL or an inline data:image/...;base64,
   /// string when the picture was uploaded from the device.
   final String? photoUrl;
   final String? houseStreet;
@@ -22,6 +24,16 @@ class AppUser {
   /// 'active' for residents, 'pending' until barangay staff approves
   /// driver / staff accounts.
   final String accountStatus;
+
+  /// Resident vs. government personnel. Government accounts unlock the
+  /// special collection request feature once verified.
+  final AccountType accountType;
+
+  /// Verification lifecycle for this account.
+  final VerificationStatus verificationStatus;
+
+  /// Why a verification was rejected, shown to the account owner.
+  final String? rejectionReason;
 
   AppUser({
     required this.uid,
@@ -37,9 +49,23 @@ class AppUser {
     this.city,
     this.province,
     this.accountStatus = 'active',
+    this.accountType = AccountType.resident,
+    this.verificationStatus = VerificationStatus.unverified,
+    this.rejectionReason,
   });
 
   bool get isPendingApproval => accountStatus == 'pending';
+
+  bool get isGovernment => accountType == AccountType.government;
+
+  /// The single check every government-only feature must use. The Firestore
+  /// rules repeat the same check server-side, so hiding the UI is never the
+  /// only line of defence.
+  bool get isVerifiedGovernment =>
+      isGovernment && verificationStatus == VerificationStatus.verified;
+
+  bool get isVerificationPending =>
+      verificationStatus == VerificationStatus.pending;
 
   AppUser copyWith({
     String? displayName,
@@ -53,6 +79,9 @@ class AppUser {
     String? city,
     String? province,
     String? accountStatus,
+    AccountType? accountType,
+    VerificationStatus? verificationStatus,
+    String? rejectionReason,
   }) {
     return AppUser(
       uid: uid,
@@ -68,6 +97,9 @@ class AppUser {
       city: city ?? this.city,
       province: province ?? this.province,
       accountStatus: accountStatus ?? this.accountStatus,
+      accountType: accountType ?? this.accountType,
+      verificationStatus: verificationStatus ?? this.verificationStatus,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
     );
   }
 

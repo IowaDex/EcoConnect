@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_type.dart';
 import '../providers/auth_provider.dart';
 import '../services/psgc_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/image_payload.dart';
+import '../../../core/widgets/image_picker_field.dart';
 import '../utils/phone.dart';
 import '../utils/validators.dart';
 import '../widgets/app_text_field.dart';
@@ -38,6 +41,11 @@ class _SignupScreenState extends State<SignupScreen> {
   int _step = 0;
   bool _obscure = true;
   UserRole _role = UserRole.user;
+  AccountType _accountType = AccountType.resident;
+  UploadPayload? _idDocument;
+  bool _idError = false;
+
+  bool get _isGovernment => _accountType == AccountType.government;
 
   PsgcOption? _provinceOption;
   PsgcOption? _cityOption;
@@ -70,7 +78,9 @@ class _SignupScreenState extends State<SignupScreen> {
   void _back() {
     FocusScope.of(context).unfocus();
     if (_step == 0) {
-      context.go('/login');
+      // Leaving signup always returns to the landing page, never straight to
+      // the login form: the visitor may still want the overview.
+      context.go('/welcome');
     } else {
       setState(() => _step--);
     }
@@ -144,8 +154,23 @@ class _SignupScreenState extends State<SignupScreen> {
     });
   }
 
-  Future<void> _submit() async {
+  void _toVerification() {
     if (!_profileKey.currentState!.validate()) return;
+    if (_isGovernment) {
+      _next();
+    } else {
+      _submit();
+    }
+  }
+
+  Future<void> _submit() async {
+    // The profile form is only mounted on step 2. On the ID step it has
+    // already been validated by _toVerification.
+    if (_step == 2 && !_profileKey.currentState!.validate()) return;
+    if (_isGovernment && _idDocument == null) {
+      setState(() => _idError = true);
+      return;
+    }
     FocusScope.of(context).unfocus();
 
     final auth = context.read<AuthProvider>();
@@ -154,6 +179,10 @@ class _SignupScreenState extends State<SignupScreen> {
       email: _email.text.trim(),
       password: _password.text,
       role: _role,
+      accountType: _isGovernment
+          ? AccountType.government
+          : AccountType.resident,
+      verificationDocument: _idDocument,
       profile: {
         'age': int.tryParse(_age.text.trim()),
         'phone': Phone.toE164(_phone.text),
@@ -172,14 +201,25 @@ class _SignupScreenState extends State<SignupScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: Text(needsApproval ? 'Account submitted' : 'Check your inbox'),
+          title: Text(
+            needsApproval
+                ? 'Account submitted'
+                : _isGovernment
+                ? 'Verify your email'
+                : 'Check your inbox',
+          ),
           content: Text(
             needsApproval
                 ? 'Your driver account is waiting for approval. Verify your '
-                    'email, then sign in once barangay staff approves your '
-                    'account.'
+                      'email, then sign in once barangay staff approves your '
+                      'account.'
+                : _isGovernment
+                ? 'We sent a verification link to ${_email.text.trim()}. '
+                      'Verify your email, then sign in. Your government ID is '
+                      'pending barangay staff review — special collection '
+                      'requests unlock after approval.'
                 : 'We sent a verification link to ${_email.text.trim()}. '
-                    'Verify your email within 10 minutes, then log in.',
+                      'Verify your email within 10 minutes, then log in.',
           ),
           actions: [
             FilledButton(
@@ -206,69 +246,82 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    return Scaffold(
-      backgroundColor: AppColors.cream,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 16, color: AppColors.forest),
-                    onPressed: _back,
-                  ),
-                  const SizedBox(width: 8),
-                  const BrandWordmark(fontSize: 12),
-                  const Spacer(),
-                  if (_step == 0)
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Log in'),
+    return PopScope(
+      // System / browser back on the first step would close the app, so send
+      // the visitor back to the landing page instead.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.cream,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 16,
+                        color: AppColors.forest,
+                      ),
+                      onPressed: _back,
                     ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                  child: switch (_step) {
-                    0 => _roleStep(),
-                    1 => _credentialsStep(auth),
-                    _ => _profileStep(auth),
-                  },
+                    const SizedBox(width: 8),
+                    const BrandWordmark(fontSize: 12),
+                    const Spacer(),
+                    if (_step == 0)
+                      TextButton(
+                        onPressed: () => context.go('/login'),
+                        child: const Text('Log in'),
+                      ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    child: switch (_step) {
+                      0 => _roleStep(),
+                      1 => _credentialsStep(auth),
+                      2 => _profileStep(auth),
+                      _ => _verificationStep(auth),
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _roleStep() {
-    const options = <({UserRole role, String title, String subtitle, IconData icon})>[
-      (
-        role: UserRole.user,
-        title: 'Resident',
-        subtitle: 'Track collection, report issues and earn rewards',
-        icon: Icons.home_outlined
-      ),
-      (
-        role: UserRole.driver,
-        title: 'Driver',
-        subtitle: 'Run your assigned route and broadcast your location',
-        icon: Icons.local_shipping_outlined
-      ),
-      // No self-service staff signup: the rules only let a profile be created
-      // as user/driver, so staff accounts are promoted to admin by an admin.
-    ];
+    const options =
+        <({UserRole role, String title, String subtitle, IconData icon})>[
+          (
+            role: UserRole.user,
+            title: 'Resident',
+            subtitle: 'Track collection, report issues and earn rewards',
+            icon: Icons.home_outlined,
+          ),
+          (
+            role: UserRole.driver,
+            title: 'Driver',
+            subtitle: 'Run your assigned route and broadcast your location',
+            icon: Icons.local_shipping_outlined,
+          ),
+          // No self-service staff signup: the rules only let a profile be created
+          // as user/driver, so staff accounts are promoted to admin by an admin.
+        ];
 
     return Column(
       key: const ValueKey('role'),
@@ -287,7 +340,11 @@ class _SignupScreenState extends State<SignupScreen> {
         const Text(
           'Driver accounts are reviewed by barangay staff before '
           'they can sign in.',
-          style: TextStyle(fontSize: 11, height: 1.5, color: AppColors.inkMuted),
+          style: TextStyle(
+            fontSize: 11,
+            height: 1.5,
+            color: AppColors.inkMuted,
+          ),
         ),
         const SizedBox(height: 22),
         for (final option in options) ...[
@@ -300,7 +357,53 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        const SizedBox(height: 10),
+        if (_role == UserRole.user) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Account type',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.darkGreen,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _AccountTypeCard(
+                  type: AccountType.resident,
+                  selected: _accountType == AccountType.resident,
+                  onTap: () =>
+                      setState(() => _accountType = AccountType.resident),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AccountTypeCard(
+                  type: AccountType.government,
+                  selected: _accountType == AccountType.government,
+                  onTap: () =>
+                      setState(() => _accountType = AccountType.government),
+                ),
+              ),
+            ],
+          ),
+          if (_isGovernment) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Government personnel must upload an official ID after the '
+              'profile step. Special collection requests unlock only after '
+              'barangay staff verify it.',
+              style: TextStyle(
+                fontSize: 9,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ],
+        ],
+        const SizedBox(height: 16),
         PrimaryButton(label: 'Continue', onPressed: _toCredentials),
         const SizedBox(height: 12),
         Wrap(
@@ -348,7 +451,11 @@ class _SignupScreenState extends State<SignupScreen> {
           const SizedBox(height: 6),
           const Text(
             'Create an account to start tracking your collection schedule.',
-            style: TextStyle(fontSize: 11, height: 1.5, color: AppColors.inkMuted),
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.5,
+              color: AppColors.inkMuted,
+            ),
           ),
           const SizedBox(height: 26),
           AppTextField(
@@ -381,7 +488,9 @@ class _SignupScreenState extends State<SignupScreen> {
               splashRadius: 18,
               iconSize: 18,
               icon: Icon(
-                _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                _obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
                 color: AppColors.inkMuted,
               ),
               onPressed: () => setState(() => _obscure = !_obscure),
@@ -542,15 +651,14 @@ class _SignupScreenState extends State<SignupScreen> {
             controller: _city,
             enabled: _provinceOption != null,
             onTap: _pickCity,
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Please select your city' : null,
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Please select your city'
+                : null,
           ),
           const SizedBox(height: 14),
           PsgcField(
             label: 'Barangay',
-            hint: _cityOption == null
-                ? 'Select city first'
-                : 'Select barangay',
+            hint: _cityOption == null ? 'Select city first' : 'Select barangay',
             controller: _barangay,
             enabled: _cityOption != null,
             onTap: _pickBarangay,
@@ -560,9 +668,9 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           const SizedBox(height: 26),
           PrimaryButton(
-            label: 'Continue',
+            label: _isGovernment ? 'Continue to ID upload' : 'Create account',
             loading: auth.isLoading,
-            onPressed: _submit,
+            onPressed: _toVerification,
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -592,6 +700,95 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Widget _verificationStep(AuthProvider auth) {
+    return Column(
+      key: const ValueKey('verification'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Verify your\nGovernment Role',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            height: 1.15,
+            color: AppColors.darkGreen,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Upload a clear photo or PDF of your official government ID. '
+          'Barangay staff review it before special collection requests are '
+          'enabled for your account.',
+          style: TextStyle(
+            fontSize: 11,
+            height: 1.55,
+            color: AppColors.inkMuted,
+          ),
+        ),
+        const SizedBox(height: 20),
+        ImagePickerField(
+          value: _idDocument,
+          documentMode: true,
+          label: 'Official government ID',
+          helper: 'JPG, PNG or PDF · max 600 KB',
+          previewHeight: 200,
+          onChanged: (value) => setState(() {
+            _idDocument = value;
+            if (value != null) _idError = false;
+          }),
+        ),
+        if (_idError) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Please upload your government ID before submitting.',
+            style: TextStyle(fontSize: 10.5, color: AppColors.error),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.lightGreen.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 16,
+                color: AppColors.primary,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Your ID is stored separately from your public profile and is '
+                  'only visible to you and authorized barangay staff.',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    height: 1.5,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        PrimaryButton(
+          label: 'Submit for verification',
+          loading: auth.isLoading,
+          onPressed: _submit,
+        ),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: () => setState(() => _step = 2),
+          child: const Text('Back to profile'),
+        ),
+      ],
+    );
+  }
+
   Widget _social(IconData icon, Color color) {
     return InkWell(
       onTap: () => ScaffoldMessenger.of(context)
@@ -609,6 +806,79 @@ class _SignupScreenState extends State<SignupScreen> {
           border: Border.all(color: AppColors.sage),
         ),
         child: Icon(icon, size: 19, color: color),
+      ),
+    );
+  }
+}
+
+class _AccountTypeCard extends StatelessWidget {
+  const _AccountTypeCard({
+    required this.type,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AccountType type;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isGov = type == AccountType.government;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.lightGreen : AppColors.creamBright,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.sage,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isGov ? Icons.badge_outlined : Icons.home_outlined,
+                  size: 18,
+                  color: selected ? AppColors.primary : AppColors.inkMuted,
+                ),
+                const Spacer(),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  size: 16,
+                  color: selected ? AppColors.primary : AppColors.sage,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isGov ? 'Government personnel' : 'Regular resident',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkGreen,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              isGov ? 'Requires ID verification' : 'Standard household account',
+              style: const TextStyle(
+                fontSize: 8.5,
+                height: 1.4,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
