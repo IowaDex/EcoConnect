@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/responsive.dart';
 import '../utils/validators.dart';
 import '../widgets/app_text_field.dart';
 import '../../../core/widgets/brand_wordmark.dart';
@@ -114,31 +115,36 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final gutter = formGutter(MediaQuery.sizeOf(context).width);
 
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: AppColors.heroGradient),
         child: SafeArea(
-          child: Column(
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              const Expanded(flex: 4, child: _LoginHero()),
-              Expanded(
-                flex: 7,
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: AppColors.cream,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.forest.withValues(alpha: 0.08),
-                        blurRadius: 24,
-                        offset: const Offset(0, -6),
+              Column(
+                children: [
+                  const Expanded(flex: 4, child: _LoginHero()),
+                  Expanded(
+                    flex: 7,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: AppColors.cream,
+                        borderRadius:
+                            const BorderRadius.vertical(top: Radius.circular(34)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.forest.withValues(alpha: 0.08),
+                            blurRadius: 24,
+                            offset: const Offset(0, -6),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 26, 24, 24),
+                    padding: EdgeInsets.fromLTRB(gutter, 26, gutter, 24),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -252,9 +258,27 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ],
           ),
-        ),
+          // The only way back to the landing page — without it a visitor who
+          // taps "I already have an account" is stuck on the login screen.
+          Positioned(
+            top: 2,
+            left: 4,
+            child: IconButton(
+              onPressed: () => context.go('/welcome'),
+              tooltip: 'Back to home',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.78),
+                foregroundColor: AppColors.forest,
+                padding: const EdgeInsets.all(10),
+              ),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
+            ),
+          ),
+        ],
       ),
-    );
+    ),
+  ),
+);
   }
 }
 

@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../services/psgc_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../utils/phone.dart';
 import '../utils/validators.dart';
@@ -245,6 +246,7 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final gutter = formGutter(MediaQuery.sizeOf(context).width);
 
     return PopScope(
       // System / browser back on the first step would close the app, so send
@@ -285,7 +287,7 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                  padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 32),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 260),
                     child: switch (_step) {

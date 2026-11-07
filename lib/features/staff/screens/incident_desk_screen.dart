@@ -5,6 +5,7 @@ import '../../incident/models/incident.dart';
 import '../../incident/services/incident_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_loading.dart';
 
 class IncidentDeskScreen extends StatefulWidget {
   const IncidentDeskScreen({super.key});
@@ -83,13 +84,7 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                     );
                   }
                   if (!snapshot.hasData) {
-                    return const Center(
-                      child: SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
+                    return const EcoLoadingView(label: 'Loading reports');
                   }
                   final incidents = snapshot.data!;
                   if (incidents.isEmpty) {

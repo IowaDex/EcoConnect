@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -6,21 +5,12 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Tips that rotate on the loading card. Kept to three so the page dots stay
-/// in step with the copy and the card never outgrows the artwork.
-const List<String> kEcoLoadingTips = <String>[
-  'Rinse your recyclables before the truck comes. Food residue can spoil a '
-      'whole batch of paper and plastic.',
-  'Flatten boxes and keep paper dry — soggy cardboard is the fastest way to '
-      'get an entire load rejected.',
-  'Wrap broken glass and sharp metal before setting it out, so collectors can '
-      'handle your load safely.',
-];
-
 /// The animated collection truck.
 ///
 /// Ships as a looping GIF so the wheels, exhaust puffs and road all move
-/// without a second animation controller fighting the frame budget.
+/// without a second animation controller fighting the frame budget. The GIF
+/// carries its own alpha channel, so it can be dropped straight onto the
+/// illustration or onto the green entry panel.
 class EcoTruckArt extends StatelessWidget {
   const EcoTruckArt({super.key, this.width = 210});
 
@@ -28,21 +18,38 @@ class EcoTruckArt extends StatelessWidget {
 
   static const String asset = 'assets/images/truck_drive.gif';
 
+  /// Intrinsic 508 × 337. Reserved up-front so the loader never reflows
+  /// while the first frame is still decoding.
+  static const double _aspect = 337 / 508;
+
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      asset,
+    return SizedBox(
       width: width,
-      fit: BoxFit.contain,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.medium,
-      semanticLabel: 'EcoConnect collection truck on its way',
+      height: width * _aspect,
+      child: Image.asset(
+        asset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        semanticLabel: 'EcoConnect collection truck on its way',
+        // Fade the first decoded frame in, so the loader does not pop.
+        frameBuilder: (context, child, frame, wasSync) {
+          if (wasSync) return child;
+          return AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: child,
+          );
+        },
+      ),
     );
   }
 }
 
-/// Cream panel the truck drives across — the centrepiece of every loading
-/// state, matching the dispatch artwork.
+/// Cream panel the truck drives across — the centrepiece of every blocking
+/// loading state, matching the dispatch artwork.
 class EcoTruckCard extends StatelessWidget {
   const EcoTruckCard({super.key, this.width = 300});
 
@@ -66,175 +73,6 @@ class EcoTruckCard extends StatelessWidget {
         ],
       ),
       child: EcoTruckArt(width: width - 36),
-    );
-  }
-}
-
-/// Frosted card that cycles through household recycling tips while the app
-/// works, so waiting feels like part of the product rather than a stall.
-class EcoTipCard extends StatefulWidget {
-  const EcoTipCard({
-    super.key,
-    this.width = 300,
-    this.tips = kEcoLoadingTips,
-    this.interval = const Duration(milliseconds: 4200),
-  });
-
-  final double width;
-  final List<String> tips;
-  final Duration interval;
-
-  @override
-  State<EcoTipCard> createState() => _EcoTipCardState();
-}
-
-class _EcoTipCardState extends State<EcoTipCard> {
-  Timer? _timer;
-  Timer? _swap;
-  int _index = 0;
-  bool _visible = true;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.tips.length > 1) {
-      _timer = Timer.periodic(widget.interval, (_) => _advance());
-    }
-  }
-
-  /// Fades the current tip out, swaps the copy, then fades the next one in.
-  /// A plain cross-fade would draw both tips on top of each other for the
-  /// length of the transition, which reads as smeared text.
-  void _advance() {
-    if (!mounted) return;
-    setState(() => _visible = false);
-    _swap = Timer(const Duration(milliseconds: 200), () {
-      if (!mounted) return;
-      setState(() {
-        _index = (_index + 1) % widget.tips.length;
-        _visible = true;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _swap?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tip = widget.tips[_index];
-
-    return Container(
-      width: widget.width,
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF14351A).withValues(alpha: 0.18),
-            blurRadius: 26,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'PRO TIP',
-            style: TextStyle(
-              fontSize: 9.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.7,
-              color: Color(0xFFC2921B),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 54),
-            child: Center(
-              child: AnimatedOpacity(
-                opacity: _visible ? 1 : 0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                child: Text(
-                  tip,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    height: 1.55,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1D3A22),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _TipDots(count: widget.tips.length, active: _index),
-        ],
-      ),
-    );
-  }
-}
-
-class _TipDots extends StatelessWidget {
-  const _TipDots({required this.count, required this.active});
-
-  final int count;
-  final int active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (var i = 0; i < count; i++)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(horizontal: 3),
-            height: 5,
-            width: i == active ? 14 : 5,
-            decoration: BoxDecoration(
-              color: i == active
-                  ? AppColors.forest
-                  : AppColors.forest.withValues(alpha: 0.22),
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Truck plus rotating tip — the shared composition behind the splash screen
-/// and the blocking overlay.
-class EcoLoadingBody extends StatelessWidget {
-  const EcoLoadingBody({
-    super.key,
-    this.width = 300,
-    this.tipInterval = const Duration(milliseconds: 4200),
-  });
-
-  final double width;
-  final Duration tipInterval;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        EcoTruckCard(width: width),
-        const SizedBox(height: 16),
-        EcoTipCard(width: width, interval: tipInterval),
-      ],
     );
   }
 }
@@ -308,6 +146,20 @@ class _EcoLoadingDotsState extends State<EcoLoadingDots>
   }
 }
 
+/// The truck on its cream panel — the shared composition behind the entry
+/// screen's loading slot and the blocking overlay.
+///
+/// Deliberately nothing else: the truck is the whole loading state, so the
+/// screen reads as one moving object rather than a wall of widgets.
+class EcoLoadingBody extends StatelessWidget {
+  const EcoLoadingBody({super.key, this.width = 300});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => EcoTruckCard(width: width);
+}
+
 /// Inline loader for lists, cards and page bodies. Drop-in replacement for a
 /// bare spinner: the truck keeps moving, the label says what is loading.
 class EcoLoadingView extends StatelessWidget {
@@ -347,8 +199,8 @@ class EcoLoadingView extends StatelessWidget {
   }
 }
 
-/// Full-screen blocking overlay: the screen behind is blurred and tinted, the
-/// truck drives across a cream panel, and a tip card rotates underneath.
+/// Full-screen blocking overlay: the screen behind is blurred and tinted and
+/// the truck drives across a cream panel on top.
 class EcoLoadingOverlay extends StatelessWidget {
   const EcoLoadingOverlay({super.key, this.message});
 

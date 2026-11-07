@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/community_event.dart';
+import '../models/event_participant.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
@@ -114,4 +115,144 @@ class EventService {
   }
 
   Future<void> delete(String id) => _col.doc(id).delete();
+
+  // ---------------------------------------------------------------------------
+  // Sign-ups
+  //
+  // Stored as a subcollection so a resident can write their own row without
+  // being able to touch the event itself, and so the roster can carry the
+  // street the resident had at join time.
+  // ---------------------------------------------------------------------------
+
+  CollectionReference<Map<String, dynamic>> _participants(String eventId) =>
+      _col.doc(eventId).collection('participants');
+
+  /// Live headcount for one event.
+  Stream<int> watchParticipantCount(String eventId) =>
+      _participants(eventId).snapshots().map((snap) => snap.docs.length);
+
+  /// Whether this resident is already on the list.
+  Stream<bool> watchJoined(String eventId, String uid) =>
+      _participants(eventId).doc(uid).snapshots().map((doc) => doc.exists);
+
+  /// Everyone signed up, grouped by street.
+  Stream<List<EventParticipant>> watchParticipants(String eventId) {
+    return _participants(eventId).snapshots().map((snap) {
+      final items = snap.docs
+          .map((doc) => EventParticipant.fromDoc(doc.id, doc.data()))
+          .toList()
+        ..sort((a, b) {
+          final byStreet = a.streetKey.compareTo(b.streetKey);
+          return byStreet != 0 ? byStreet : a.name.compareTo(b.name);
+        });
+      return items;
+    });
+  }
+
+  Future<void> join({
+    required String eventId,
+    required String uid,
+    required String name,
+    String? street,
+    String? barangay,
+  }) async {
+    await _participants(eventId).doc(uid).set({
+      'uid': uid,
+      'name': name,
+      'street': (street ?? '').trim(),
+      'streetKey': streetKeyOf(street),
+      'barangay': (barangay ?? '').trim(),
+      'joinedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> leave(String eventId, String uid) =>
+      _participants(eventId).doc(uid).delete();
+
+  /// Every event's headcount plus the per-street ranking, in one pass.
+  ///
+  /// One read per event is fine at barangay scale (a handful of events) and
+  /// keeps the rules simple — a collection-group query would need its own rule
+  /// block and an index.
+  Future<ParticipationOverview> loadParticipationOverview() async {
+    final events = await _col.get();
+    final counts = <String, int>{};
+    final buckets = <String, _StreetBucket>{};
+    final items = <CommunityEvent>[];
+
+    for (final event in events.docs) {
+      items.add(CommunityEvent.fromDoc(event.id, event.data()));
+      final snap = await _participants(event.id).get();
+      counts[event.id] = snap.docs.length;
+      for (final doc in snap.docs) {
+        final person = EventParticipant.fromDoc(doc.id, doc.data());
+        if (person.streetKey.isEmpty) continue;
+        final bucket = buckets.putIfAbsent(
+          person.streetKey,
+          () => _StreetBucket(person.streetKey, person.streetLabel),
+        );
+        bucket.uids.add(person.uid);
+        bucket.attendances++;
+        bucket.events.add(event.id);
+      }
+    }
+
+    items.sort(_soonestFirst);
+
+    final standings = buckets.values
+        .map(
+          (b) => StreetStanding(
+            key: b.key,
+            label: b.label,
+            residents: b.uids.length,
+            attendances: b.attendances,
+            events: b.events.length,
+          ),
+        )
+        .toList()
+      ..sort((a, b) {
+        final byPoints = b.points.compareTo(a.points);
+        return byPoints != 0 ? byPoints : a.label.compareTo(b.label);
+      });
+
+    return ParticipationOverview(
+      events: items,
+      countsByEvent: counts,
+      standings: standings,
+    );
+  }
+}
+
+/// Result of [EventService.loadParticipationOverview].
+class ParticipationOverview {
+  const ParticipationOverview({
+    required this.events,
+    required this.countsByEvent,
+    required this.standings,
+  });
+
+  /// Every event, soonest first.
+  final List<CommunityEvent> events;
+
+  /// Event id → number of residents signed up.
+  final Map<String, int> countsByEvent;
+
+  /// Streets, best first.
+  final List<StreetStanding> standings;
+
+  int countFor(String eventId) => countsByEvent[eventId] ?? 0;
+
+  /// Every sign-up across every event.
+  int get totalSignUps =>
+      countsByEvent.values.fold<int>(0, (total, value) => total + value);
+}
+
+class _StreetBucket {
+  _StreetBucket(this.key, this.label);
+
+  final String key;
+  String label;
+  final Set<String> uids = <String>{};
+  final Set<String> events = <String>{};
+  int attendances = 0;
 }

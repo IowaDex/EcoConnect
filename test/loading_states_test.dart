@@ -1,47 +1,21 @@
 import 'package:eco_connect/core/widgets/eco_loading.dart';
-import 'package:eco_connect/features/splash/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('splash renders the truck panel and a rotating tip',
+  testWidgets('the blocking loader is the truck and nothing else',
       (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('PRO TIP'), findsOneWidget);
-    expect(find.textContaining('Rinse your recyclables'), findsOneWidget);
-    expect(find.text('Preparing your barangay feed'), findsOneWidget);
-
-    // Dispose the timers and controllers before the test ends.
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('tips rotate while the app waits', (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: EcoTipCard(interval: Duration(milliseconds: 600)),
-        ),
+        home: Scaffold(body: EcoLoadingBody(width: 280)),
       ),
     );
 
-    expect(find.textContaining('Rinse your recyclables'), findsOneWidget);
-
-    await tester.pump(const Duration(milliseconds: 700));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.textContaining('Flatten boxes'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
+    // The truck card is the whole loading state — no tips, no page dots.
+    expect(find.byType(EcoTruckCard), findsOneWidget);
+    expect(find.byType(EcoTruckArt), findsOneWidget);
+    expect(find.text('PRO TIP'), findsNothing);
+    expect(find.byType(EcoLoadingDots), findsNothing);
   });
 
   testWidgets('inline loader shows its label', (tester) async {
@@ -52,5 +26,18 @@ void main() {
     );
 
     expect(find.text('Loading requests'), findsOneWidget);
+    expect(find.byType(EcoTruckArt), findsOneWidget);
+  });
+
+  testWidgets('overlay loader keeps the message above the truck',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: EcoLoadingOverlay(message: 'Saving your report')),
+      ),
+    );
+
+    expect(find.text('Saving your report'), findsOneWidget);
+    expect(find.byType(EcoTruckArt), findsOneWidget);
   });
 }

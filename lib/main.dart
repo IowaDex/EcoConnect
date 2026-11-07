@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:firebase_core/firebase_core.dart';
 import './firebase_options.dart';
+import './core/boot/boot_progress.dart';
+import './core/network/network_status.dart';
 import './features/auth/providers/auth_provider.dart';
 import './features/location/providers/location_provider.dart';
 import './core/database/database_initializer.dart';
@@ -13,10 +15,12 @@ import './app.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env file
+  // Each step is announced before it runs, so the entry screen can name the
+  // work in progress rather than showing a generic spinner.
+  BootProgress.report('Loading configuration');
   await dotenv.load(fileName: '.env');
 
-  // Initialize Firebase using values from .env
+  BootProgress.report('Connecting to Firebase');
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -27,13 +31,21 @@ void main() async {
     FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
   }
 
+  BootProgress.report('Opening the local database');
   initializeLocalDatabase();
+
+  // The session restore itself is asynchronous and finishes inside the
+  // AuthProvider listener, so the entry screen keeps showing this line until
+  // `isInitialized` flips.
+  BootProgress.report('Restoring your session');
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => LocationProvider()),
+        // Drives the app-wide truck loading screen when the link drops.
+        ChangeNotifierProvider(create: (_) => NetworkStatus()..start()),
       ],
       child: const EcoConnectApp(),
     ),

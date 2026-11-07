@@ -107,6 +107,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onPoints: () => context.go('/collection-points'),
                         onAnnouncements: () => context.go('/announcements'),
                         onEvents: () => context.go('/events'),
+                        onParticipation: () => context.go('/event-participation'),
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
                       );
@@ -559,6 +560,7 @@ class _QuickActions extends StatelessWidget {
     required this.onPoints,
     required this.onAnnouncements,
     required this.onEvents,
+    required this.onParticipation,
     required this.onRecycling,
     required this.onUsers,
   });
@@ -574,6 +576,7 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onEvents;
   final VoidCallback onRecycling;
   final VoidCallback onUsers;
+  final VoidCallback onParticipation;
 
   @override
   Widget build(BuildContext context) {
@@ -618,6 +621,11 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.event_available_outlined,
         label: 'Events',
         onTap: onEvents,
+      ),
+      _QuickTile(
+        icon: Icons.groups_2_outlined,
+        label: 'Sign-ups',
+        onTap: onParticipation,
       ),
       _QuickTile(
         icon: Icons.recycling_rounded,
