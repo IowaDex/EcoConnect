@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'eco_loading.dart';
 
 /// Friendly placeholder shown when a list or query has no results.
 class EmptyState extends StatelessWidget {
@@ -84,34 +85,15 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// Centred spinner with an optional label.
+/// Centred truck loader with an optional label. Delegates to [EcoLoadingView]
+/// so every waiting screen in the app shares the same motion.
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key, this.label});
 
   final String? label;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            height: 26,
-            width: 26,
-            child: CircularProgressIndicator(strokeWidth: 2.4),
-          ),
-          if (label != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              label!,
-              style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EcoLoadingView(label: label);
 }
 
 /// Standard error state with a retry action.

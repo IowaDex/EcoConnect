@@ -27,7 +27,7 @@ class DriverRoutesScreen extends StatelessWidget {
     final user = context.watch<AuthProvider>().currentUser;
     final location = context.watch<LocationProvider>();
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: LoadingView(label: 'Loading your route'));
     }
 
     return Scaffold(
@@ -69,7 +69,7 @@ class DriverRoutesScreen extends StatelessWidget {
                 stream: RouteService().watchTodayPlan(user.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const LoadingView(label: 'Loading your route');
                   }
                   final plan = snapshot.data;
                   return ListView(

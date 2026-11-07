@@ -25,7 +25,7 @@ class WasteHistoryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: LoadingView(label: 'Loading your uploads'));
     }
     return Scaffold(
       backgroundColor: AppColors.background,

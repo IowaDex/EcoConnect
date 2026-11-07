@@ -1,18 +1,22 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/hex_leaf_logo.dart';
 
-/// Public landing page. The first thing a signed-out visitor sees: a
-/// hand-drawn garbage truck driving along a highway, with the brand promise
-/// and the two entry points into the app.
+/// Page background. Matches the sky in the illustration so the header and the
+/// artwork read as one continuous scene.
+const Color _pageBg = Color(0xFFE9F4E1);
+
+/// Green used by the entry panel, sampled to continue the illustration's
+/// foreground grass.
+const Color _panelGreen = Color(0xFF3E8E41);
+
+/// Public landing page — the first thing a signed-out visitor sees.
 ///
-/// Everything is vector-drawn with [CustomPainter] and driven by three
-/// animation controllers, so it ships without bitmap or Lottie assets and
-/// stays smooth on low-end Android devices.
+/// Full-bleed three-band layout: the brand lockup on the pale sky, the barangay
+/// illustration filling the middle, then the green panel with the two entry
+/// points. The artwork drifts slowly and the copy rises in sequence so
+/// "Get Started" is the last thing to land.
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
 
@@ -22,45 +26,28 @@ class LandingScreen extends StatefulWidget {
 
 class _LandingScreenState extends State<LandingScreen>
     with TickerProviderStateMixin {
-  /// Truck travelling across the scene.
-  late final AnimationController _drive;
+  /// Slow Ken Burns drift over the illustration.
+  late final AnimationController _drift;
 
-  /// Cloud drift and gentle parallax.
-  late final AnimationController _ambient;
-
-  /// Wheel rotation. Runs faster than the drive loop so the wheels read as
-  /// rolling rather than sliding.
-  late final AnimationController _wheels;
-
-  /// Entrance animation for the copy and buttons.
+  /// Staggered entrance for the copy and the buttons.
   late final AnimationController _intro;
 
   @override
   void initState() {
     super.initState();
-    _drive = AnimationController(
+    _drift = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 7),
-    )..repeat();
-    _ambient = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 26),
-    )..repeat();
-    _wheels = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
+      duration: const Duration(seconds: 24),
+    )..repeat(reverse: true);
     _intro = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 850),
+      duration: const Duration(milliseconds: 1900),
     )..forward();
   }
 
   @override
   void dispose() {
-    _drive.dispose();
-    _ambient.dispose();
-    _wheels.dispose();
+    _drift.dispose();
     _intro.dispose();
     super.dispose();
   }
@@ -68,144 +55,95 @@ class _LandingScreenState extends State<LandingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        bottom: false,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final sceneHeight =
-                (constraints.maxHeight * 0.54).clamp(230.0, 470.0);
-            return Column(
-              children: [
-                SizedBox(
-                  height: sceneHeight,
+      backgroundColor: _pageBg,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // On a very short window the fixed bands would collide, so fall back
+          // to a scrolling page with a capped illustration.
+          final tight = constraints.maxHeight < 600;
+          final art = tight
+              ? SizedBox(
+                  height: 200,
                   width: double.infinity,
-                  child: RepaintBoundary(
-                    child: _HighwayScene(
-                      drive: _drive,
-                      ambient: _ambient,
-                      wheels: _wheels,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.zero,
-                    child: _LandingPanel(intro: _intro),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                  child: _Illustration(drift: _drift),
+                )
+              : Expanded(child: _Illustration(drift: _drift));
+
+          final page = Column(
+            children: [
+              _Header(intro: _intro),
+              art,
+              _EntryPanel(intro: _intro),
+            ],
+          );
+
+          return tight ? SingleChildScrollView(child: page) : page;
+        },
       ),
     );
   }
 }
 
-class _LandingPanel extends StatelessWidget {
-  const _LandingPanel({required this.intro});
+/// Brand lockup, tagline and promise, sitting on the pale sky.
+class _Header extends StatelessWidget {
+  const _Header({required this.intro});
 
   final Animation<double> intro;
 
   @override
   Widget build(BuildContext context) {
-    final fade = CurvedAnimation(parent: intro, curve: Curves.easeOut);
-    final rise = Tween<Offset>(
-      begin: const Offset(0, 0.10),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: intro, curve: Curves.easeOutCubic));
-
-    return SlideTransition(
-      position: rise,
-      child: FadeTransition(
-        opacity: fade,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(26, 22, 26, 26),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 24,
-                offset: Offset(0, -6),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Center(child: BrandLockup(fontSize: 26)),
-              const SizedBox(height: 16),
-              const Text(
-                'Smarter waste collection\nfor every barangay',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 23,
-                  height: 1.22,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.darkGreen,
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 2),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              children: [
+                _Reveal(
+                  intro: intro,
+                  start: 0.02,
+                  end: 0.40,
+                  child: const _Wordmark(),
                 ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Connecting Communities for a Cleaner and Greener Tomorrow.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.55,
-                  color: AppColors.inkMuted,
-                ),
-              ),
-              const SizedBox(height: 18),
-              const _FeatureRow(),
-              const SizedBox(height: 22),
-              SizedBox(
-                height: 52,
-                child: FilledButton(
-                  onPressed: () => context.go('/signup'),
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: 10),
+                _Reveal(
+                  intro: intro,
+                  start: 0.18,
+                  end: 0.55,
+                  child: const Text(
+                    'Know When, Know Where!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1C4A24),
                     ),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Get Started'),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
-                    ],
-                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 50,
-                child: OutlinedButton(
-                  onPressed: () => context.go('/login'),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: 6),
+                _Reveal(
+                  intro: intro,
+                  start: 0.28,
+                  end: 0.66,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14),
+                    child: Text(
+                      'Real-time garbage truck tracking and timely '
+                      'notifications, making waste disposal easier and more '
+                      'convenient.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.55,
+                        color: Color(0xFF4A6450),
+                      ),
                     ),
                   ),
-                  child: const Text('I already have an account'),
                 ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Real-time truck tracking · Collection requests · Community programs',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 8.5,
-                  height: 1.5,
-                  letterSpacing: 0.1,
-                  color: AppColors.inkMuted,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -213,527 +151,286 @@ class _LandingPanel extends StatelessWidget {
   }
 }
 
-class _FeatureRow extends StatelessWidget {
-  const _FeatureRow();
-
-  static const _items = <({IconData icon, String label})>[
-    (icon: Icons.local_shipping_rounded, label: 'Track'),
-    (icon: Icons.assignment_outlined, label: 'Request'),
-    (icon: Icons.recycling_rounded, label: 'Recycle'),
-  ];
+/// "EC⬡ / CONNECT" — the hex-leaf mark stands in for the O in ECO, sitting on
+/// the text baseline the way a round letter would.
+class _Wordmark extends StatelessWidget {
+  const _Wordmark();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    // Fixed size like the earlier lockup — the wordmark should stay modest so
+    // the illustration keeps most of the screen.
+    const fontSize = 40.0;
+    const style = TextStyle(
+      fontSize: fontSize,
+      height: 1.0,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 3,
+      color: Color(0xFF14501C),
+    );
+
+    return const Column(
       children: [
-        for (var i = 0; i < _items.length; i++) ...[
-          if (i > 0) const SizedBox(width: 10),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              decoration: BoxDecoration(
-                color: AppColors.lightGreen,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                children: [
-                  Icon(_items[i].icon, size: 19, color: AppColors.primary),
-                  const SizedBox(height: 5),
-                  Text(
-                    _items[i].label,
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.darkGreen,
-                    ),
-                  ),
-                ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text('EC', style: style),
+            // Bottom padding equal to the font's descent drops the hexagon
+            // onto the baseline, so it reads as the O in ECO.
+            Padding(
+              padding: EdgeInsets.only(left: 5, bottom: fontSize * 0.19),
+              child: HexLeafLogo(
+                size: fontSize * 0.8,
+                color: Color(0xFF14501C),
+                leafColor: Color(0xFF4CAF50),
+                strokeWidth: fontSize * 0.8 * 0.11,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        SizedBox(height: 2),
+        Text('CONNECT', style: style),
       ],
     );
   }
 }
 
-/// Sky, hills, trees, clouds, road and the truck.
-class _HighwayScene extends StatelessWidget {
-  const _HighwayScene({
-    required this.drive,
-    required this.ambient,
-    required this.wheels,
-  });
+/// City skyline, hills, road and the collection truck.
+class _Illustration extends StatelessWidget {
+  const _Illustration({required this.drift});
 
-  final Animation<double> drive;
-  final Animation<double> ambient;
-  final Animation<double> wheels;
-
-  static const double _truckWidth = 168;
-  static const double _truckHeight = 92;
+  final Animation<double> drift;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
-        final roadHeight = (height * 0.30).clamp(64.0, 104.0);
-        final truckScale = (width / 420).clamp(0.78, 1.15);
-        final truckW = _truckWidth * truckScale;
-        final truckH = _truckHeight * truckScale;
+        // The artwork is much taller than it is wide, so BoxFit.cover is
+        // width-driven: the rendered height is always width / 0.563. Solve for
+        // the zoom that puts the skyline just under the top edge instead of
+        // leaving a dead band of empty sky between the copy and the city.
+        final zoom = (constraints.maxHeight / (constraints.maxWidth * 0.817))
+            .clamp(1.0, 1.45);
 
-        return ClipRect(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: ambient,
-                  builder: (context, _) => CustomPaint(
-                    painter: _BackdropPainter(ambient.value, roadHeight),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRect(
+              child: AnimatedBuilder(
+                animation: drift,
+                builder: (context, child) => Transform.scale(
+                  // Scales about the bottom edge, so the road and truck stay
+                  // put while the skyline breathes.
+                  scale: zoom + drift.value * 0.02,
+                  alignment: Alignment.bottomCenter,
+                  child: child,
+                ),
+                child: Image.asset(
+                  'assets/images/splash_city.png',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.bottomCenter,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
+            // Softens the join with the header — the top of the crop is sky, so
+            // a page-coloured wash blends the two bands without a visible edge.
+            const Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 46,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFE9F4E1),
+                      Color(0x99E9F4E1),
+                      Color(0x00E9F4E1),
+                    ],
+                    stops: [0, 0.42, 1],
                   ),
                 ),
               ),
-              // Floating recycling marks add life without stealing focus.
-              Positioned(
-                left: width * 0.08,
-                top: height * 0.16,
-                child: AnimatedBuilder(
-                  animation: ambient,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(
-                      0,
-                      math.sin(ambient.value * math.pi * 2) * 7,
-                    ),
-                    child: Transform.rotate(
-                      angle: math.sin(ambient.value * math.pi * 2) * 0.12,
-                      child: child,
-                    ),
-                  ),
-                  child: const _FloatingMark(
-                    icon: Icons.recycling_rounded,
-                    size: 22,
-                    color: Color(0xFF8BC78E),
+            ),
+            // Melts the foreground grass into the green panel below.
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 46,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x003E8E41),
+                      Color(0xB33E8E41),
+                      Color(0xFF3E8E41),
+                    ],
+                    stops: [0, 0.6, 1],
                   ),
                 ),
               ),
-              Positioned(
-                right: width * 0.10,
-                top: height * 0.28,
-                child: AnimatedBuilder(
-                  animation: ambient,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(
-                      0,
-                      math.cos(ambient.value * math.pi * 2) * 9,
-                    ),
-                    child: child,
-                  ),
-                  child: const _FloatingMark(
-                    icon: Icons.eco_rounded,
-                    size: 18,
-                    color: Color(0xFFA5D6A7),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: roadHeight,
-                child: AnimatedBuilder(
-                  animation: drive,
-                  builder: (context, _) => CustomPaint(
-                    painter: _RoadPainter(drive.value),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: roadHeight * 0.36,
-                height: truckH,
-                child: AnimatedBuilder(
-                  animation: drive,
-                  builder: (context, child) {
-                    // Constant-speed traversal with a one-truck gap between
-                    // loops so the scene never looks like a jump cut.
-                    final travel = width + truckW * 2;
-                    final x = -truckW + drive.value * travel;
-                    final bob = math.sin(drive.value * math.pi * 14) * 1.2;
-                    return Transform.translate(
-                      offset: Offset(x, bob),
-                      child: child,
-                    );
-                  },
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: truckW,
-                      height: truckH,
-                      child: AnimatedBuilder(
-                        animation: wheels,
-                        builder: (context, _) => CustomPaint(
-                          painter: _TruckPainter(
-                            wheelTurn: wheels.value,
-                            scale: truckScale,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
   }
 }
 
-class _FloatingMark extends StatelessWidget {
-  const _FloatingMark({
-    required this.icon,
-    required this.size,
-    required this.color,
-  });
+/// Green panel with the value proposition and the two entry points.
+class _EntryPanel extends StatelessWidget {
+  const _EntryPanel({required this.intro});
 
-  final IconData icon;
-  final double size;
-  final Color color;
+  final Animation<double> intro;
 
   @override
   Widget build(BuildContext context) {
-    return Icon(icon, size: size, color: color.withValues(alpha: 0.75));
+    return Container(
+      width: double.infinity,
+      color: _panelGreen,
+      padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
+      child: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Reveal(
+                  intro: intro,
+                  start: 0.46,
+                  end: 0.78,
+                  child: const Text(
+                    'Smarter waste collection\nfor every barangay',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                _Reveal(
+                  intro: intro,
+                  start: 0.55,
+                  end: 0.85,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 18),
+                    child: Text(
+                      'Connecting Communities for a Cleaner and Greener '
+                      'Tomorrow',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.5,
+                        color: Color(0xFFE8F5E9),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                _Reveal(
+                  intro: intro,
+                  start: 0.68,
+                  end: 0.95,
+                  child: SizedBox(
+                    height: 54,
+                    child: FilledButton(
+                      onPressed: () => context.go('/signup'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF1B5E20),
+                        elevation: 0,
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Get Started'),
+                          SizedBox(width: 8),
+                          Icon(Icons.arrow_forward_rounded, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _Reveal(
+                  intro: intro,
+                  start: 0.78,
+                  end: 1.0,
+                  child: SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: () => context.go('/login'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white, width: 1.4),
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: const Text('I already have an account'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-/// Sky, sun, clouds, hills, grass and trees.
-class _BackdropPainter extends CustomPainter {
-  const _BackdropPainter(this.progress, this.roadHeight);
+/// Fade-and-rise reveal driven by a slice of [intro]. Uses a plain
+/// [AnimatedBuilder] so no [CurvedAnimation] is allocated on every build.
+class _Reveal extends StatelessWidget {
+  const _Reveal({
+    required this.intro,
+    required this.start,
+    required this.end,
+    required this.child,
+  });
 
-  final double progress;
-  final double roadHeight;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Sky.
-    final sky = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFFDCEFDD), Color(0xFFF7FAF7)],
-      ).createShader(Rect.fromLTWH(0, 0, w, h));
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), sky);
-
-    // Sun with a soft halo.
-    final sun = Offset(w * 0.80, h * 0.20);
-    canvas.drawCircle(
-      sun,
-      h * 0.13,
-      Paint()..color = const Color(0xFFFFF3C4).withValues(alpha: 0.55),
-    );
-    canvas.drawCircle(
-      sun,
-      h * 0.075,
-      Paint()..color = const Color(0xFFFFE082),
-    );
-
-    // Clouds drift slowly and wrap around.
-    _cloud(canvas, w, h, baseX: 0.12, baseY: 0.16, scale: 1.0, speed: 0.9);
-    _cloud(canvas, w, h, baseX: 0.52, baseY: 0.09, scale: 0.72, speed: 0.55);
-    _cloud(canvas, w, h, baseX: 0.84, baseY: 0.24, scale: 0.86, speed: 0.75);
-
-    final groundTop = h - roadHeight;
-
-    // Distant hill.
-    final farHill = Path()
-      ..moveTo(0, groundTop)
-      ..quadraticBezierTo(w * 0.18, groundTop - h * 0.20, w * 0.40, groundTop)
-      ..quadraticBezierTo(w * 0.62, groundTop - h * 0.26, w * 0.84, groundTop)
-      ..quadraticBezierTo(w * 0.94, groundTop - h * 0.10, w, groundTop)
-      ..lineTo(w, groundTop + 2)
-      ..lineTo(0, groundTop + 2)
-      ..close();
-    canvas.drawPath(farHill, Paint()..color = const Color(0xFFCDE8CF));
-
-    // Near hill.
-    final nearHill = Path()
-      ..moveTo(0, groundTop)
-      ..quadraticBezierTo(w * 0.28, groundTop - h * 0.13, w * 0.55, groundTop)
-      ..quadraticBezierTo(w * 0.78, groundTop - h * 0.16, w, groundTop)
-      ..lineTo(w, groundTop + 2)
-      ..lineTo(0, groundTop + 2)
-      ..close();
-    canvas.drawPath(nearHill, Paint()..color = const Color(0xFFB7DDBA));
-
-    // Grass verge between the hills and the road.
-    canvas.drawRect(
-      Rect.fromLTWH(0, groundTop - 6, w, roadHeight + 6),
-      Paint()..color = const Color(0xFFA5D6A7),
-    );
-
-    // Trees, sized relative to the scene.
-    _tree(canvas, Offset(w * 0.10, groundTop - 4), h * 0.115);
-    _tree(canvas, Offset(w * 0.19, groundTop - 2), h * 0.085);
-    _tree(canvas, Offset(w * 0.72, groundTop - 3), h * 0.10);
-    _tree(canvas, Offset(w * 0.90, groundTop - 5), h * 0.13);
-
-    // Small bushes.
-    for (final x in [0.30, 0.36, 0.60, 0.66]) {
-      canvas.drawCircle(
-        Offset(w * x, groundTop - 2),
-        h * 0.018,
-        Paint()..color = const Color(0xFF7FBF86),
-      );
-    }
-  }
-
-  void _cloud(
-    Canvas canvas,
-    double w,
-    double h, {
-    required double baseX,
-    required double baseY,
-    required double scale,
-    required double speed,
-  }) {
-    final cloudW = w * 0.24 * scale;
-    final travel = w + cloudW * 2;
-    final x = ((baseX * w + progress * travel * speed) % travel) - cloudW;
-    final y = h * baseY;
-    final paint = Paint()..color = Colors.white.withValues(alpha: 0.85);
-
-    canvas.drawCircle(Offset(x + cloudW * 0.25, y), cloudW * 0.16, paint);
-    canvas.drawCircle(Offset(x + cloudW * 0.45, y - cloudW * 0.06), cloudW * 0.21, paint);
-    canvas.drawCircle(Offset(x + cloudW * 0.68, y), cloudW * 0.15, paint);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + cloudW * 0.18, y, cloudW * 0.58, cloudW * 0.17),
-        Radius.circular(cloudW * 0.09),
-      ),
-      paint,
-    );
-  }
-
-  void _tree(Canvas canvas, Offset base, double height) {
-    final trunkWidth = height * 0.14;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          base.dx - trunkWidth / 2,
-          base.dy - height * 0.45,
-          trunkWidth,
-          height * 0.45,
-        ),
-        Radius.circular(trunkWidth / 2),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-    final canopy = Paint()..color = const Color(0xFF4CAF50);
-    canvas.drawCircle(Offset(base.dx, base.dy - height * 0.60), height * 0.30, canopy);
-    canvas.drawCircle(
-      Offset(base.dx - height * 0.18, base.dy - height * 0.45),
-      height * 0.22,
-      Paint()..color = const Color(0xFF43A047),
-    );
-    canvas.drawCircle(
-      Offset(base.dx + height * 0.18, base.dy - height * 0.45),
-      height * 0.22,
-      Paint()..color = const Color(0xFF43A047),
-    );
-  }
+  final Animation<double> intro;
+  final double start;
+  final double end;
+  final Widget child;
 
   @override
-  bool shouldRepaint(covariant _BackdropPainter old) =>
-      old.progress != progress || old.roadHeight != roadHeight;
-}
-
-/// Asphalt band with scrolling lane markings.
-class _RoadPainter extends CustomPainter {
-  const _RoadPainter(this.progress);
-
-  final double progress;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h),
-      Paint()..color = const Color(0xFF3E4A42),
-    );
-
-    // Kerb highlight.
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h * 0.10),
-      Paint()..color = const Color(0xFF566257),
-    );
-
-    const period = 54.0;
-    final dash = Paint()
-      ..color = const Color(0xFFF7FAF7).withValues(alpha: 0.85)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-
-    final shift = -(progress * period * 2) % period;
-    final y = h * 0.58;
-    for (var x = shift - period; x < w + period; x += period) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, y - 1.5, 26, 3),
-          const Radius.circular(2),
-        ),
-        dash,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoadPainter old) => old.progress != progress;
-}
-
-/// The truck itself: cargo body, cab, window, lights and two spinning wheels.
-class _TruckPainter extends CustomPainter {
-  const _TruckPainter({required this.wheelTurn, required this.scale});
-
-  final double wheelTurn;
-  final double scale;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Ground shadow.
-    canvas.drawOval(
-      Rect.fromLTWH(w * 0.08, h * 0.86, w * 0.82, h * 0.10),
-      Paint()..color = Colors.black.withValues(alpha: 0.14),
-    );
-
-    // Cargo body.
-    final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.04, h * 0.20, w * 0.58, h * 0.47),
-      Radius.circular(h * 0.09),
-    );
-    canvas.drawRRect(body, Paint()..color = AppColors.primary);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(w * 0.04, h * 0.20, w * 0.58, h * 0.13),
-        Radius.circular(h * 0.09),
-      ),
-      Paint()..color = AppColors.secondary,
-    );
-
-    // Side stripe.
-    canvas.drawRect(
-      Rect.fromLTWH(w * 0.05, h * 0.49, w * 0.56, h * 0.05),
-      Paint()..color = AppColors.lightGreen.withValues(alpha: 0.85),
-    );
-
-    // Leaf mark on the body.
-    final leafCenter = Offset(w * 0.24, h * 0.36);
-    final leaf = Path()
-      ..moveTo(leafCenter.dx, leafCenter.dy + h * 0.06)
-      ..quadraticBezierTo(
-        leafCenter.dx - h * 0.09,
-        leafCenter.dy - h * 0.02,
-        leafCenter.dx,
-        leafCenter.dy - h * 0.07,
-      )
-      ..quadraticBezierTo(
-        leafCenter.dx + h * 0.09,
-        leafCenter.dy - h * 0.02,
-        leafCenter.dx,
-        leafCenter.dy + h * 0.06,
-      )
-      ..close();
-    canvas.drawPath(leaf, Paint()..color = Colors.white.withValues(alpha: 0.92));
-
-    // Cab.
-    final cab = Path()
-      ..moveTo(w * 0.62, h * 0.67)
-      ..lineTo(w * 0.62, h * 0.33)
-      ..quadraticBezierTo(w * 0.63, h * 0.26, w * 0.71, h * 0.26)
-      ..lineTo(w * 0.84, h * 0.26)
-      ..quadraticBezierTo(w * 0.92, h * 0.28, w * 0.95, h * 0.40)
-      ..lineTo(w * 0.96, h * 0.67)
-      ..close();
-    canvas.drawPath(cab, Paint()..color = AppColors.darkGreen);
-
-    // Window.
-    final window = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.67, h * 0.33, w * 0.19, h * 0.17),
-      Radius.circular(h * 0.035),
-    );
-    canvas.drawRRect(
-      window,
-      Paint()..color = const Color(0xFFCFE9D2),
-    );
-
-    // Headlight and bumper.
-    canvas.drawCircle(
-      Offset(w * 0.94, h * 0.58),
-      h * 0.026,
-      Paint()..color = const Color(0xFFFFE082),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(w * 0.60, h * 0.66, w * 0.38, h * 0.06),
-        Radius.circular(h * 0.03),
-      ),
-      Paint()..color = const Color(0xFF2B3A2E),
-    );
-
-    // Wheels.
-    _wheel(canvas, Offset(w * 0.21, h * 0.74), h * 0.145);
-    _wheel(canvas, Offset(w * 0.75, h * 0.74), h * 0.145);
-  }
-
-  void _wheel(Canvas canvas, Offset center, double radius) {
-    canvas.drawCircle(center, radius, Paint()..color = const Color(0xFF1F2A20));
-    canvas.drawCircle(
-      center,
-      radius * 0.62,
-      Paint()..color = const Color(0xFFD7E3D8),
-    );
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(wheelTurn * 2 * math.pi);
-    final spoke = Paint()
-      ..color = const Color(0xFF5F6F64)
-      ..strokeWidth = math.max(1.6, radius * 0.18)
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 5; i++) {
-      final angle = i * 2 * math.pi / 5;
-      canvas.drawLine(
-        Offset(
-          math.cos(angle) * radius * 0.16,
-          math.sin(angle) * radius * 0.16,
-        ),
-        Offset(
-          math.cos(angle) * radius * 0.50,
-          math.sin(angle) * radius * 0.50,
-        ),
-        spoke,
-      );
-    }
-    canvas.restore();
-
-    canvas.drawCircle(
-      center,
-      radius * 0.16,
-      Paint()..color = const Color(0xFF5F6F64),
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: intro,
+      builder: (context, inner) {
+        final span = (end - start).abs() < 0.001 ? 1.0 : (end - start);
+        final t = ((intro.value - start) / span).clamp(0.0, 1.0);
+        final eased = Curves.easeOutCubic.transform(t);
+        return Opacity(
+          opacity: eased,
+          child: Transform.translate(
+            offset: Offset(0, (1 - eased) * 16),
+            child: inner,
+          ),
+        );
+      },
+      child: child,
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _TruckPainter old) =>
-      old.wheelTurn != wheelTurn || old.scale != scale;
 }

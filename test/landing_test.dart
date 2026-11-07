@@ -12,7 +12,7 @@ void main() {
     expect(find.text('I already have an account'), findsOneWidget);
     expect(
       find.text(
-        'Connecting Communities for a Cleaner and Greener Tomorrow.',
+        'Connecting Communities for a Cleaner and Greener Tomorrow',
       ),
       findsOneWidget,
     );

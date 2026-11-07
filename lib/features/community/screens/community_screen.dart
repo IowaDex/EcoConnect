@@ -276,7 +276,7 @@ class _AnnouncementsTab extends StatelessWidget {
       stream: service.watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const LoadingView(label: 'Loading announcements');
         }
         if (snapshot.hasError) {
           return Center(
@@ -469,7 +469,7 @@ class _EventsTab extends StatelessWidget {
       stream: service.watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const LoadingView(label: 'Loading events');
         }
         final items = snapshot.data ?? const <CommunityEvent>[];
         if (items.isEmpty) {
@@ -636,7 +636,7 @@ class _PostsTab extends StatelessWidget {
       stream: service.watchFeed(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const LoadingView(label: 'Loading community posts');
         }
         if (snapshot.hasError) {
           return Center(

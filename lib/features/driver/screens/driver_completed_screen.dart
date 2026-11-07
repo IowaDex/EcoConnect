@@ -23,7 +23,7 @@ class DriverCompletedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: LoadingView(label: 'Loading completed runs'));
     }
 
     return Scaffold(
@@ -78,8 +78,9 @@ class DriverCompletedScreen extends StatelessWidget {
                       if (snapshot.connectionState ==
                               ConnectionState.waiting &&
                           plans.isEmpty) {
-                        return const Center(
-                            child: CircularProgressIndicator());
+                  return const Center(
+                    child: LoadingView(label: 'Loading completed runs'),
+                  );
                       }
                       if (plans.isEmpty && done.isEmpty) {
                         return const EmptyState(

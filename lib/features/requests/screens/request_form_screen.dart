@@ -11,6 +11,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -105,27 +106,35 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
 
     setState(() => _saving = true);
     try {
-      await _service.create(
-        requesterId: user.uid,
-        requesterName: user.displayName ?? 'Resident',
-        requesterPhone: user.phone,
-        requesterBarangay: user.barangay,
-        kind: _kind,
-        title: _title.text,
-        description: _description.text,
-        category: _category,
-        estimatedQuantity: _quantity.text,
-        location: _location.text,
-        preferredDate: _preferred,
-        remarks: _remarks.text,
-        images: _images,
+      // Photos go up first, so the truck overlay explains the wait.
+      await EcoLoadingOverlay.run(
+        context,
+        () => _service.create(
+          requesterId: user.uid,
+          requesterName: user.displayName ?? 'Resident',
+          requesterPhone: user.phone,
+          requesterBarangay: user.barangay,
+          kind: _kind,
+          title: _title.text,
+          description: _description.text,
+          category: _category,
+          estimatedQuantity: _quantity.text,
+          location: _location.text,
+          preferredDate: _preferred,
+          remarks: _remarks.text,
+          images: _images,
+        ),
+        message: 'Sending your collection request',
       );
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.task_alt_rounded,
-              size: 34, color: AppColors.primary),
+          icon: const Icon(
+            Icons.task_alt_rounded,
+            size: 34,
+            color: AppColors.primary,
+          ),
           title: const Text('Request submitted'),
           content: Text(
             _kind == RequestKind.special
@@ -159,9 +168,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
         child: Column(
           children: [
             AppPageHeader(
-              title: canSpecial
-                  ? 'Collection request'
-                  : 'Request a collection',
+              title: canSpecial ? 'Collection request' : 'Request a collection',
               subtitle: canSpecial
                   ? 'Standard or special pickup for government personnel.'
                   : 'Tell the barangay what needs to be collected.',
@@ -190,12 +197,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                         const SizedBox(height: 14),
                       ] else if (user?.isGovernment == true) ...[
                         EcoBanner(
-                          message: user?.verificationStatus ==
+                          message:
+                              user?.verificationStatus ==
                                   VerificationStatus.rejected
                               ? 'Your government ID was rejected. Standard requests still work while you resubmit your document.'
                               : 'Your government account is pending verification. Special collection requests unlock once staff approve your ID.',
                           icon: Icons.badge_outlined,
-                          color: user?.verificationStatus ==
+                          color:
+                              user?.verificationStatus ==
                                   VerificationStatus.rejected
                               ? AppColors.error
                               : AppColors.warning,
@@ -226,12 +235,13 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                               textCapitalization: TextCapitalization.sentences,
                               decoration: const InputDecoration(
                                 labelText: 'Request title',
-                                hintText: 'e.g. Bulky waste pickup at the barangay hall',
+                                hintText:
+                                    'e.g. Bulky waste pickup at the barangay hall',
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().length < 5)
-                                      ? 'Please add a short title'
-                                      : null,
+                                  ? 'Please add a short title'
+                                  : null,
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
@@ -247,8 +257,8 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().length < 10)
-                                      ? 'Please describe the request'
-                                      : null,
+                                  ? 'Please describe the request'
+                                  : null,
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<WasteCategory>(
@@ -278,8 +288,8 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().isEmpty)
-                                      ? 'Please estimate the quantity'
-                                      : null,
+                                  ? 'Please estimate the quantity'
+                                  : null,
                             ),
                           ],
                         ),
@@ -302,8 +312,8 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().isEmpty)
-                                      ? 'Please add the collection location'
-                                      : null,
+                                  ? 'Please add the collection location'
+                                  : null,
                             ),
                             const SizedBox(height: 10),
                             InkWell(
@@ -321,8 +331,11 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.event_outlined,
-                                        size: 18, color: AppColors.primary),
+                                    const Icon(
+                                      Icons.event_outlined,
+                                      size: 18,
+                                      color: AppColors.primary,
+                                    ),
                                     const SizedBox(width: 10),
                                     Column(
                                       crossAxisAlignment:
@@ -346,8 +359,11 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                                       ],
                                     ),
                                     const Spacer(),
-                                    const Icon(Icons.edit_calendar_outlined,
-                                        size: 17, color: AppColors.inkMuted),
+                                    const Icon(
+                                      Icons.edit_calendar_outlined,
+                                      size: 17,
+                                      color: AppColors.inkMuted,
+                                    ),
                                   ],
                                 ),
                               ),

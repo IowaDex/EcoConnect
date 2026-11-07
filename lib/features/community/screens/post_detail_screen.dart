@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/community_post.dart';
 import '../services/community_post_service.dart';
@@ -101,7 +102,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 stream: _service.watchPost(widget.postId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const LoadingView(label: 'Loading post');
                   }
                   final post = snapshot.data;
                   if (post == null) {
