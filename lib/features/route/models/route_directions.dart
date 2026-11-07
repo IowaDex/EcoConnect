@@ -26,6 +26,31 @@ class RouteLeg {
   String get durationLabel => _durationLabel(durationSeconds);
 }
 
+/// One turn-by-turn instruction inside a leg.
+class RouteStep {
+  const RouteStep({
+    required this.instruction,
+    required this.maneuver,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    required this.legIndex,
+    this.arrivesAtStop = false,
+  });
+
+  final String instruction;
+
+  /// Raw OSRM maneuver type: `depart`, `turn`, `arrive`, `roundabout`, …
+  final String maneuver;
+  final double distanceMeters;
+  final double durationSeconds;
+
+  /// Which leg (and therefore which stop) this step belongs to.
+  final int legIndex;
+  final bool arrivesAtStop;
+
+  String get distanceLabel => _distanceLabel(distanceMeters);
+}
+
 /// A road-following route between waypoints, as returned by the routing
 /// service. [polyline] already follows streets, so it can be drawn directly.
 class RouteDirections {
@@ -34,12 +59,14 @@ class RouteDirections {
     required this.distanceMeters,
     required this.durationSeconds,
     required this.legs,
+    this.steps = const [],
   });
 
   final List<LatLng> polyline;
   final double distanceMeters;
   final double durationSeconds;
   final List<RouteLeg> legs;
+  final List<RouteStep> steps;
 
   bool get isEmpty => polyline.isEmpty;
 

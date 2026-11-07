@@ -92,6 +92,69 @@ void main() {
       expect(route, isNull);
     });
 
+    test('parses turn-by-turn steps with the stop name', () async {
+      final client = MockClient((request) async {
+        expect(request.url.queryParameters['steps'], 'true');
+        return http.Response(
+          jsonEncode({
+            'code': 'Ok',
+            'routes': [
+              {
+                'distance': 1200.0,
+                'duration': 300.0,
+                'geometry': {
+                  'coordinates': [
+                    [121.0, 14.6],
+                    [121.01, 14.61],
+                  ],
+                },
+                'legs': [
+                  {
+                    'distance': 1200.0,
+                    'duration': 300.0,
+                    'steps': [
+                      {
+                        'maneuver': {'type': 'depart', 'modifier': ''},
+                        'name': 'Mabini St',
+                        'distance': 200.0,
+                        'duration': 60.0,
+                      },
+                      {
+                        'maneuver': {'type': 'turn', 'modifier': 'left'},
+                        'name': 'Rizal Ave',
+                        'distance': 800.0,
+                        'duration': 200.0,
+                      },
+                      {
+                        'maneuver': {'type': 'arrive', 'modifier': ''},
+                        'name': '',
+                        'distance': 0.0,
+                        'duration': 0.0,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+          200,
+        );
+      });
+
+      final route = await DirectionsService(client: client).drivingRoute(
+        const [LatLng(14.6, 121.0), LatLng(14.61, 121.01)],
+        stopNames: const ['Covered court'],
+      );
+
+      expect(route, isNotNull);
+      expect(route!.steps, hasLength(3));
+      expect(route.steps.first.instruction, 'Start on Mabini St');
+      expect(route.steps[1].instruction, 'Turn left onto Rizal Ave');
+      expect(route.steps.last.instruction, 'Arrive at Covered court');
+      expect(route.steps.last.arrivesAtStop, isTrue);
+      expect(route.steps[1].legIndex, 0);
+    });
+
     test('returns null for a malformed body instead of throwing', () async {
       final client = MockClient((_) async => http.Response('<html>', 200));
 

@@ -18,7 +18,6 @@ import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
-import '../../../core/utils/maps.dart';
 import '../../notifications/services/notification_service.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
@@ -1207,17 +1206,16 @@ class _AssignedStopsCard extends StatelessWidget {
     BuildContext context,
     List<RouteStop> stops,
   ) async {
-    final points = [
-      for (final stop in stops)
-        if (stop.hasCoordinates) LatLng(stop.latitude!, stop.longitude!),
-    ];
-    if (points.isEmpty) return;
-    final opened = await openRouteDirections(stops: points);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps.')),
-      );
-    }
+    if (!stops.any((stop) => stop.hasCoordinates)) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          title: 'Directions',
+          stops: stops,
+          openSteps: true,
+        ),
+      ),
+    );
   }
 }
 
@@ -1379,20 +1377,19 @@ class _RouteStopsCard extends StatelessWidget {
     );
   }
 
-  /// Hands the whole run to Google Maps: truck position first, then every
-  /// pinned stop as a waypoint.
+  /// Opens the in-app turn-by-turn sheet for this run.
   Future<void> _openDirections(BuildContext context) async {
-    final stops = [
-      for (final stop in plan.mappedStops)
-        LatLng(stop.latitude!, stop.longitude!),
-    ];
-    if (stops.isEmpty) return;
-    final opened = await openRouteDirections(stops: stops, origin: truck);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps.')),
-      );
-    }
+    if (plan.mappedStops.isEmpty) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          title: 'Directions',
+          stops: plan.stops,
+          truck: truck,
+          openSteps: true,
+        ),
+      ),
+    );
   }
 }
 

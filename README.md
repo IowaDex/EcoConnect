@@ -61,8 +61,10 @@ backed by Firestore; there is no demo data.
 - Drivers are notified when staff add, remove, deactivate or reassign a point
   on their route, and the stop list is shown even before a run starts.
 - The full-screen map follows real roads through OSRM (OpenStreetMap), showing
-  total distance and time plus the drive to each stop. Navigate opens Google
-  Maps with every stop queued as a waypoint, from the truck to the last stop.
+  total distance and time plus the drive to each stop.
+- Directions are shown in-app: a turn-by-turn sheet lists every manoeuvre
+  ("Turn left onto Rizal Ave · 800 m") from the truck to the last stop. Google
+  Maps is still one tap away when the driver wants spoken navigation.
 
 ### Barangay staff
 - Announcements: create, edit, publish/unpublish, delete, optional cover photo.
