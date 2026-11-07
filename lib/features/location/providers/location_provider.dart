@@ -114,7 +114,10 @@ class LocationProvider extends ChangeNotifier {
         return _issue;
       }
 
+      // A granted permission or a fresh fix clears the old "blocked" text.
+      if (_error != null) _error = null;
       _setIssue(LocationIssue.none);
+      notifyListeners();
     } catch (error) {
       AppLogger.error('Location health check failed', error);
       _setIssue(LocationIssue.unavailable);
@@ -145,6 +148,7 @@ class LocationProvider extends ChangeNotifier {
     try {
       _currentPosition = await _locationService.getCurrentPosition();
       await _queueLocationOperation(_currentPosition!);
+      _clearError();
       _setLoading(false);
       return true;
     } catch (e) {
@@ -300,6 +304,30 @@ class LocationProvider extends ChangeNotifier {
     } finally {
       _isSyncing = false;
       notifyListeners();
+    }
+  }
+
+  /// Clears a stale permission error, asks again and takes a fresh fix.
+  ///
+  /// The driver dashboard uses this instead of dumping the user into the OS
+  /// settings, which does not exist on the web build.
+  Future<bool> retryLocation() async {
+    _clearError();
+    notifyListeners();
+    try {
+      final permission = await requestPermissions();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        await refreshLocationHealth();
+        return false;
+      }
+      final fixed = await getCurrentLocation();
+      await refreshLocationHealth();
+      return fixed;
+    } catch (error) {
+      AppLogger.error('Location retry failed', error);
+      await refreshLocationHealth();
+      return false;
     }
   }
 

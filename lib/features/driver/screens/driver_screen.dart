@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -17,6 +18,7 @@ import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
+import '../../../core/utils/maps.dart';
 import '../../notifications/services/notification_service.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
@@ -73,6 +75,9 @@ class _DriverScreenState extends State<DriverScreen> {
     location.startSharedLocationUpdates();
     if (!location.hasLocation) await location.getCurrentLocation();
     if (!location.isTracking) location.startTracking();
+    // Record why a fix is missing so the card can explain it accurately
+    // instead of leaving a stale error from a previous attempt.
+    await location.refreshLocationHealth();
 
     final uid = _uid;
     if (uid == null) return;
@@ -133,6 +138,24 @@ class _DriverScreenState extends State<DriverScreen> {
     _healthTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted && _isRunning) _checkLocationHealth();
     });
+  }
+
+  /// Asks for location again. On the web the OS settings page does not exist,
+  /// so the browser prompt is the only route back to a working fix.
+  Future<void> _fixLocation() async {
+    final location = context.read<LocationProvider>();
+    final fixed = await location.retryLocation();
+    if (!mounted) return;
+    if (fixed) {
+      _toast('Location enabled');
+      return;
+    }
+    _toast(
+      kIsWeb
+          ? 'Allow location for this site in your browser, then try again.'
+          : 'Allow location for EcoConnect in Settings, then try again.',
+      isError: true,
+    );
   }
 
   /// Diagnoses the device and publishes the result to the route document.
@@ -755,6 +778,7 @@ class _DriverScreenState extends State<DriverScreen> {
                     _fail('broadcast your location', e);
                   }
                 },
+                onFix: _fixLocation,
               ),
               const SizedBox(height: 16),
               const LocationControls(),
@@ -1148,21 +1172,52 @@ class _AssignedStopsCard extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => RouteMapScreen(
-                  title: 'Assigned stops',
-                  stops: stops,
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RouteMapScreen(
+                        title: 'Assigned stops',
+                        stops: stops,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 15),
+                  label: const Text('Map'),
                 ),
               ),
-            ),
-            icon: const Icon(Icons.map_outlined, size: 15),
-            label: const Text('View on map'),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _openDirections(context, stops),
+                  icon: const Icon(Icons.navigation_rounded, size: 15),
+                  label: const Text('Directions'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openDirections(
+    BuildContext context,
+    List<RouteStop> stops,
+  ) async {
+    final points = [
+      for (final stop in stops)
+        if (stop.hasCoordinates) LatLng(stop.latitude!, stop.longitude!),
+    ];
+    if (points.isEmpty) return;
+    final opened = await openRouteDirections(stops: points);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps.')),
+      );
+    }
   }
 }
 
@@ -1203,41 +1258,6 @@ class _RouteStopsCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 9,
                   color: AppColors.inkMuted,
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RouteMapScreen(
-                      title: 'Your route map',
-                      stops: plan.stops,
-                      truck: truck,
-                    ),
-                  ),
-                ),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.lightGreen,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.map_outlined,
-                          size: 11, color: AppColors.primary),
-                      SizedBox(width: 3),
-                      Text(
-                        'Map',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],
@@ -1324,9 +1344,55 @@ class _RouteStopsCard extends StatelessWidget {
                 ],
               ),
             ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RouteMapScreen(
+                        title: 'Your route map',
+                        stops: plan.stops,
+                        truck: truck,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 15),
+                  label: const Text('Map'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: plan.mappedStops.isEmpty
+                      ? null
+                      : () => _openDirections(context),
+                  icon: const Icon(Icons.navigation_rounded, size: 15),
+                  label: const Text('Directions'),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  /// Hands the whole run to Google Maps: truck position first, then every
+  /// pinned stop as a waypoint.
+  Future<void> _openDirections(BuildContext context) async {
+    final stops = [
+      for (final stop in plan.mappedStops)
+        LatLng(stop.latitude!, stop.longitude!),
+    ];
+    if (stops.isEmpty) return;
+    final opened = await openRouteDirections(stops: stops, origin: truck);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open Google Maps.')),
+      );
+    }
   }
 }
 
@@ -1566,15 +1632,20 @@ class _LocationCard extends StatelessWidget {
     required this.location,
     required this.isLive,
     required this.onBroadcast,
+    required this.onFix,
   });
 
   final LocationProvider location;
   final bool isLive;
   final VoidCallback onBroadcast;
+  final VoidCallback onFix;
 
   @override
   Widget build(BuildContext context) {
-    final denied = location.error != null;
+    final issue = location.issue;
+    final blocked = issue == LocationIssue.permissionDenied ||
+        issue == LocationIssue.permissionDeniedForever;
+    final denied = blocked || location.error != null;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1621,7 +1692,7 @@ class _LocationCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             denied
-                ? 'Location permission is required to run a collection route.'
+                ? _blockedMessage()
                 : location.hasLocation
                     ? location.locationString
                     : 'Waiting for a GPS fix…',
@@ -1642,18 +1713,16 @@ class _LocationCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: denied
-                  ? () => location.openAppSettings()
-                  : isLive
-                      ? onBroadcast
-                      : null,
+              onPressed: denied ? onFix : (isLive ? onBroadcast : null),
               icon: Icon(
-                denied ? Icons.settings_rounded : Icons.send_rounded,
+                denied
+                    ? (kIsWeb ? Icons.refresh_rounded : Icons.settings_rounded)
+                    : Icons.send_rounded,
                 size: 15,
               ),
               label: Text(
                 denied
-                    ? 'Open app settings'
+                    ? (kIsWeb ? 'Try again' : 'Open app settings')
                     : isLive
                         ? 'Broadcast now'
                         : 'Activate a route to broadcast',
@@ -1672,6 +1741,20 @@ class _LocationCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _blockedMessage() {
+    if (kIsWeb) {
+      return location.issue == LocationIssue.permissionDeniedForever
+          ? 'Your browser is blocking location for this site. Open the lock '
+              'icon in the address bar, allow Location, then tap Try again.'
+          : 'Allow location when your browser asks so residents can see the '
+              'truck on the map.';
+    }
+    return location.issue == LocationIssue.permissionDeniedForever
+        ? 'Location is blocked for EcoConnect. Allow it in Settings, then tap '
+            'Try again.'
+        : 'Location permission is required to run a collection route.';
   }
 }
 
