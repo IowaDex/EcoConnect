@@ -125,8 +125,13 @@ service cloud.firestore {
     // Staff (admin) schedule a driver's day here. The driver may only flip
     // their own assignment from scheduled -> active/completed.
     match /routePlans/{planId} {
+      // Residents may read a plan while it is being run, so the tracking map can
+      // show the same stops the driver sees. Finished and scheduled plans stay
+      // private to the driver and staff.
       allow read: if signedIn()
-        && (isAdmin() || resource.data.driverId == request.auth.uid);
+        && (isAdmin()
+            || resource.data.driverId == request.auth.uid
+            || resource.data.status == 'active');
       allow create: if isAdmin()
         || (isActive()
             && request.resource.data.driverId == request.auth.uid

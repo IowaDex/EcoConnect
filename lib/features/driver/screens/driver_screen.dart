@@ -17,6 +17,9 @@ import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
+import '../../notifications/services/notification_service.dart';
+import '../../collection_points/models/collection_point.dart';
+import '../../collection_points/services/collection_point_service.dart';
 import '../services/driver_session_service.dart';
 import '../../../core/widgets/status_badge.dart';
 
@@ -29,8 +32,11 @@ class DriverScreen extends StatefulWidget {
 
 class _DriverScreenState extends State<DriverScreen> {
   final _routeService = RouteService();
+  final _pointService = CollectionPointService();
   StreamSubscription<CollectionRoute?>? _routeSub;
   StreamSubscription<RoutePlan?>? _planSub;
+  StreamSubscription<List<CollectionPoint>>? _pointsSub;
+  List<CollectionPoint> _assignedPoints = const [];
   Timer? _broadcastTimer;
   Timer? _clockTimer;
   Timer? _healthTimer;
@@ -105,6 +111,14 @@ class _DriverScreenState extends State<DriverScreen> {
       },
     );
 
+    // Stops staff pin for this driver, shown even before a run starts.
+    _pointsSub = _pointService.watchForDriver(uid).listen(
+      (points) {
+        if (mounted) setState(() => _assignedPoints = points);
+      },
+      onError: (_) {},
+    );
+
     // Keeps the "running for…" clock ticking without another server read.
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted && _isRunning) setState(() {});
@@ -167,6 +181,7 @@ class _DriverScreenState extends State<DriverScreen> {
   void dispose() {
     _routeSub?.cancel();
     _planSub?.cancel();
+    _pointsSub?.cancel();
     _broadcastTimer?.cancel();
     _clockTimer?.cancel();
     _healthTimer?.cancel();
@@ -581,14 +596,47 @@ class _DriverScreenState extends State<DriverScreen> {
                 children: [
                   const BrandWordmark(fontSize: 10.5),
                   const Spacer(),
-                  InkWell(
-                    onTap: () => context.push('/notifications'),
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.notifications_none_rounded,
-                          size: 19, color: AppColors.inkMuted),
-                    ),
+                  StreamBuilder<int>(
+                    stream: NotificationService()
+                        .watchUnreadCount(user?.uid ?? ''),
+                    builder: (context, snapshot) {
+                      final unread = snapshot.data ?? 0;
+                      return InkWell(
+                        onTap: () => context.push('/notifications'),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(Icons.notifications_none_rounded,
+                                  size: 19, color: AppColors.inkMuted),
+                              if (unread > 0)
+                                Positioned(
+                                  right: -4,
+                                  top: -3,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.error,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      unread > 9 ? '9+' : '$unread',
+                                      style: const TextStyle(
+                                        fontSize: 7.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(width: 2),
                   InkWell(
@@ -658,6 +706,9 @@ class _DriverScreenState extends State<DriverScreen> {
                       ? LatLng(location.latitude!, location.longitude!)
                       : null,
                 ),
+              ] else if (_assignedPoints.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _AssignedStopsCard(points: _assignedPoints),
               ],
               if (_isLive) ...[
                 const SizedBox(height: 16),
@@ -1028,6 +1079,90 @@ class _AssignmentCard extends StatelessWidget {
     final minutes = duration.inMinutes.remainder(60);
     if (hours == 0) return '$minutes min';
     return '${hours}h ${minutes}m';
+  }
+}
+
+class _AssignedStopsCard extends StatelessWidget {
+  const _AssignedStopsCard({required this.points});
+
+  final List<CollectionPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final stops = RouteService.mergeAssignedStops(const [], points);
+    final preview = stops.take(3).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.alt_route_rounded,
+                  size: 16, color: AppColors.forest),
+              const SizedBox(width: 8),
+              const Text(
+                'Assigned stops',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.forest,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${stops.length} stop${stops.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < preview.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${i + 1}. ${preview[i].name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppColors.forest,
+                ),
+              ),
+            ),
+          if (stops.length > preview.length)
+            Text(
+              '+${stops.length - preview.length} more',
+              style: const TextStyle(
+                fontSize: 9,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RouteMapScreen(
+                  title: 'Assigned stops',
+                  stops: stops,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.map_outlined, size: 15),
+            label: const Text('View on map'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

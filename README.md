@@ -58,6 +58,8 @@ backed by Firestore; there is no demo data.
 - Assigned collection points appear as numbered stops with address and
   schedule, a read-only preview map on the dashboard, and a full-screen
   zoomable route map with per-stop details and one-tap Google Maps directions.
+- Drivers are notified when staff add, remove, deactivate or reassign a point
+  on their route, and the stop list is shown even before a run starts.
 
 ### Barangay staff
 - Announcements: create, edit, publish/unpublish, delete, optional cover photo.
@@ -76,7 +78,8 @@ backed by Firestore; there is no demo data.
 ### Resident
 - Waste upload with camera/gallery photos, category, quantity and location.
 - Upload history with validation status and staff remarks.
-- Standard collection requests and request history with a progress timeline.
+- Live tracking shows the truck, the planned path and the same numbered
+  stops the driver follows, with a Map action for the full route.
 - Verified government personnel additionally unlock **special collection
   requests**; the check is enforced in Firestore, not just by hiding the UI.
 - Live announcements and upcoming events on the dashboard.

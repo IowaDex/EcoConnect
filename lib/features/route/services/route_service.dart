@@ -72,12 +72,58 @@ class RouteService {
     });
   }
 
+  /// One assignment, with the driver's collection points merged into its
+  /// stops. Residents follow this stream while a run is live, so the tracking
+  /// map shows exactly the route the driver sees.
   Stream<RoutePlan?> watchPlan(String planId) {
-    return _plans.doc(planId).snapshots().map((snap) {
-      final data = snap.data();
-      if (data == null) return null;
-      return RoutePlan.fromDoc(snap.id, data);
-    });
+    late StreamController<RoutePlan?> controller;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? planSub;
+    StreamSubscription<List<CollectionPoint>>? pointSub;
+    RoutePlan? latestPlan;
+    var latestPoints = const <CollectionPoint>[];
+    String? pointsDriverId;
+
+    void emit() {
+      final plan = latestPlan;
+      controller.add(plan?.withStops(
+        mergeAssignedStops(plan.stops, latestPoints),
+      ));
+    }
+
+    void watchPoints(String driverId) {
+      if (driverId == pointsDriverId) return;
+      pointsDriverId = driverId;
+      latestPoints = const [];
+      pointSub?.cancel();
+      pointSub = _points.watchForDriver(driverId).listen(
+        (points) {
+          latestPoints = points;
+          emit();
+        },
+        onError: (_) {},
+      );
+    }
+
+    controller = StreamController<RoutePlan?>(
+      onListen: () {
+        planSub = _plans.doc(planId).snapshots().listen(
+          (snap) {
+            final data = snap.data();
+            latestPlan = data == null ? null : RoutePlan.fromDoc(snap.id, data);
+            final plan = latestPlan;
+            if (plan != null) watchPoints(plan.driverId);
+            emit();
+          },
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      },
+      onCancel: () async {
+        await planSub?.cancel();
+        await pointSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// The assignment the driver should be running today, if staff created one.
