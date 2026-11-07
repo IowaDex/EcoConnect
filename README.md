@@ -55,6 +55,9 @@ backed by Firestore; there is no demo data.
   is never falsely reported for disabling tracking.
 - "Enable location" deep-links to the right device settings.
 - Staff are notified on pause, resume, completion and lost location.
+- Assigned collection points appear as numbered stops with address and
+  schedule, a read-only preview map on the dashboard, and a full-screen
+  zoomable route map with per-stop details and one-tap Google Maps directions.
 
 ### Barangay staff
 - Announcements: create, edit, publish/unpublish, delete, optional cover photo.

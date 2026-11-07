@@ -122,24 +122,55 @@ class RouteService {
             name: point.name,
             latitude: point.latitude,
             longitude: point.longitude,
+            address: _clean(point.address),
+            schedule: point.hasSchedule ? point.scheduleLabel : null,
+            notes: _clean(point.notes),
           ),
     ];
     return mergeStops(planStops, extra);
   }
 
-  /// Appends stops from [extra] that are not already named in [base].
+  /// Appends stops from [extra] that are not already named in [base]. When a
+  /// name appears twice the base stop keeps its position and coordinates, but
+  /// picks up any details it was missing.
   static List<RouteStop> mergeStops(
     List<RouteStop> base,
     List<RouteStop> extra,
   ) {
-    final merged = <RouteStop>[...base];
-    final seen = base.map((stop) => stop.name.trim().toLowerCase()).toSet();
-    for (final stop in extra) {
-      final key = stop.name.trim().toLowerCase();
-      if (key.isEmpty || !seen.add(key)) continue;
+    final merged = <RouteStop>[];
+    final indexByName = <String, int>{};
+    for (final stop in base) {
+      indexByName[stop.name.trim().toLowerCase()] = merged.length;
       merged.add(stop);
     }
+    for (final stop in extra) {
+      final key = stop.name.trim().toLowerCase();
+      if (key.isEmpty) continue;
+      final index = indexByName[key];
+      if (index == null) {
+        indexByName[key] = merged.length;
+        merged.add(stop);
+      } else {
+        merged[index] = _withDetails(merged[index], stop);
+      }
+    }
     return merged;
+  }
+
+  static RouteStop _withDetails(RouteStop base, RouteStop extra) {
+    return RouteStop(
+      name: base.name,
+      latitude: base.latitude ?? extra.latitude,
+      longitude: base.longitude ?? extra.longitude,
+      address: base.address ?? extra.address,
+      schedule: base.schedule ?? extra.schedule,
+      notes: base.notes ?? extra.notes,
+    );
+  }
+
+  static String? _clean(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 
   /// Combines plan snapshots with the assigned points stream. Points start as

@@ -16,6 +16,7 @@ import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
+import '../../route/screens/route_map_screen.dart';
 import '../services/driver_session_service.dart';
 import '../../../core/widgets/status_badge.dart';
 
@@ -1069,6 +1070,41 @@ class _RouteStopsCard extends StatelessWidget {
                   color: AppColors.inkMuted,
                 ),
               ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RouteMapScreen(
+                      title: 'Your route map',
+                      stops: plan.stops,
+                      truck: truck,
+                    ),
+                  ),
+                ),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightGreen,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.map_outlined,
+                          size: 11, color: AppColors.primary),
+                      SizedBox(width: 3),
+                      Text(
+                        'Map',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1114,13 +1150,34 @@ class _RouteStopsCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              plan.stops[i].name,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.forest,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  plan.stops[i].name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.forest,
+                                  ),
+                                ),
+                                if (plan.stops[i].address != null ||
+                                    plan.stops[i].schedule != null)
+                                  Text(
+                                    [
+                                      if (plan.stops[i].address != null)
+                                        plan.stops[i].address!,
+                                      if (plan.stops[i].schedule != null)
+                                        plan.stops[i].schedule!,
+                                    ].join(' · '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 8.5,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           if (plan.stops[i].hasCoordinates)

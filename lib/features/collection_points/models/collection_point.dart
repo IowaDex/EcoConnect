@@ -64,6 +64,9 @@ class CollectionPoint {
 
   bool get isActive => status == CollectionPointStatus.active;
 
+  bool get hasSchedule =>
+      scheduleDays.isNotEmpty || (scheduleTime?.isNotEmpty ?? false);
+
   String get scheduleLabel {
     if (scheduleDays.isEmpty && (scheduleTime == null || scheduleTime!.isEmpty)) {
       return 'No schedule set';

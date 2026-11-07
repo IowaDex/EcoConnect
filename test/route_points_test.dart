@@ -7,14 +7,21 @@ CollectionPoint _point(
   String name, {
   double lat = 14.6,
   double lng = 121.0,
+  String address = 'Test address',
+  List<String> days = const [],
+  String? time,
+  String? notes,
   CollectionPointStatus status = CollectionPointStatus.active,
 }) {
   return CollectionPoint(
     id: name,
     name: name,
-    address: 'Test address',
+    address: address,
     latitude: lat,
     longitude: lng,
+    scheduleDays: days,
+    scheduleTime: time,
+    notes: notes,
     status: status,
   );
 }
@@ -93,6 +100,69 @@ void main() {
       expect(merged.adHoc, isTrue);
       expect(merged.stopsLabel, '1 stop');
       expect(merged.mappedStops, hasLength(1));
+    });
+
+    test('point details travel with the stop', () {
+      final merged = RouteService.mergeAssignedStops(
+        const [],
+        [
+          _point(
+            'Covered court',
+            address: 'Mabini St. cor. Rizal Ave.',
+            days: ['Mon', 'Thu'],
+            time: '07:00',
+            notes: 'Gate 2, beside the court',
+          ),
+        ],
+      );
+
+      expect(merged.single.address, 'Mabini St. cor. Rizal Ave.');
+      expect(merged.single.schedule, 'Mon, Thu · 07:00');
+      expect(merged.single.notes, 'Gate 2, beside the court');
+      expect(merged.single.hasDetails, isTrue);
+    });
+
+    test('a listed stop keeps its pin but gains missing details', () {
+      final merged = RouteService.mergeAssignedStops(
+        const [RouteStop(name: 'Covered court', latitude: 9, longitude: 9)],
+        [_point('Covered court', address: 'Mabini St.')],
+      );
+
+      expect(merged, hasLength(1));
+      expect(merged.single.latitude, 9);
+      expect(merged.single.address, 'Mabini St.');
+    });
+
+    test('stops round-trip their details through Firestore maps', () {
+      const stop = RouteStop(
+        name: 'Covered court',
+        latitude: 14.6,
+        longitude: 121.0,
+        address: 'Mabini St.',
+        schedule: 'Mon · 07:00',
+        notes: 'Gate 2',
+      );
+
+      final back = RouteStop.fromDynamic(stop.toMap());
+
+      expect(back.name, 'Covered court');
+      expect(back.latitude, 14.6);
+      expect(back.address, 'Mabini St.');
+      expect(back.schedule, 'Mon · 07:00');
+      expect(back.notes, 'Gate 2');
+      expect(back.hasDetails, isTrue);
+    });
+
+    test('blank details are dropped instead of rendered empty', () {
+      final stop = RouteStop.fromDynamic({
+        'name': 'Covered court',
+        'lat': 14.6,
+        'lng': 121.0,
+        'address': '   ',
+      });
+
+      expect(stop.address, isNull);
+      expect(stop.hasDetails, isFalse);
     });
   });
 }
