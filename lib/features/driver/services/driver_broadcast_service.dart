@@ -24,6 +24,16 @@ class DriverBroadcastService {
   static const double approachingMeters = 700;
   static const double arrivedMeters = 150;
 
+  /// A resident counts as "passed" once the truck is this many times the
+  /// approach distance away. The Firestore search band is derived from it too.
+  static const double passedFactor = 1.5;
+
+  /// Latitude half-width that is read from Firestore. It is derived from the
+  /// distance rules so changing them cannot leave a resident the truck just
+  /// passed outside the query: twice the "passed" distance, ~111.3 km/degree.
+  static const double _bandDegrees =
+      approachingMeters * passedFactor * 2 / 111320;
+
   /// How long before the same resident can be told the same thing again.
   static const Duration _cooldown = Duration(minutes: 10);
 
@@ -44,7 +54,15 @@ class DriverBroadcastService {
   }) async {
     List<SharedLocation> residents;
     try {
-      final snap = await _db.collection('shared_locations').get();
+      // Only a latitude band around the truck is read, so cost does not grow
+      // with every resident in the barangay. A single-field range needs no
+      // composite index. The band is wider than the 'passed' distance so a
+      // resident the truck just drove away from is still evaluated.
+      final snap = await _db
+          .collection('shared_locations')
+          .where('latitude', isGreaterThan: latitude - _bandDegrees)
+          .where('latitude', isLessThan: latitude + _bandDegrees)
+          .get();
       residents = [];
       for (final doc in snap.docs) {
         final item = SharedLocation.tryParse(doc.id, doc.data());
@@ -61,7 +79,7 @@ class DriverBroadcastService {
 
     final truck = LatLng(latitude, longitude);
     final stop = _nearestStop(plan, truck);
-    var sent = 0;
+    final pushes = <Future<bool>>[];
 
     for (final resident in residents) {
       final metres = _distance.as(
@@ -91,7 +109,12 @@ class DriverBroadcastService {
               'collection request.',
       };
 
-      await _notifications.push(
+      // Marked before sending so an overlapping call cannot double-notify;
+      // undone below if the write fails, so the resident is retried.
+      final key = _key(resident.userId, stage);
+      final previousSent = _lastSent[key];
+      _lastSent[key] = DateTime.now();
+      final push = _notifications.push(
         userId: resident.userId,
         title: switch (stage) {
           BroadcastStage.approaching => 'Truck approaching',
@@ -102,10 +125,20 @@ class DriverBroadcastService {
         type: AppNotificationType.route,
         data: {'driverId': driverId, 'stage': stage.name},
       );
-      _lastSent[_key(resident.userId, stage)] = DateTime.now();
-      sent++;
+      pushes.add(push.then((ok) {
+        if (!ok) {
+          if (previousSent == null) {
+            _lastSent.remove(key);
+          } else {
+            _lastSent[key] = previousSent;
+          }
+        }
+        return ok;
+      }));
     }
-    return sent;
+    // push() swallows its own errors, so one failure cannot cancel the rest.
+    final results = await Future.wait(pushes);
+    return results.where((ok) => ok).length;
   }
 
   /// Pure proximity rule, exposed so it can be unit tested without Firestore.
@@ -118,7 +151,7 @@ class DriverBroadcastService {
     // Was close a moment ago and is now well away: the truck went past.
     if (previous != null &&
         previous <= approachingMeters &&
-        metres > approachingMeters * 1.5) {
+        metres > approachingMeters * passedFactor) {
       return BroadcastStage.passed;
     }
     return null;

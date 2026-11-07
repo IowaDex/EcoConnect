@@ -1,6 +1,7 @@
 // Run with: npm run test:emulator (needs firebase-tools on PATH; starts the
 // Firestore emulator, then npm test)
 const {test, before, after, beforeEach} = require('node:test');
+const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
@@ -10,6 +11,8 @@ const {
 } = require('@firebase/rules-unit-testing');
 const {
   Timestamp,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -167,6 +170,87 @@ test('a deleted user is locked out even though their login still works', async (
   await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
   await assertFails(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
   await assertFails(setDoc(doc(alice, 'users/alice'), {name: 'Alice', role: 'user'}));
+});
+
+const note = (userId) => ({
+  userId,
+  title: 'Hi',
+  body: 'Hello',
+  read: false,
+});
+
+test('residents notify only themselves or staff; admins and drivers notify anyone', async () => {
+  await assertSucceeds(setDoc(doc(as('alice'), 'notifications/n1'), note('alice')));
+  await assertSucceeds(setDoc(doc(as('alice'), 'notifications/n2'), note('staff')));
+  await assertFails(setDoc(doc(as('alice'), 'notifications/n3'), note('dan')));
+  await assertSucceeds(setDoc(doc(as('dan'), 'notifications/n4'), {...note('alice'), type: 'route'}));
+  await assertSucceeds(setDoc(doc(as('dan'), 'notifications/n6'), {...note('alice'), type: 'request'}));
+  await assertFails(setDoc(doc(as('dan'), 'notifications/n7'), {...note('alice'), type: 'system'}));
+  await assertFails(setDoc(doc(as('dan'), 'notifications/n8'), note('alice')));
+  await assertSucceeds(setDoc(doc(as('root'), 'notifications/n5'), {...note('alice'), type: 'system'}));
+});
+
+const seedPost = () =>
+  env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'communityPosts/p1'), {
+      authorId: 'dan',
+      body: 'Collection moved',
+      likedBy: ['dan'],
+      comments: [{id: 'c1', authorId: 'dan', authorName: 'Dan', body: 'ok'}],
+    }));
+
+test('members can like and unlike as themselves, but not for someone else', async () => {
+  await seedPost();
+  const post = doc(as('alice'), 'communityPosts/p1');
+  await assertSucceeds(updateDoc(post, {likedBy: arrayUnion('alice')}));
+  await assertSucceeds(updateDoc(post, {likedBy: arrayRemove('alice')}));
+  await assertFails(updateDoc(post, {likedBy: arrayUnion('eve')}));
+  await assertFails(updateDoc(post, {likedBy: arrayRemove('dan')}));
+  await assertFails(updateDoc(post, {likedBy: []}));
+});
+
+test('members can append their own comment but not edit, remove or forge one', async () => {
+  await seedPost();
+  const post = doc(as('alice'), 'communityPosts/p1');
+  const mine = {id: 'c2', authorId: 'alice', authorName: 'Alice', body: 'thanks'};
+  await assertSucceeds(updateDoc(post, {comments: arrayUnion(mine)}));
+  await assertFails(updateDoc(post, {comments: arrayUnion({...mine, id: 'c3', authorId: 'dan'})}));
+  await assertFails(updateDoc(post, {comments: arrayUnion({...mine, id: 'c4', junk: 'x'.repeat(500)})}));
+  await assertFails(updateDoc(post, {comments: []}));
+  await assertFails(updateDoc(post, {
+    comments: [{id: 'c1', authorId: 'dan', authorName: 'Dan', body: 'edited'}, mine],
+  }));
+});
+
+test('a comment must carry the name on the sign-in token when it has one', async () => {
+  await seedPost();
+  const named = env.authenticatedContext('alice', {email_verified: true, name: 'Alice'}).firestore();
+  const comment = (id, authorName) => ({id, authorId: 'alice', authorName, body: 'hi'});
+  await assertSucceeds(updateDoc(doc(named, 'communityPosts/p1'), {comments: arrayUnion(comment('c5', 'Alice'))}));
+  await assertFails(updateDoc(doc(named, 'communityPosts/p1'), {comments: arrayUnion(comment('c6', 'Barangay Captain'))}));
+  // A fresh token has no name yet, so the app's own name is accepted.
+  await assertSucceeds(updateDoc(doc(as('alice'), 'communityPosts/p1'), {comments: arrayUnion(comment('c7', 'Alice'))}));
+});
+
+test('admins can strip a deleted user from other posts', async () => {
+  await seedPost();
+  await assertSucceeds(updateDoc(doc(as('root'), 'communityPosts/p1'), {
+    likedBy: arrayRemove('dan'),
+    comments: arrayRemove({id: 'c1', authorId: 'dan', authorName: 'Dan', body: 'ok'}),
+  }));
+  let stored;
+  await env.withSecurityRulesDisabled(async (c) => {
+    stored = (await getDoc(doc(c.firestore(), 'communityPosts/p1'))).data();
+  });
+  assert.deepEqual(stored.likedBy, []);
+  assert.deepEqual(stored.comments, []);
+});
+
+test('only the author or an admin can delete a post, and admins can moderate it', async () => {
+  await seedPost();
+  await assertFails(deleteDoc(doc(as('alice'), 'communityPosts/p1')));
+  await assertSucceeds(updateDoc(doc(as('root'), 'communityPosts/p1'), {comments: []}));
+  await assertSucceeds(deleteDoc(doc(as('dan'), 'communityPosts/p1')));
 });
 
 test('a user being deleted cannot write while the delete is still running', async () => {

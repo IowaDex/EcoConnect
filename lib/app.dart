@@ -124,18 +124,17 @@ String? authRedirect({
   // Stay on the splash until the saved session is restored, so a
   // logged-in user never sees the login screen flash.
   if (!initialized) return location == '/splash' ? null : '/splash';
+  // The splash plays its animation, then navigates itself (see SplashScreen._next).
+  if (location == '/splash') return null;
 
   final isPublic = _publicRoutes.contains(location);
 
   if (role == null) {
     // Signed-out visitors may browse the landing and auth screens only.
-    if (location == '/splash') return '/welcome';
     return isPublic ? null : '/login';
   }
 
-  if (location == '/splash' || location == '/welcome' || isPublic) {
-    return _homeFor(role);
-  }
+  if (location == '/welcome' || isPublic) return _homeFor(role);
   // A driver must not reach the staff desk by typing the URL, and vice versa.
   if (!_canOpen(role, location)) return _homeFor(role);
   return null;

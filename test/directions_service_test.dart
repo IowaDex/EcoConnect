@@ -155,6 +155,53 @@ void main() {
       expect(route.steps[1].legIndex, 0);
     });
 
+    test('end-of-road turns read as words, not raw code', () async {
+      Future<String> instructionFor(String name) async {
+        final client = MockClient((_) async => http.Response(
+              jsonEncode({
+                'code': 'Ok',
+                'routes': [
+                  {
+                    'distance': 100.0,
+                    'duration': 30.0,
+                    'geometry': {
+                      'coordinates': [
+                        [121.0, 14.6],
+                        [121.01, 14.61],
+                      ],
+                    },
+                    'legs': [
+                      {
+                        'distance': 100.0,
+                        'duration': 30.0,
+                        'steps': [
+                          {
+                            'maneuver': {
+                              'type': 'end of road',
+                              'modifier': 'right',
+                            },
+                            'name': name,
+                            'distance': 100.0,
+                            'duration': 30.0,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              }),
+              200,
+            ));
+        final route = await DirectionsService(client: client).drivingRoute(
+          const [LatLng(14.6, 121.0), LatLng(14.61, 121.01)],
+        );
+        return route!.steps.single.instruction;
+      }
+
+      expect(await instructionFor('Rizal Ave'), 'Turn right onto Rizal Ave');
+      expect(await instructionFor(''), 'Turn right at the end of the road');
+    });
+
     test('returns null for a malformed body instead of throwing', () async {
       final client = MockClient((_) async => http.Response('<html>', 200));
 

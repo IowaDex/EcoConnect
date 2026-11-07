@@ -64,14 +64,13 @@ class CommunityPostService {
     required CommunityPost post,
     required String userId,
   }) async {
-    final likes = [...post.likedBy];
-    if (likes.contains(userId)) {
-      likes.remove(userId);
-    } else {
-      likes.add(userId);
-    }
+    // arrayUnion/arrayRemove touch only this user's entry, so two people
+    // reacting at once cannot overwrite each other's like.
+    final liked = post.likedBy.contains(userId);
     await _col.doc(post.id).update({
-      'likedBy': likes,
+      'likedBy': liked
+          ? FieldValue.arrayRemove([userId])
+          : FieldValue.arrayUnion([userId]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -82,17 +81,15 @@ class CommunityPostService {
     required String authorName,
     required String body,
   }) async {
-    final comments = [
-      ...post.comments.map((c) => c.toMap()),
-      CommunityComment(
-        id: _commentId(),
-        authorId: authorId,
-        authorName: authorName,
-        body: body.trim(),
-      ).toMap(),
-    ];
+    final comment = CommunityComment(
+      id: _commentId(),
+      authorId: authorId,
+      authorName: authorName,
+      body: body.trim(),
+    );
+    // Appends atomically; the id makes every comment a distinct array element.
     await _col.doc(post.id).update({
-      'comments': comments,
+      'comments': FieldValue.arrayUnion([comment.toMap()]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

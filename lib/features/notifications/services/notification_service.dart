@@ -33,14 +33,16 @@ class NotificationService {
     return watch(userId).map((items) => items.where((n) => !n.read).length);
   }
 
-  Future<void> push({
+  /// Returns whether the notification was written, so callers that rate-limit
+  /// can avoid counting a failed send. Most callers ignore the result.
+  Future<bool> push({
     required String userId,
     required String title,
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
   }) async {
-    if (userId.isEmpty) return;
+    if (userId.isEmpty) return false;
     try {
       await _col.add({
         'userId': userId,
@@ -51,10 +53,12 @@ class NotificationService {
         'createdAt': FieldValue.serverTimestamp(),
         'data': data,
       });
+      return true;
     } catch (error) {
       // Notifications are secondary: a rules or network failure must never
       // roll back the action that triggered them.
       AppLogger.error('Notification write failed', error);
+      return false;
     }
   }
 
@@ -85,6 +89,8 @@ class NotificationService {
     }
   }
 
+  static const _batchLimit = 400;
+
   /// Fans a notice out to every active resident. Only staff can read the user
   /// directory, so this is a staff-only action; failures stay silent because
   /// the announcement itself has already been saved.
@@ -97,20 +103,34 @@ class NotificationService {
     try {
       final users =
           await _db.collection('users').where('role', isEqualTo: 'user').get();
-      if (users.docs.isEmpty) return;
-      final batch = _db.batch();
-      for (final user in users.docs) {
-        batch.set(_col.doc(), {
-          'userId': user.id,
-          'title': title,
-          'body': body,
-          'type': type.name,
-          'read': false,
-          'createdAt': FieldValue.serverTimestamp(),
-          'data': data,
-        });
+      // A batch holds at most 500 writes, so a large barangay is split. Each
+      // batch is isolated: one failure must not drop everyone after it.
+      var missed = 0;
+      for (var i = 0; i < users.docs.length; i += _batchLimit) {
+        final chunk = users.docs.skip(i).take(_batchLimit).toList();
+        final batch = _db.batch();
+        for (final user in chunk) {
+          batch.set(_col.doc(), {
+            'userId': user.id,
+            'title': title,
+            'body': body,
+            'type': type.name,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'data': data,
+          });
+        }
+        try {
+          await batch.commit();
+        } catch (error) {
+          missed += chunk.length;
+          AppLogger.error('Resident notification batch failed', error);
+        }
       }
-      await batch.commit();
+      if (missed > 0) {
+        AppLogger.error(
+            'Resident notice missed $missed of ${users.docs.length} residents');
+      }
     } catch (error) {
       AppLogger.error('Resident notification fan-out failed', error);
     }

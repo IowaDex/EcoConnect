@@ -8,15 +8,19 @@ void main() {
     expect(authRedirect(initialized: false, role: null, location: '/login'), '/splash');
   });
 
+  test('once restored, the splash is left alone so it can finish playing', () {
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/splash'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), isNull);
+    expect(authRedirect(initialized: true, role: null, location: '/splash'), isNull);
+  });
+
   test('a restored session skips the login screen', () {
-    expect(authRedirect(initialized: true, role: UserRole.user, location: '/splash'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/login'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/forgot-password'), '/user');
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), '/admin-dashboard');
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/welcome'), '/user');
   });
 
   test('no session goes to the landing page and stays on public screens', () {
-    expect(authRedirect(initialized: true, role: null, location: '/splash'), '/welcome');
     expect(authRedirect(initialized: true, role: null, location: '/user'), '/login');
     expect(authRedirect(initialized: true, role: null, location: '/welcome'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/signup'), isNull);

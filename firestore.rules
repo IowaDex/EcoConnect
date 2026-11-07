@@ -62,6 +62,37 @@ service cloud.firestore {
             && (data[field].size() == 0 || data[field][0].dataUrl is string));
     }
 
+    // Community post reactions: a member may add or remove only their own
+    // like, and may only append a comment that names them as the author.
+    function changesOnlyOwnLike(uid) {
+      let before = resource.data.get('likedBy', []);
+      let after = request.resource.data.get('likedBy', []);
+      return after is list
+        && after.toSet().difference(before.toSet()).hasOnly([uid])
+        && before.toSet().difference(after.toSet()).hasOnly([uid])
+        && after.size() <= before.size() + 1;
+    }
+
+    function appendsOnlyOwnComment(uid) {
+      let before = resource.data.get('comments', []);
+      let after = request.resource.data.get('comments', []);
+      return after is list
+        && (after == before
+            || (after.size() == before.size() + 1
+                && after[0:before.size()] == before
+                && after[before.size()].keys()
+                     .hasOnly(['id', 'authorId', 'authorName', 'body', 'createdAt'])
+                && after[before.size()].authorId == uid
+                && after[before.size()].authorName is string
+                && after[before.size()].authorName.size() <= 80
+                // The sign-in token carries the Auth display name once it has
+                // refreshed; a brand-new token has none, so only pin when set.
+                && after[before.size()].authorName
+                     == request.auth.token.get('name', after[before.size()].authorName)
+                && after[before.size()].body is string
+                && after[before.size()].body.size() <= 1000));
+    }
+
     function isRemoved(uid) {
       return exists(/databases/$(database)/documents/removed_users/$(uid));
     }
@@ -280,12 +311,19 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // In-app notifications. Everyone writes their own fan-out; only the
-    // recipient (or staff) can read a notification.
+    // In-app notifications. Residents may notify themselves or the shared staff
+    // channel; only staff and drivers (truck proximity alerts) may notify other
+    // users. Only the recipient (or staff) can read a notification.
     match /notifications/{notificationId} {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isActive()
         && request.resource.data.userId is string
+        && (request.resource.data.userId == request.auth.uid
+            || request.resource.data.userId == 'staff'
+            || profile(request.auth.uid).role == 'admin'
+            // Drivers send truck alerts and job updates, nothing else.
+            || (profile(request.auth.uid).role == 'driver'
+                && request.resource.data.get('type', '') in ['route', 'request']))
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.body is string
@@ -309,9 +347,12 @@ service cloud.firestore {
         && request.resource.data.body.size() > 0
         && request.resource.data.body.size() <= 2000
         && uploadOk(request.resource.data, 'image');
-      allow update: if isActive()
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['likedBy', 'comments', 'updatedAt']);
+      allow update: if isAdmin()
+        || (isActive()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['likedBy', 'comments', 'updatedAt'])
+            && changesOnlyOwnLike(request.auth.uid)
+            && appendsOnlyOwnComment(request.auth.uid));
       allow delete: if isAdmin() || resource.data.authorId == request.auth.uid;
     }
 

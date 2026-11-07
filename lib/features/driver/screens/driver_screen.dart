@@ -185,7 +185,8 @@ class _DriverScreenState extends State<DriverScreen> {
     setState(() => _locationState = state);
     if (state == _lastReportedState) return;
 
-    final wasProblem = _lastReportedState.needsAttention;
+    final previousState = _lastReportedState;
+    final wasProblem = previousState.needsAttention;
     _lastReportedState = state;
     final user = context.read<AuthProvider>().currentUser;
     try {
@@ -199,8 +200,10 @@ class _DriverScreenState extends State<DriverScreen> {
         notifyStaff: state.needsAttention && !wasProblem,
       );
     } catch (_) {
-      // The route heartbeat still carries the position; a failed status write
-      // must not interrupt the driver.
+      // A failed status write must not interrupt the driver, but it must be
+      // retried: the heartbeat no longer rewrites locationState, so keeping
+      // the new value here would leave the route document wrong for good.
+      _lastReportedState = previousState;
     }
   }
 
@@ -221,7 +224,14 @@ class _DriverScreenState extends State<DriverScreen> {
     _broadcastTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted) return;
       final location = context.read<LocationProvider>();
-      if (!location.hasLocation) return;
+      // With GPS off the provider still holds the last fix; pushing it would
+      // make a stale position look fresh to staff and residents. A connectivity
+      // blip is different: the fix is live and Firestore queues the write.
+      if (!location.hasLocation ||
+          (location.hasLocationIssue &&
+              location.issue != LocationIssue.offline)) {
+        return;
+      }
       final lat = location.latitude!;
       final lng = location.longitude!;
       _routeService.pushPosition(driverId, lat, lng).catchError((_) {});

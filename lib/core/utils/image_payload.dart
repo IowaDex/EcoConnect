@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as img;
 
 /// A file encoded for Firestore storage.
@@ -53,6 +54,61 @@ class UploadException implements Exception {
   String toString() => message;
 }
 
+class _EncodeJob {
+  const _EncodeJob(this.bytes, this.maxDimension, this.maxBytes);
+  final Uint8List bytes;
+  final int maxDimension;
+  final int maxBytes;
+}
+
+/// Top-level so it can run in a background isolate. Throws [UploadException]
+/// when the bytes are not an image or cannot be made to fit.
+Uint8List _encodeJpeg(_EncodeJob job) {
+  final decoded = img.decodeImage(job.bytes);
+  if (decoded == null) {
+    throw const UploadException('That image could not be read.');
+  }
+
+  // Phone photos store rotation in EXIF; without this they come out sideways.
+  var image = img.bakeOrientation(decoded);
+  final maxDimension = job.maxDimension;
+  if (image.width > maxDimension || image.height > maxDimension) {
+    final landscape = image.width >= image.height;
+    image = img.copyResize(
+      image,
+      width: landscape ? maxDimension : null,
+      height: landscape ? null : maxDimension,
+      interpolation: img.Interpolation.average,
+    );
+  }
+
+  // Lower quality first, then shrink the long edge, until the encoded file
+  // fits. Normal phone photos reach the target in two or three passes.
+  var quality = 74;
+  var encoded = img.encodeJpg(image, quality: quality);
+  var attempt = 0;
+  while (encoded.length > job.maxBytes && attempt < 8) {
+    attempt++;
+    if (quality > 44) {
+      quality -= 10;
+    } else {
+      image = img.copyResize(
+        image,
+        width: (image.width * 0.75).round(),
+        interpolation: img.Interpolation.average,
+      );
+      quality = 62;
+    }
+    encoded = img.encodeJpg(image, quality: quality);
+  }
+  if (encoded.length > job.maxBytes) {
+    throw const UploadException(
+      'This image could not be compressed enough. Please choose another photo.',
+    );
+  }
+  return encoded;
+}
+
 /// Validates, resizes and compresses files before they reach Firestore.
 abstract final class UploadCodec {
   /// Firestore documents are capped at 1 MiB. Waste and request records can
@@ -100,47 +156,13 @@ abstract final class UploadCodec {
       throw const UploadException('Please choose a JPG, PNG or WebP image.');
     }
 
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw const UploadException('That image could not be read.');
-    }
-
-    var image = decoded;
-    if (image.width > maxDimension || image.height > maxDimension) {
-      final landscape = image.width >= image.height;
-      image = img.copyResize(
-        image,
-        width: landscape ? maxDimension : null,
-        height: landscape ? null : maxDimension,
-        interpolation: img.Interpolation.average,
-      );
-    }
-
-    // Lower quality first, then shrink the long edge, until the encoded file
-    // fits. Normal phone photos reach the target in two or three passes.
-    var quality = 74;
-    var encoded = img.encodeJpg(image, quality: quality);
-    var attempt = 0;
-    while (encoded.length > maxDocumentBytes && attempt < 8) {
-      attempt++;
-      if (quality > 44) {
-        quality -= 10;
-      } else {
-        image = img.copyResize(
-          image,
-          width: (image.width * 0.75).round(),
-          interpolation: img.Interpolation.average,
-        );
-        quality = 62;
-      }
-      encoded = img.encodeJpg(image, quality: quality);
-    }
-
-    if (encoded.length > maxDocumentBytes) {
-      throw const UploadException(
-        'This image could not be compressed enough. Please choose another photo.',
-      );
-    }
+    // Decoding and up to nine JPEG encodes of a phone photo take seconds, so
+    // they run off the UI isolate to keep the form from freezing.
+    // Failures arrive as an UploadException thrown inside the isolate.
+    final encoded = await compute(
+      _encodeJpeg,
+      _EncodeJob(bytes, maxDimension, maxDocumentBytes),
+    );
 
     return UploadPayload(
       dataUrl: 'data:image/jpeg;base64,${base64Encode(encoded)}',

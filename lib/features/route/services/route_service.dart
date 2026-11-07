@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../models/collection_route.dart';
 import '../models/route_plan.dart';
@@ -43,13 +44,21 @@ class RouteService {
   /// Paused runs stay visible at their last known position so residents are
   /// not left guessing whether the truck is still coming.
   Stream<CollectionRoute?> watchActiveRoute() {
-    return _routes
-        .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
-        .limit(1)
-        .snapshots()
-        .map((snap) => snap.docs.isEmpty
-            ? null
-            : CollectionRoute.fromDoc(snap.docs.first.id, snap.docs.first.data()));
+    return watchLiveRoutes().map(pickFeaturedRoute);
+  }
+
+  /// Prefers a run that is still reporting over one whose driver went silent
+  /// (e.g. an app killed mid-route), then the most recently seen.
+  @visibleForTesting
+  static CollectionRoute? pickFeaturedRoute(List<CollectionRoute> routes) {
+    if (routes.isEmpty) return null;
+    final sorted = [...routes]..sort((a, b) {
+        if (a.isStale != b.isStale) return a.isStale ? 1 : -1;
+        final aSeen = a.lastSeenAt ?? DateTime(2000);
+        final bSeen = b.lastSeenAt ?? DateTime(2000);
+        return bSeen.compareTo(aSeen);
+      });
+    return sorted.first;
   }
 
   /// Every driver currently collecting (including paused runs), for the staff
@@ -459,7 +468,9 @@ class RouteService {
     });
   }
 
-  /// Heartbeat: called every 15s while the route is live.
+  /// Heartbeat: called every 15s while the route is live. It must not write
+  /// `locationState`: the driver screen owns that field and a heartbeat would
+  /// overwrite a reported GPS problem with 'ok'.
   Future<void> pushPosition(
       String driverId, double latitude, double longitude) async {
     await _routes.doc(driverId).set({
@@ -467,7 +478,6 @@ class RouteService {
       'lng': longitude,
       'lastKnownLat': latitude,
       'lastKnownLng': longitude,
-      'locationState': 'ok',
       'locationUpdatedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
