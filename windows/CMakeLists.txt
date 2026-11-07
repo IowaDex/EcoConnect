@@ -43,6 +43,9 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
+  # The Firebase C++ SDK still calls strncpy, which MSVC reports as C4996.
+  # /WX would turn that into an error, so silence the CRT deprecation.
+  target_compile_definitions(${TARGET} PRIVATE "_CRT_SECURE_NO_WARNINGS")
 endfunction()
 
 # Flutter library and tool build rules.

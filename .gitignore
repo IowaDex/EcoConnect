@@ -17,7 +17,6 @@ firestore-tests/node_modules/
 .env.*
 !.env.example
 
-
 # IDE
 .idea/
 .vscode/
@@ -36,6 +35,10 @@ android/captures/
 android/gradle-app.setting
 
 # iOS
+ios/.gitignore
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/flutter_export_environment.sh
 ios/Pods/
 ios/Podfile.lock
 ios/Runner/GeneratedPluginRegistrant.m
@@ -49,6 +52,7 @@ ios/Runner/GeneratedPluginRegistrant.h
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Secrets
 *.jks

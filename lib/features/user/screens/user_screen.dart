@@ -6,8 +6,16 @@ import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../location/widgets/location_controls.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/status_badge.dart';
+import '../../auth/models/account_type.dart';
+import '../../announcements/models/announcement.dart';
+import '../../announcements/services/announcement_service.dart';
+import '../../events/models/community_event.dart';
+import '../../events/services/event_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/profile_sheet.dart';
 
@@ -26,6 +34,8 @@ class _UserScreenState extends State<UserScreen> {
       final location = context.read<LocationProvider>();
       location.startSharedLocationUpdates();
       if (!location.hasLocation) location.getCurrentLocation();
+      // Pick up a staff verification that happened since the last sign-in.
+      context.read<AuthProvider>().refreshUser();
     });
   }
 
@@ -43,25 +53,31 @@ class _UserScreenState extends State<UserScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
               children: [
+                if (user?.isGovernment == true &&
+                    !user!.isVerifiedGovernment) ...[
+                  _VerificationNotice(user: user),
+                  const SizedBox(height: 18),
+                ],
+                const _SectionLabel(title: 'QUICK ACTIONS'),
+                const SizedBox(height: 10),
+                const _ResidentQuickActions(),
+                const SizedBox(height: 24),
                 _SectionLabel(
-                  title: "WHAT'S NEW?",
+                  title: 'UPCOMING EVENTS',
                   action: 'View all',
-                  onAction: () => _toast(context, 'No more updates right now'),
+                  onAction: () => context.go('/events'),
                 ),
-                const SizedBox(height: 12),
-                const _WhatsNewRow(),
-                const SizedBox(height: 26),
-                const Text(
-                  'Announcements!',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.forest,
-                  ),
+                const SizedBox(height: 10),
+                const _EventsStrip(),
+                const SizedBox(height: 24),
+                _SectionLabel(
+                  title: 'ANNOUNCEMENTS',
+                  action: 'View all',
+                  onAction: () => context.go('/announcements'),
                 ),
-                const SizedBox(height: 12),
-                const _AnnouncementCard(),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
+                const _LatestAnnouncements(),
+                const SizedBox(height: 20),
                 _TrackPrompt(onTap: () => context.go('/tracking')),
                 const SizedBox(height: 12),
                 _ReportPrompt(onTap: () => context.go('/report-incident')),
@@ -95,12 +111,6 @@ class _UserScreenState extends State<UserScreen> {
     }
   }
 
-  void _toast(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
   void _showProfile(BuildContext context) => showProfileSheet(context);
 }
 
@@ -131,7 +141,7 @@ class _Hero extends StatelessWidget {
             children: [
               const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
               const Spacer(),
-              _HeroBell(onTap: () => context.push('/alerts')),
+              _HeroBell(onTap: () => context.push('/notifications')),
             ],
           ),
           const SizedBox(height: 20),
@@ -331,137 +341,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _WhatsNewRow extends StatelessWidget {
-  const _WhatsNewRow();
-
-  static const _cards = <({String title, String subtitle, IconData icon})>[
-    (title: 'Collection today', subtitle: 'Sector 4 · 2:30 PM', icon: Icons.local_shipping_rounded),
-    (title: 'Recycling drive', subtitle: 'Barangay hall', icon: Icons.recycling_rounded),
-    (title: 'Route update', subtitle: 'New street added', icon: Icons.alt_route_rounded),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 108,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _cards.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, i) {
-          final card = _cards[i];
-          return Container(
-            width: 156,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFE9F5DC), Color(0xFFD5EDBE)],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.sage.withValues(alpha: 0.6)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Icon(card.icon, size: 20, color: AppColors.forest),
-                ),
-                const Spacer(),
-                Text(
-                  card.title,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  card.subtitle,
-                  style: const TextStyle(fontSize: 8.5, color: AppColors.moss),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _AnnouncementCard extends StatelessWidget {
-  const _AnnouncementCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: AppColors.forestGradient,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, size: 16, color: AppColors.forest),
-              ),
-              const SizedBox(width: 9),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Barangay EcoConnect',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    '2 hours ago',
-                    style: TextStyle(
-                      fontSize: 8.5,
-                      color: Colors.white.withValues(alpha: 0.65),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Daily Notice!',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Please have your bins ready before the truck arrives. Segregate '
-            'biodegradable and non-biodegradable waste to keep the collection '
-            'fast and safe for everyone.',
-            style: TextStyle(
-              fontSize: 9.5,
-              height: 1.5,
-              color: Colors.white.withValues(alpha: 0.8),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ReportPrompt extends StatelessWidget {
   const _ReportPrompt({required this.onTap});
 
@@ -635,6 +514,381 @@ class _TrackPrompt extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Government personnel see their verification state on the dashboard so a
+/// pending ID never looks like a broken feature.
+class _VerificationNotice extends StatelessWidget {
+  const _VerificationNotice({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = user.verificationStatus == VerificationStatus.rejected;
+    return EcoBanner(
+      message: rejected
+          ? 'Your government ID was rejected. ${user.rejectionReason ?? 'Please submit a clearer document.'}'
+          : 'Your government account is pending verification. Special collection requests unlock after barangay staff approve your ID.',
+      icon: rejected ? Icons.gpp_bad_outlined : Icons.hourglass_top_rounded,
+      color: rejected ? AppColors.error : AppColors.warning,
+    );
+  }
+}
+
+class _ResidentQuickActions extends StatelessWidget {
+  const _ResidentQuickActions();
+
+  static const _actions = <({
+    String label,
+    IconData icon,
+    String route,
+    Color color,
+  })>[
+    (
+      label: 'Upload waste',
+      icon: Icons.add_a_photo_outlined,
+      route: '/waste-upload',
+      color: AppColors.primary,
+    ),
+    (
+      label: 'Request pickup',
+      icon: Icons.assignment_outlined,
+      route: '/request-collection',
+      color: Color(0xFF00695C),
+    ),
+    (
+      label: 'My requests',
+      icon: Icons.fact_check_outlined,
+      route: '/my-requests',
+      color: Color(0xFF6A1B9A),
+    ),
+    (
+      label: 'My uploads',
+      icon: Icons.photo_library_outlined,
+      route: '/waste-history',
+      color: Color(0xFFEF6C00),
+    ),
+    (
+      label: 'Events',
+      icon: Icons.event_available_outlined,
+      route: '/events',
+      color: Color(0xFF1565C0),
+    ),
+    (
+      label: 'Announcements',
+      icon: Icons.campaign_outlined,
+      route: '/announcements',
+      color: Color(0xFF558B2F),
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth > 520 ? 6 : 3;
+        final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final action in _actions)
+              SizedBox(
+                width: width,
+                child: InkWell(
+                  onTap: () => context.push(action.route),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 13,
+                      horizontal: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.sage.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 34,
+                          width: 34,
+                          decoration: BoxDecoration(
+                            color: action.color.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            action.icon,
+                            size: 17,
+                            color: action.color,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          action.label,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EventsStrip extends StatelessWidget {
+  const _EventsStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<CommunityEvent>>(
+      stream: EventService().watchPublished(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 118,
+            child: Center(
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        final events = (snapshot.data ?? const <CommunityEvent>[])
+            .where((e) => e.isUpcoming)
+            .take(4)
+            .toList(growable: false);
+        if (events.isEmpty) {
+          return const EcoCard(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            child: Row(
+              children: [
+                Icon(Icons.event_outlined,
+                    size: 20, color: AppColors.inkMuted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No upcoming events yet. New community programs appear here.',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      height: 1.45,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return SizedBox(
+          height: 122,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: events.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) {
+              final event = events[i];
+              return GestureDetector(
+                onTap: () => context.push('/events'),
+                child: Container(
+                  width: 190,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFE8F5E9), Color(0xFFD7EED8)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.sage.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          StatusBadge(
+                            label: event.category.label,
+                            color: event.category.color,
+                            compact: true,
+                          ),
+                          const Spacer(),
+                          Text(
+                            relativeDay(event.startAt),
+                            style: const TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        event.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          height: 1.3,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkGreen,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.place_outlined,
+                              size: 10, color: AppColors.inkMuted),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              event.location,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: AppColors.inkMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LatestAnnouncements extends StatelessWidget {
+  const _LatestAnnouncements();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Announcement>>(
+      stream: AnnouncementService().watchPublished(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 100,
+            child: Center(
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        final items = (snapshot.data ?? const <Announcement>[])
+            .take(2)
+            .toList(growable: false);
+        if (items.isEmpty) {
+          return const EcoCard(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            child: Row(
+              children: [
+                Icon(Icons.campaign_outlined,
+                    size: 20, color: AppColors.inkMuted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No announcements yet. Barangay updates will appear here.',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      height: 1.45,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              EcoCard(
+                onTap: () => context.push('/announcements'),
+                padding: const EdgeInsets.all(15),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        StatusBadge(
+                          label: items[i].category.shortLabel,
+                          color: items[i].category.color,
+                          icon: items[i].category.icon,
+                          compact: true,
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeAgo(items[i].publishAt ?? items[i].createdAt),
+                          style: const TextStyle(
+                            fontSize: 8.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      items[i].title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.darkGreen,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      items[i].body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        height: 1.5,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

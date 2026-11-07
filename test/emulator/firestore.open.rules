@@ -1,0 +1,10 @@
+rules_version = '2';
+// Integration tests run unauthenticated against the emulator, so the
+// production ruleset is replaced by an open one for this run only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

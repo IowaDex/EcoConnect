@@ -34,6 +34,130 @@ A comprehensive Flutter mobile application featuring user authentication, email 
   - Google Fonts integration
   - Responsive design
 
+## 🚛 Smart Waste Management Modules
+
+EcoConnect now covers the full barangay collection workflow. Every screen is
+backed by Firestore; there is no demo data.
+
+### Landing page
+- Animated garbage truck on a highway, drawn entirely with CustomPainter.
+- Rotating wheels, scrolling lane markings, drifting clouds, trees and
+  floating recycling marks.
+- Tagline, Get Started and Login entry points.
+- Signed-out users land here; signed-in users are routed straight to their
+  role dashboard.
+
+### Driver
+- Start, pause, resume and end an assigned route with recorded timestamps
+  (startedAt, pausedAt, resumedAt, completedAt).
+- Location health monitoring distinguishes GPS off, permission denied,
+  offline and unknown states. Staff see the same neutral wording, so a driver
+  is never falsely reported for disabling tracking.
+- "Enable location" deep-links to the right device settings.
+- Staff are notified on pause, resume, completion and lost location.
+- Assigned collection points appear as numbered stops with address and
+  schedule, a read-only preview map on the dashboard, and a full-screen
+  zoomable route map with per-stop details and one-tap Google Maps directions.
+- Drivers are notified when staff add, remove, deactivate or reassign a point
+  on their route, and the stop list is shown even before a run starts.
+- The full-screen map follows real roads through OSRM (OpenStreetMap), showing
+  total distance and time plus the drive to each stop.
+- Directions are shown in-app: a turn-by-turn sheet lists every manoeuvre
+  ("Turn left onto Rizal Ave · 800 m") from the truck to the last stop. Google
+  Maps is still one tap away when the driver wants spoken navigation.
+
+### Barangay staff
+- Announcements: create, edit, publish/unpublish, delete, optional cover photo.
+- Community events: posters, schedules, registration details, upcoming and
+  completed tabs.
+- Collection requests: search, status/date/barangay filters, approve, reject
+  with a reason, assign an active driver and a collection schedule.
+- User validation: pending driver/staff accounts, government ID review with
+  document preview, resident verification.
+- Waste validation: photo review, approve or reject with remarks.
+- Designated collection points: interactive map, tap-to-pin editor, driver
+  assignment, weekly schedules, active/inactive state, route lines. Points
+  assigned to a driver are merged into that driver's route as stops, so the
+  driver map, stop list and ad-hoc runs pick them up without re-pinning.
+
+### Resident
+- Waste upload with camera/gallery photos, category, quantity and location.
+- Upload history with validation status and staff remarks.
+- Live tracking shows the truck, the planned path and the same numbered
+  stops the driver follows, with a Map action for the full route.
+- Verified government personnel additionally unlock **special collection
+  requests**; the check is enforced in Firestore, not just by hiding the UI.
+- Live announcements and upcoming events on the dashboard.
+- Notification centre with unread badges and deep links.
+
+### Notifications
+- Personal notifications for account, waste, request, route, announcement and
+  event updates.
+- Operational alerts are written to a shared "staff" channel so residents and
+  drivers never need read access to the user directory.
+
+## 🔐 Backend setup
+
+### Deploy the rules
+
+The new collections are protected by firestore.rules. Deploy them before
+testing the features:
+
+~~~bash
+firebase deploy --only firestore:rules --project ecoconnect-ecaf8
+~~~
+
+The emulator compiles the same file during CI, so a syntax error fails fast.
+
+### Collections
+
+| Collection | Purpose |
+| --- | --- |
+| users | Profile, role, account type, verification status |
+| verificationRequests | Government ID submissions (owner + staff only) |
+| announcements | Barangay announcements |
+| events | Community environmental events |
+| collectionRequests | Standard and special collection requests |
+| wasteSubmissions | Resident waste photos and validation |
+| collectionPoints | Designated pickup locations |
+| notifications | Personal and shared staff notifications |
+| routes / routePlans | Driver presence and staff assignments |
+| shared_locations | Resident location sharing |
+| dropOffs / incidents | Recycling ledger and incident reports |
+
+### Uploads
+
+The project does not require a Firebase Storage bucket. Photos and ID
+documents are compressed on-device (UploadCodec), capped at 190 KB per photo
+(500 KB for an ID image, 600 KB for a PDF) and stored as data URLs inside the
+owning document. This keeps every file under the same security rules as its
+record and keeps a three-photo record below Firestore's 1 MiB limit.
+
+For production traffic, move uploads to Firebase Storage and keep only the
+download URL in Firestore:
+
+1. Enable Storage in the Firebase console.
+2. Add firebase_storage to pubspec.yaml.
+3. Replace UploadCodec calls with an upload that returns a download URL.
+4. Add Storage rules that mirror the Firestore checks (owner + staff only for
+   ID documents).
+
+### Required platform configuration
+
+- Android: ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION,
+  ACCESS_BACKGROUND_LOCATION, INTERNET and ACCESS_NETWORK_STATE are already
+  declared.
+- Android 13+: the photo picker used by image_picker does not need storage
+  permission.
+- Map tiles come from OpenStreetMap; devices need internet access to render
+  the staff and resident maps.
+
+### Indexes
+
+Queries intentionally avoid composite indexes: filtering and sorting happen in
+Dart after a single-field query. If the data set grows, add the matching
+composite indexes in the Firebase console and move the filters into the query.
+
 ## 📋 Prerequisites
 
 - **Flutter SDK**: 3.44 or higher (Dart 3.12+)
@@ -52,6 +176,72 @@ A comprehensive Flutter mobile application featuring user authentication, email 
 
 - **Xcode** (for iOS development - macOS only)
   - Install via App Store
+
+## 🐳 Quick Start with Docker
+
+The fastest way to run the app — no Flutter SDK, no `flutter doctor`, no platform toolchains. Docker builds the web bundle and serves it with nginx.
+
+### 1. Provide your Firebase config
+
+The app reads its Firebase credentials from `.env` (gitignored, so it is **not** in the repo). Copy the template and fill in your own values:
+
+```bash
+cp .env.example .env
+```
+
+```ini
+FIREBASE_API_KEY=...
+FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=...
+FIREBASE_APP_ID=1:...:web:...
+```
+
+> These values are compiled into the JavaScript bundle and are visible to anyone who loads the site. That is normal for Firebase web apps — protect your data with Firestore rules, not by hiding the config. Never put service-account keys or private secrets in `.env`.
+
+### 2. Build and run
+
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:8080**.
+
+Stop with `Ctrl+C` (or `docker compose down`). Rebuild after changing code with `docker compose up --build`.
+
+### Without Docker Compose
+
+```bash
+docker build \
+  --build-arg FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+  --build-arg FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
+  --build-arg FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+  --build-arg FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
+  --build-arg FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+  --build-arg FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+  -t ecoconnect:latest .
+
+docker run --rm -p 8080:80 ecoconnect:latest
+```
+
+### Changing the port
+
+Edit the `ports` mapping in `docker-compose.yml`, e.g. `"3000:80"` to serve on port 3000.
+
+### Files
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | Two stages: Flutter SDK builds the web bundle, nginx serves it |
+| `docker/nginx.conf` | SPA routing (`try_files`), gzip, cache headers |
+| `docker-compose.yml` | One-command build + run on port 8080 |
+| `.dockerignore` | Keeps `build/`, `.dart_tool/`, mobile folders and `.env` out of the image |
+| `.env.example` | Template for the required Firebase config |
+
+> The Docker image targets **web** only. Android/iOS builds still need the native toolchains described below.
+
+---
 
 ## 🚀 Installation & Setup
 

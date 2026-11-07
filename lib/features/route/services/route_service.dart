@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/collection_route.dart';
 import '../models/route_plan.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
+import '../../collection_points/models/collection_point.dart';
+import '../../collection_points/services/collection_point_service.dart';
 
 /// Raised when a driver's route cannot be activated. The [code] lets the UI
 /// react without string-matching the message.
@@ -17,28 +23,45 @@ class RouteActivationException implements Exception {
 
 /// Driver collection runs.
 ///
-/// - `routePlans/{planId}` — staff assignment (zone, day, shift window).
-/// - `routes/{driverId}` — the driver's live presence for residents.
+/// - routePlans/{planId} — staff assignment (zone, day, shift window).
+/// - routes/{driverId} — the driver's live presence for residents.
 class RouteService {
   static final RouteService _instance = RouteService._internal();
   factory RouteService() => _instance;
   RouteService._internal();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final NotificationService _notifications = NotificationService();
+  final CollectionPointService _points = CollectionPointService();
+
   CollectionReference<Map<String, dynamic>> get _routes =>
       _db.collection('routes');
   CollectionReference<Map<String, dynamic>> get _plans =>
       _db.collection('routePlans');
 
   /// The single live route residents should see, if any driver is running.
+  /// Paused runs stay visible at their last known position so residents are
+  /// not left guessing whether the truck is still coming.
   Stream<CollectionRoute?> watchActiveRoute() {
     return _routes
-        .where('status', whereIn: ['inTransit', 'delayed'])
+        .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
         .limit(1)
         .snapshots()
         .map((snap) => snap.docs.isEmpty
             ? null
             : CollectionRoute.fromDoc(snap.docs.first.id, snap.docs.first.data()));
+  }
+
+  /// Every driver currently collecting (including paused runs), for the staff
+  /// dispatch map.
+  Stream<List<CollectionRoute>> watchLiveRoutes() {
+    return _routes
+        .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => CollectionRoute.fromDoc(doc.id, doc.data()))
+            .whereType<CollectionRoute>()
+            .toList());
   }
 
   Stream<CollectionRoute?> watchDriverRoute(String driverId) {
@@ -49,18 +72,68 @@ class RouteService {
     });
   }
 
+  /// One assignment, with the driver's collection points merged into its
+  /// stops. Residents follow this stream while a run is live, so the tracking
+  /// map shows exactly the route the driver sees.
   Stream<RoutePlan?> watchPlan(String planId) {
-    return _plans.doc(planId).snapshots().map((snap) {
-      final data = snap.data();
-      if (data == null) return null;
-      return RoutePlan.fromDoc(snap.id, data);
-    });
+    late StreamController<RoutePlan?> controller;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? planSub;
+    StreamSubscription<List<CollectionPoint>>? pointSub;
+    RoutePlan? latestPlan;
+    var latestPoints = const <CollectionPoint>[];
+    String? pointsDriverId;
+
+    void emit() {
+      final plan = latestPlan;
+      controller.add(plan?.withStops(
+        mergeAssignedStops(plan.stops, latestPoints),
+      ));
+    }
+
+    void watchPoints(String driverId) {
+      if (driverId == pointsDriverId) return;
+      pointsDriverId = driverId;
+      latestPoints = const [];
+      pointSub?.cancel();
+      pointSub = _points.watchForDriver(driverId).listen(
+        (points) {
+          latestPoints = points;
+          emit();
+        },
+        onError: (_) {},
+      );
+    }
+
+    controller = StreamController<RoutePlan?>(
+      onListen: () {
+        planSub = _plans.doc(planId).snapshots().listen(
+          (snap) {
+            final data = snap.data();
+            latestPlan = data == null ? null : RoutePlan.fromDoc(snap.id, data);
+            final plan = latestPlan;
+            if (plan != null) watchPoints(plan.driverId);
+            emit();
+          },
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      },
+      onCancel: () async {
+        await planSub?.cancel();
+        await pointSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// The assignment the driver should be running today, if staff created one.
+  ///
+  /// Active collection points assigned to this driver are merged in as stops,
+  /// so a location pinned by staff after the plan was created still shows up
+  /// on the driver's map. On a name clash the plan's own stop wins.
   Stream<RoutePlan?> watchTodayPlan(String driverId) {
     final today = routeDateKey(DateTime.now());
-    return _plans
+    final plans = _plans
         .where('driverId', isEqualTo: driverId)
         .where('date', isEqualTo: today)
         .snapshots()
@@ -74,6 +147,131 @@ class RouteService {
         ..sort((a, b) => a.windowStart.compareTo(b.windowStart));
       return open.isEmpty ? null : open.first;
     });
+    return _withAssignedStops(plans, _points.watchForDriver(driverId));
+  }
+
+  /// Collection points assigned to [driverId] as stops, for ad-hoc runs.
+  Future<List<RouteStop>> stopsForDriver(String driverId) async {
+    return mergeAssignedStops(const [], await _points.forDriver(driverId));
+  }
+
+  /// Turns assigned [points] into stops and appends them after [planStops],
+  /// skipping inactive points and names that are already listed.
+  static List<RouteStop> mergeAssignedStops(
+    List<RouteStop> planStops,
+    List<CollectionPoint> points,
+  ) {
+    final extra = <RouteStop>[
+      for (final point in points)
+        if (point.isActive)
+          RouteStop(
+            name: point.name,
+            latitude: point.latitude,
+            longitude: point.longitude,
+            address: _clean(point.address),
+            schedule: point.hasSchedule ? point.scheduleLabel : null,
+            notes: _clean(point.notes),
+          ),
+    ];
+    return mergeStops(planStops, extra);
+  }
+
+  /// Appends stops from [extra] that are not already named in [base]. When a
+  /// name appears twice the base stop keeps its position and coordinates, but
+  /// picks up any details it was missing.
+  static List<RouteStop> mergeStops(
+    List<RouteStop> base,
+    List<RouteStop> extra,
+  ) {
+    final merged = <RouteStop>[];
+    final indexByName = <String, int>{};
+    for (final stop in base) {
+      indexByName[stop.name.trim().toLowerCase()] = merged.length;
+      merged.add(stop);
+    }
+    for (final stop in extra) {
+      final key = stop.name.trim().toLowerCase();
+      if (key.isEmpty) continue;
+      final index = indexByName[key];
+      if (index == null) {
+        indexByName[key] = merged.length;
+        merged.add(stop);
+      } else {
+        merged[index] = _withDetails(merged[index], stop);
+      }
+    }
+    return merged;
+  }
+
+  static RouteStop _withDetails(RouteStop base, RouteStop extra) {
+    return RouteStop(
+      name: base.name,
+      latitude: base.latitude ?? extra.latitude,
+      longitude: base.longitude ?? extra.longitude,
+      address: base.address ?? extra.address,
+      schedule: base.schedule ?? extra.schedule,
+      notes: base.notes ?? extra.notes,
+    );
+  }
+
+  static String? _clean(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Combines plan snapshots with the assigned points stream. Points start as
+  /// an empty list and never surface errors, so a slow or denied points read
+  /// can never hide the driver's assignment.
+  Stream<RoutePlan?> _withAssignedStops(
+    Stream<RoutePlan?> plans,
+    Stream<List<CollectionPoint>> points,
+  ) {
+    late StreamController<RoutePlan?> controller;
+    StreamSubscription<RoutePlan?>? planSub;
+    StreamSubscription<List<CollectionPoint>>? pointSub;
+    RoutePlan? latestPlan;
+    var latestPoints = const <CollectionPoint>[];
+    var hasPlan = false;
+    var closed = 0;
+
+    void emit() {
+      if (!hasPlan) return;
+      final plan = latestPlan;
+      controller.add(
+        plan?.withStops(mergeAssignedStops(plan.stops, latestPoints)),
+      );
+    }
+
+    void finish() {
+      if (++closed == 2) controller.close();
+    }
+
+    controller = StreamController<RoutePlan?>(
+      onListen: () {
+        planSub = plans.listen(
+          (plan) {
+            latestPlan = plan;
+            hasPlan = true;
+            emit();
+          },
+          onError: controller.addError,
+          onDone: finish,
+        );
+        pointSub = points.listen(
+          (value) {
+            latestPoints = value;
+            emit();
+          },
+          onError: (_) {},
+          onDone: finish,
+        );
+      },
+      onCancel: () async {
+        await planSub?.cancel();
+        await pointSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// Everything scheduled for today, for the staff dispatch board.
@@ -86,6 +284,22 @@ class RouteService {
         ..sort((a, b) {
           final byWindow = a.windowStart.compareTo(b.windowStart);
           return byWindow != 0 ? byWindow : a.driverName.compareTo(b.driverName);
+        });
+      return plans;
+    });
+  }
+
+  /// A driver's finished runs, newest first, for the Completed tab.
+  Stream<List<RoutePlan>> watchCompletedPlans(String driverId) {
+    return _plans.where('driverId', isEqualTo: driverId).snapshots().map((snap) {
+      final plans = snap.docs
+          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+          .where((plan) => plan.status == RoutePlanStatus.completed)
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.completedAt ?? a.createdAt ?? DateTime(2000);
+          final bDate = b.completedAt ?? b.createdAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
         });
       return plans;
     });
@@ -201,7 +415,8 @@ class RouteService {
       if (current != null) {
         final status = RouteStatusX.fromName(current['status'] as String?);
         final running = status == RouteStatus.inTransit ||
-            status == RouteStatus.delayed;
+            status == RouteStatus.delayed ||
+            status == RouteStatus.paused;
         if (running && !CollectionRoute.isStaleData(current)) {
           throw const RouteActivationException(
             'already-running',
@@ -224,6 +439,13 @@ class RouteService {
           'planId': plan.id,
           'sessionId': sessionId,
           'startedAt': FieldValue.serverTimestamp(),
+          'pausedAt': null,
+          'resumedAt': null,
+          'completedAt': null,
+          'locationState': 'ok',
+          'lastKnownLat': latitude,
+          'lastKnownLng': longitude,
+          'locationUpdatedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
           'lastSeenAt': FieldValue.serverTimestamp(),
         },
@@ -243,6 +465,10 @@ class RouteService {
     await _routes.doc(driverId).set({
       'lat': latitude,
       'lng': longitude,
+      'lastKnownLat': latitude,
+      'lastKnownLng': longitude,
+      'locationState': 'ok',
+      'locationUpdatedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -256,12 +482,64 @@ class RouteService {
     }, SetOptions(merge: true));
   }
 
+  /// Temporarily stops progress tracking while keeping the last position.
+  Future<void> pauseRoute({
+    required String driverId,
+    required String driverName,
+    String? zone,
+    String? reason,
+  }) async {
+    await _routes.doc(driverId).set({
+      'status': RouteStatus.paused.name,
+      'pausedAt': FieldValue.serverTimestamp(),
+      'pauseReason': reason?.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _notifications.notifyStaff(
+      title: 'Route paused',
+      body:
+          '$driverName paused the ${zone ?? 'assigned'} route. The last known position is still visible.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId},
+    );
+  }
+
+  /// Restarts a paused run and records the resume timestamp.
+  Future<void> resumeRoute({
+    required String driverId,
+    required String driverName,
+    String? zone,
+  }) async {
+    await _routes.doc(driverId).set({
+      'status': RouteStatus.inTransit.name,
+      'resumedAt': FieldValue.serverTimestamp(),
+      'pausedAt': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastSeenAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _notifications.notifyStaff(
+      title: 'Route resumed',
+      body: '$driverName resumed the ${zone ?? 'assigned'} route.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId},
+    );
+  }
+
   /// Closes the run and marks the assignment completed in the same batch.
-  Future<void> endRoute(String driverId, {String? planId}) async {
+  Future<void> endRoute(
+    String driverId, {
+    String? planId,
+    String? driverName,
+    String? zone,
+  }) async {
     final batch = _db.batch();
     batch.set(_routes.doc(driverId), {
       'status': RouteStatus.completed.name,
       'endedAt': FieldValue.serverTimestamp(),
+      'completedAt': FieldValue.serverTimestamp(),
+      'pausedAt': null,
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -272,5 +550,13 @@ class RouteService {
       });
     }
     await batch.commit();
+
+    await _notifications.notifyStaff(
+      title: 'Route completed',
+      body:
+          '${driverName ?? 'A driver'} completed the ${zone ?? 'assigned'} collection route.',
+      type: AppNotificationType.route,
+      data: {'driverId': driverId, 'planId': planId},
+    );
   }
 }

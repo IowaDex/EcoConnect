@@ -27,8 +27,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
 
   List<Map<String, dynamic>> _drivers = [];
   String? _driverId;
-  TimeOfDay _start = const TimeOfDay(hour: 6, minute: 0);
-  TimeOfDay _end = const TimeOfDay(hour: 10, minute: 0);
+  // Both window fields start empty on purpose: a route cannot be assigned
+  // until staff have chosen the full shift.
+  TimeOfDay? _start;
+  TimeOfDay? _end;
+  String? _windowError;
   bool _loadingDrivers = true;
   bool _busy = false;
 
@@ -48,9 +51,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
     try {
       final users = await _auth.getAllUsers();
       final drivers = users
-          .where((u) =>
-              u['role'] == 'driver' &&
-              (u['accountStatus'] ?? 'active') == 'active')
+          .where(
+            (u) =>
+                u['role'] == 'driver' &&
+                (u['accountStatus'] ?? 'active') == 'active',
+          )
           .toList();
       if (!mounted) return;
       setState(() {
@@ -82,9 +87,10 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       routeTimeKey(DateTime(2000, 1, 1, time.hour, time.minute));
 
   Future<void> _pickTime({required bool isStart}) async {
+    final current = isStart ? _start : _end;
     final picked = await showTimePicker(
       context: context,
-      initialTime: isStart ? _start : _end,
+      initialTime: current ?? const TimeOfDay(hour: 6, minute: 0),
     );
     if (picked == null) return;
     setState(() {
@@ -93,6 +99,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       } else {
         _end = picked;
       }
+      _windowError = null;
     });
   }
 
@@ -107,19 +114,34 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       _toast('Enter the zone this driver will cover', isError: true);
       return;
     }
-    final startMinutes = _start.hour * 60 + _start.minute;
-    final endMinutes = _end.hour * 60 + _end.minute;
+    final start = _start;
+    final end = _end;
+    if (start == null || end == null) {
+      setState(
+        () => _windowError =
+            'Set both the window start and window end before assigning.',
+      );
+      _toast(
+        'Set both the window start and window end before assigning.',
+        isError: true,
+      );
+      return;
+    }
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
     if (endMinutes <= startMinutes) {
+      setState(() => _windowError = 'The window must end after it starts.');
       _toast('The window must end after it starts', isError: true);
       return;
     }
+    setState(() => _windowError = null);
 
     final driver = _drivers.firstWhere(
       (d) => d['uid'] == driverId,
       orElse: () => const {},
     );
-    final name =
-        (driver['name'] ?? driver['displayName'] ?? 'Collector').toString();
+    final name = (driver['name'] ?? driver['displayName'] ?? 'Collector')
+        .toString();
 
     setState(() => _busy = true);
     try {
@@ -128,8 +150,8 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
         driverName: name,
         zone: zone,
         date: DateTime.now(),
-        windowStart: _timeKey(_start),
-        windowEnd: _timeKey(_end),
+        windowStart: _timeKey(start),
+        windowEnd: _timeKey(end),
         stops: _stops,
         createdBy: context.read<AuthProvider>().currentUser?.uid,
       );
@@ -144,10 +166,25 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
   }
 
   Future<void> _pickStops() async {
+    // Points already assigned to this driver seed the picker, so staff do not
+    // have to pin the same location twice.
+    var initial = _stops;
+    final driverId = _driverId;
+    if (driverId != null) {
+      try {
+        initial = RouteService.mergeStops(
+          _stops,
+          await _routeService.stopsForDriver(driverId),
+        );
+      } catch (_) {
+        // Assigned points are optional here; the picker still works without.
+      }
+    }
+    if (!mounted) return;
     final result = await Navigator.of(context).push<List<RouteStop>>(
       MaterialPageRoute(
         builder: (_) => StopPickerScreen(
-          initialStops: _stops,
+          initialStops: initial,
           zone: _zoneController.text.trim(),
         ),
       ),
@@ -214,8 +251,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                     borderRadius: BorderRadius.circular(20),
                     child: const Padding(
                       padding: EdgeInsets.all(6),
-                      child: Icon(Icons.arrow_back_ios_new_rounded,
-                          size: 16, color: AppColors.inkMuted),
+                      child: Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 16,
+                        color: AppColors.inkMuted,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -224,7 +264,9 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                   Text(
                     routeDateLabel(DateTime.now()),
                     style: const TextStyle(
-                        fontSize: 10, color: AppColors.inkMuted),
+                      fontSize: 10,
+                      color: AppColors.inkMuted,
+                    ),
                   ),
                 ],
               ),
@@ -252,6 +294,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 stops: _stops,
                 start: _start,
                 end: _end,
+                windowError: _windowError,
                 busy: _busy,
                 onDriverChanged: (value) {
                   setState(() => _driverId = value);
@@ -279,7 +322,8 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return const _EmptyPlans(
-                      message: 'Could not load today’s assignments. '
+                      message:
+                          'Could not load today’s assignments. '
                           'Check that the Firestore rules are published.',
                     );
                   }
@@ -331,6 +375,7 @@ class _AssignCard extends StatelessWidget {
     required this.stops,
     required this.start,
     required this.end,
+    required this.windowError,
     required this.busy,
     required this.onDriverChanged,
     required this.onPickStart,
@@ -345,8 +390,9 @@ class _AssignCard extends StatelessWidget {
   final String? driverId;
   final TextEditingController zoneController;
   final List<RouteStop> stops;
-  final TimeOfDay start;
-  final TimeOfDay end;
+  final TimeOfDay? start;
+  final TimeOfDay? end;
+  final String? windowError;
   final bool busy;
   final ValueChanged<String?> onDriverChanged;
   final VoidCallback onPickStart;
@@ -355,8 +401,9 @@ class _AssignCard extends StatelessWidget {
   final ValueChanged<int> onRemoveStop;
   final VoidCallback onAssign;
 
-  String _label(TimeOfDay time) =>
-      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  String? _label(TimeOfDay? time) => time == null
+      ? null
+      : '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
@@ -394,7 +441,11 @@ class _AssignCard extends StatelessWidget {
             const Text(
               'No approved driver accounts yet. Approve a driver from '
               'Pending accounts first.',
-              style: TextStyle(fontSize: 10.5, height: 1.4, color: AppColors.danger),
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.4,
+                color: AppColors.danger,
+              ),
             )
           else
             DropdownButtonFormField<String>(
@@ -449,6 +500,30 @@ class _AssignCard extends StatelessWidget {
               ),
             ],
           ),
+          if (windowError != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 13,
+                  color: AppColors.danger,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    windowError!,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      height: 1.4,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           _StopsField(
             stops: stops,
@@ -493,8 +568,11 @@ class _StopsField extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.alt_route_rounded,
-                  size: 14, color: AppColors.moss),
+              const Icon(
+                Icons.alt_route_rounded,
+                size: 14,
+                color: AppColors.moss,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Route stops',
@@ -570,8 +648,11 @@ class _StopsField extends StatelessWidget {
                             customBorder: const CircleBorder(),
                             child: const Padding(
                               padding: EdgeInsets.all(3),
-                              child: Icon(Icons.close_rounded,
-                                  size: 12, color: AppColors.inkMuted),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 12,
+                                color: AppColors.inkMuted,
+                              ),
                             ),
                           ),
                         ],
@@ -609,11 +690,12 @@ class _TimeField extends StatelessWidget {
   });
 
   final String label;
-  final String value;
+  final String? value;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final text = value;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -622,15 +704,26 @@ class _TimeField extends StatelessWidget {
           labelText: label,
           isDense: true,
           border: const OutlineInputBorder(),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 12,
+          ),
         ),
         child: Row(
           children: [
-            Text(value, style: const TextStyle(fontSize: 12)),
+            Text(
+              text ?? 'Select time',
+              style: TextStyle(
+                fontSize: 12,
+                color: text == null ? AppColors.inkMuted : AppColors.textDark,
+              ),
+            ),
             const Spacer(),
-            const Icon(Icons.schedule_rounded,
-                size: 14, color: AppColors.inkMuted),
+            const Icon(
+              Icons.schedule_rounded,
+              size: 14,
+              color: AppColors.inkMuted,
+            ),
           ],
         ),
       ),
@@ -677,7 +770,9 @@ class _PlanTile extends StatelessWidget {
                     if (plan.adHoc)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.mint,
                           borderRadius: BorderRadius.circular(6),
@@ -685,7 +780,9 @@ class _PlanTile extends StatelessWidget {
                         child: const Text(
                           'ad-hoc',
                           style: TextStyle(
-                              fontSize: 7.5, color: AppColors.forest),
+                            fontSize: 7.5,
+                            color: AppColors.forest,
+                          ),
                         ),
                       ),
                   ],
@@ -694,7 +791,9 @@ class _PlanTile extends StatelessWidget {
                 Text(
                   '${plan.zone} · ${plan.windowLabel} · ${plan.stopsLabel}',
                   style: const TextStyle(
-                      fontSize: 9.5, color: AppColors.inkMuted),
+                    fontSize: 9.5,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
               ],
             ),
@@ -705,8 +804,9 @@ class _PlanTile extends StatelessWidget {
             decoration: BoxDecoration(
               color: plan.status.color.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: plan.status.color.withValues(alpha: 0.6)),
+              border: Border.all(
+                color: plan.status.color.withValues(alpha: 0.6),
+              ),
             ),
             child: Text(
               plan.status.label,
@@ -723,8 +823,11 @@ class _PlanTile extends StatelessWidget {
             IconButton(
               onPressed: onCancel,
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.close_rounded,
-                  size: 16, color: AppColors.inkMuted),
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: AppColors.inkMuted,
+              ),
               tooltip: 'Cancel assignment',
             ),
         ],

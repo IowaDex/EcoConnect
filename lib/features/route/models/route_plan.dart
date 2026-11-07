@@ -38,6 +38,13 @@ String _two(int value) => value.toString().padLeft(2, '0');
 /// rather than throwing.
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
 
+/// Trimmed text or null, so empty fields never render as blank rows.
+String? _cleanText(dynamic raw) {
+  if (raw is! String) return null;
+  final value = raw.trim();
+  return value.isEmpty ? null : value;
+}
+
 /// Stable day key used for queries: `2026-10-31`.
 String routeDateKey(DateTime date) =>
     '${date.year}-${_two(date.month)}-${_two(date.day)}';
@@ -56,23 +63,48 @@ String routeDateLabel(DateTime date) =>
 
 /// One stop on a collection route. `lat`/`lng` are optional so plans
 /// created before map picking (or typed by hand) still load.
+///
+/// [address], [schedule] and [notes] are filled in when the stop comes from a
+/// designated collection point, so the driver sees what staff pinned.
 class RouteStop {
-  const RouteStop({required this.name, this.latitude, this.longitude});
+  const RouteStop({
+    required this.name,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.schedule,
+    this.notes,
+  });
 
   final String name;
   final double? latitude;
   final double? longitude;
+  final String? address;
+  final String? schedule;
+  final String? notes;
 
   bool get hasCoordinates => latitude != null && longitude != null;
+
+  bool get hasDetails =>
+      address != null || schedule != null || notes != null;
 
   Map<String, dynamic> toMap() => {
         'name': name,
         'lat': latitude,
         'lng': longitude,
+        if (address != null) 'address': address,
+        if (schedule != null) 'schedule': schedule,
+        if (notes != null) 'notes': notes,
       };
 
-  RouteStop renamed(String value) =>
-      RouteStop(name: value, latitude: latitude, longitude: longitude);
+  RouteStop renamed(String value) => RouteStop(
+        name: value,
+        latitude: latitude,
+        longitude: longitude,
+        address: address,
+        schedule: schedule,
+        notes: notes,
+      );
 
   static RouteStop fromDynamic(dynamic raw) {
     if (raw is String) {
@@ -85,6 +117,9 @@ class RouteStop {
         name: name == null || name.isEmpty ? 'Stop' : name,
         latitude: (raw['lat'] as num?)?.toDouble(),
         longitude: (raw['lng'] as num?)?.toDouble(),
+        address: _cleanText(raw['address']),
+        schedule: _cleanText(raw['schedule']),
+        notes: _cleanText(raw['notes']),
       );
     }
     return const RouteStop(name: 'Stop');
@@ -185,6 +220,25 @@ class RoutePlan {
   String get stopsLabel => stops.isEmpty
       ? 'No stops listed'
       : '${stops.length} stop${stops.length == 1 ? '' : 's'}';
+
+  /// Copy with a different stop list. Used when assigned collection points are
+  /// merged into the plan at read time.
+  RoutePlan withStops(List<RouteStop> stops) => RoutePlan(
+        id: id,
+        driverId: driverId,
+        driverName: driverName,
+        zone: zone,
+        date: date,
+        windowStart: windowStart,
+        windowEnd: windowEnd,
+        stops: stops,
+        status: status,
+        adHoc: adHoc,
+        createdBy: createdBy,
+        createdAt: createdAt,
+        activatedAt: activatedAt,
+        completedAt: completedAt,
+      );
 
   Map<String, dynamic> toMap() => {
         'driverId': driverId,

@@ -10,6 +10,7 @@ import '../../route/models/collection_route.dart';
 import '../../route/models/route_plan.dart';
 import '../../location/providers/location_provider.dart';
 import '../../route/services/route_service.dart';
+import '../../route/screens/route_map_screen.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
@@ -482,14 +483,55 @@ class _DriverSheet extends StatelessWidget {
                           ],
                           if (plan != null && plan!.stops.isNotEmpty) ...[
                             const SizedBox(height: 6),
-                            Text(
-                              'Route · ${plan!.stops.take(3).map((s) => s.name).join(' → ')}'
-                              '${plan!.stops.length > 3 ? ' +${plan!.stops.length - 3} more' : ''}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 8.5,
-                                color: Colors.white.withValues(alpha: 0.75),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => RouteMapScreen(
+                                    title: 'Truck route',
+                                    stops: plan!.stops,
+                                    truck: route?.latitude != null &&
+                                            route?.longitude != null
+                                        ? LatLng(
+                                            route!.latitude!,
+                                            route!.longitude!,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Route · ${plan!.stops.take(3).map((s) => s.name).join(' → ')}'
+                                      '${plan!.stops.length > 3 ? ' +${plan!.stops.length - 3} more' : ''}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.75),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    Icons.map_outlined,
+                                    size: 11,
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Map',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white
+                                          .withValues(alpha: 0.9),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

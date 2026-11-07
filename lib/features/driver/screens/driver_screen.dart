@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,6 +17,17 @@ import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
+import '../../route/screens/route_map_screen.dart';
+import '../../notifications/services/notification_service.dart';
+import '../../requests/models/collection_request.dart';
+import '../../requests/services/collection_request_service.dart';
+import '../../../core/models/waste_category.dart';
+import '../../collection_points/models/collection_point.dart';
+import '../../collection_points/services/collection_point_service.dart';
+import '../services/driver_session_service.dart';
+import '../services/driver_broadcast_service.dart';
+import '../widgets/driver_nav_bar.dart';
+import '../../../core/widgets/status_badge.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -26,10 +38,19 @@ class DriverScreen extends StatefulWidget {
 
 class _DriverScreenState extends State<DriverScreen> {
   final _routeService = RouteService();
+  final _pointService = CollectionPointService();
   StreamSubscription<CollectionRoute?>? _routeSub;
   StreamSubscription<RoutePlan?>? _planSub;
+  StreamSubscription<List<CollectionPoint>>? _pointsSub;
+  List<CollectionPoint> _assignedPoints = const [];
   Timer? _broadcastTimer;
   Timer? _clockTimer;
+  Timer? _healthTimer;
+  final _sessionService = DriverSessionService();
+
+  /// Latest device-level diagnosis, mirrored to the staff dashboard.
+  DriverLocationState _locationState = DriverLocationState.ok;
+  DriverLocationState _lastReportedState = DriverLocationState.ok;
 
   RouteStatus _status = RouteStatus.idle;
   RoutePlan? _plan;
@@ -40,6 +61,10 @@ class _DriverScreenState extends State<DriverScreen> {
 
   bool get _isLive =>
       _status == RouteStatus.inTransit || _status == RouteStatus.delayed;
+
+  bool get _isPaused => _status == RouteStatus.paused;
+
+  bool get _isRunning => _isLive || _isPaused;
 
   String? get _uid => context.read<AuthProvider>().currentUser?.uid;
 
@@ -54,6 +79,9 @@ class _DriverScreenState extends State<DriverScreen> {
     location.startSharedLocationUpdates();
     if (!location.hasLocation) await location.getCurrentLocation();
     if (!location.isTracking) location.startTracking();
+    // Record why a fix is missing so the card can explain it accurately
+    // instead of leaving a stale error from a previous attempt.
+    await location.refreshLocationHealth();
 
     final uid = _uid;
     if (uid == null) return;
@@ -71,6 +99,7 @@ class _DriverScreenState extends State<DriverScreen> {
         });
         if (status == RouteStatus.inTransit || status == RouteStatus.delayed) {
           _startBroadcast(uid);
+          _checkLocationHealth();
         } else {
           _broadcastTimer?.cancel();
           _broadcastTimer = null;
@@ -91,31 +120,127 @@ class _DriverScreenState extends State<DriverScreen> {
       },
     );
 
+    // Stops staff pin for this driver, shown even before a run starts.
+    _pointsSub = _pointService.watchForDriver(uid).listen(
+      (points) {
+        if (mounted) setState(() => _assignedPoints = points);
+      },
+      onError: (_) {},
+    );
+
     // Keeps the "running for…" clock ticking without another server read.
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _isLive) setState(() {});
+      if (mounted && _isRunning) setState(() {});
     });
+
+    // Watch for GPS/permission/connectivity loss while a route is running.
+    _ensureHealthTimer();
+  }
+
+  void _ensureHealthTimer() {
+    if (_healthTimer?.isActive ?? false) return;
+    _healthTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && _isRunning) _checkLocationHealth();
+    });
+  }
+
+  /// Asks for location again. On the web the OS settings page does not exist,
+  /// so the browser prompt is the only route back to a working fix.
+  Future<void> _fixLocation() async {
+    final location = context.read<LocationProvider>();
+    final fixed = await location.retryLocation();
+    if (!mounted) return;
+    if (fixed) {
+      _toast('Location enabled');
+      return;
+    }
+    _toast(
+      kIsWeb
+          ? 'Allow location for this site in your browser, then try again.'
+          : 'Allow location for EcoConnect in Settings, then try again.',
+      isError: true,
+    );
+  }
+
+  /// Diagnoses the device and publishes the result to the route document.
+  ///
+  /// Only transitions are written, and staff are notified once per problem
+  /// rather than on every heartbeat.
+  Future<void> _checkLocationHealth() async {
+    final uid = _uid;
+    if (uid == null) return;
+    final location = context.read<LocationProvider>();
+    final issue = await location.refreshLocationHealth();
+    if (!mounted) return;
+
+    final state = switch (issue) {
+      LocationIssue.none => DriverLocationState.ok,
+      LocationIssue.serviceDisabled => DriverLocationState.disabled,
+      LocationIssue.permissionDenied => DriverLocationState.permission,
+      LocationIssue.permissionDeniedForever => DriverLocationState.permission,
+      LocationIssue.offline => DriverLocationState.offline,
+      LocationIssue.unavailable => DriverLocationState.unknown,
+    };
+
+    setState(() => _locationState = state);
+    if (state == _lastReportedState) return;
+
+    final wasProblem = _lastReportedState.needsAttention;
+    _lastReportedState = state;
+    final user = context.read<AuthProvider>().currentUser;
+    try {
+      await _sessionService.reportLocationState(
+        driverId: uid,
+        driverName: user?.displayName ?? 'Collector',
+        state: state,
+        lastLatitude: location.latitude,
+        lastLongitude: location.longitude,
+        // One alert when a problem starts; recovery is silent.
+        notifyStaff: state.needsAttention && !wasProblem,
+      );
+    } catch (_) {
+      // The route heartbeat still carries the position; a failed status write
+      // must not interrupt the driver.
+    }
   }
 
   @override
   void dispose() {
     _routeSub?.cancel();
     _planSub?.cancel();
+    _pointsSub?.cancel();
     _broadcastTimer?.cancel();
     _clockTimer?.cancel();
+    _healthTimer?.cancel();
     super.dispose();
   }
 
   void _startBroadcast(String driverId) {
     if (_broadcastTimer?.isActive ?? false) return;
+    var tick = 0;
     _broadcastTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted) return;
       final location = context.read<LocationProvider>();
-      if (location.hasLocation) {
-        _routeService
-            .pushPosition(driverId, location.latitude!, location.longitude!)
-            .catchError((_) {});
-      }
+      if (!location.hasLocation) return;
+      final lat = location.latitude!;
+      final lng = location.longitude!;
+      _routeService.pushPosition(driverId, lat, lng).catchError((_) {});
+
+      // The map updates every 15 s, but residents are only alerted once a
+      // minute so a parked truck does not spam the neighbourhood.
+      tick++;
+      if (tick % 4 != 0) return;
+      final name = context.read<AuthProvider>().currentUser?.displayName ??
+          'Your collector';
+      DriverBroadcastService()
+          .notifyNearby(
+            driverId: driverId,
+            driverName: name,
+            latitude: lat,
+            longitude: lng,
+            plan: _plan,
+          )
+          .catchError((_) => 0);
     });
   }
 
@@ -184,6 +309,8 @@ class _DriverScreenState extends State<DriverScreen> {
         overrideWindow: overrideWindow,
       );
       _startBroadcast(user.uid);
+      _ensureHealthTimer();
+      await _checkLocationHealth();
       if (mounted) {
         setState(() {
           _status = RouteStatus.inTransit;
@@ -267,6 +394,8 @@ class _DriverScreenState extends State<DriverScreen> {
         date: now,
         windowStart: routeTimeKey(now),
         windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
+        // Collection points staff assigned to this driver become the stops.
+        stops: await _routeService.stopsForDriver(user.uid),
         adHoc: true,
         createdBy: user.uid,
       );
@@ -289,6 +418,77 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
+  Future<void> _pauseRoute() async {
+    final user = context.read<AuthProvider>().currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.pause_circle_outline_rounded,
+            size: 30, color: AppColors.warning),
+        title: const Text('Pause this route?'),
+        content: const Text(
+          'Progress tracking stops and residents see that you are paused. '
+          'Your last known location stays visible to barangay staff.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep running'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Pause route'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await _routeService.pauseRoute(
+        driverId: user.uid,
+        driverName: user.displayName ?? 'Collector',
+        zone: _plan?.zone,
+      );
+      _broadcastTimer?.cancel();
+      _broadcastTimer = null;
+      if (!mounted) return;
+      setState(() => _status = RouteStatus.paused);
+      _toast('Route paused — resume when you are ready');
+    } catch (e) {
+      _fail('pause your route', e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resumeRoute() async {
+    final user = context.read<AuthProvider>().currentUser;
+    if (user == null) return;
+
+    setState(() => _busy = true);
+    try {
+      await _routeService.resumeRoute(
+        driverId: user.uid,
+        driverName: user.displayName ?? 'Collector',
+        zone: _plan?.zone,
+      );
+      _startBroadcast(user.uid);
+      _ensureHealthTimer();
+      await _checkLocationHealth();
+      if (!mounted) return;
+      setState(() => _status = RouteStatus.inTransit);
+      _toast('Route resumed — tracking is live again');
+    } catch (e) {
+      _fail('resume your route', e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _endRoute() async {
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
@@ -298,7 +498,8 @@ class _DriverScreenState extends State<DriverScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('End collection route?'),
         content: const Text(
-          'Residents will stop seeing your live location immediately.',
+          'Residents will stop seeing your live location immediately and '
+          'barangay staff will be notified that the route is complete.',
         ),
         actions: [
           TextButton(
@@ -316,9 +517,16 @@ class _DriverScreenState extends State<DriverScreen> {
 
     final startedAt = _startedAt;
     try {
-      await _routeService.endRoute(user.uid, planId: _activePlanId);
+      await _routeService.endRoute(
+        user.uid,
+        planId: _activePlanId,
+        driverName: user.displayName ?? 'Collector',
+        zone: _plan?.zone,
+      );
       _broadcastTimer?.cancel();
       _broadcastTimer = null;
+      _healthTimer?.cancel();
+      _healthTimer = null;
       if (!mounted) return;
       // Stop streaming GPS once the run is over — no route means no reason
       // to keep the device radio busy.
@@ -431,6 +639,49 @@ class _DriverScreenState extends State<DriverScreen> {
                 children: [
                   const BrandWordmark(fontSize: 10.5),
                   const Spacer(),
+                  StreamBuilder<int>(
+                    stream: NotificationService()
+                        .watchUnreadCount(user?.uid ?? ''),
+                    builder: (context, snapshot) {
+                      final unread = snapshot.data ?? 0;
+                      return InkWell(
+                        onTap: () => context.push('/notifications'),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(Icons.notifications_none_rounded,
+                                  size: 19, color: AppColors.inkMuted),
+                              if (unread > 0)
+                                Positioned(
+                                  right: -4,
+                                  top: -3,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.error,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      unread > 9 ? '9+' : '$unread',
+                                      style: const TextStyle(
+                                        fontSize: 7.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 2),
                   InkWell(
                     onTap: _logout,
                     borderRadius: BorderRadius.circular(20),
@@ -461,12 +712,33 @@ class _DriverScreenState extends State<DriverScreen> {
                 const _ServiceWarning(),
                 const SizedBox(height: 14),
               ],
+              if (_isRunning && _locationState.needsAttention) ...[
+                _LocationWarning(
+                  state: _locationState,
+                  onEnable: () async {
+                    final location = context.read<LocationProvider>();
+                    final opened = _locationState ==
+                            DriverLocationState.permission
+                        ? await location.openAppSettings()
+                        : await location.openLocationSettings();
+                    if (!opened && mounted) {
+                      _toast(
+                        'Open your device settings and allow location for EcoConnect.',
+                      );
+                    }
+                    await _checkLocationHealth();
+                  },
+                ),
+                const SizedBox(height: 14),
+              ],
               _AssignmentCard(
                 plan: _plan,
                 status: _status,
                 startedAt: _startedAt,
                 busy: _busy,
                 onActivate: _activate,
+                onPause: _pauseRoute,
+                onResume: _resumeRoute,
                 onEnd: _endRoute,
               ),
               if (_plan != null) ...[
@@ -477,7 +749,12 @@ class _DriverScreenState extends State<DriverScreen> {
                       ? LatLng(location.latitude!, location.longitude!)
                       : null,
                 ),
+              ] else if (_assignedPoints.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _AssignedStopsCard(points: _assignedPoints),
               ],
+              const SizedBox(height: 14),
+              const _DriverPickupsCard(),
               if (_isLive) ...[
                 const SizedBox(height: 16),
                 const Text(
@@ -518,11 +795,23 @@ class _DriverScreenState extends State<DriverScreen> {
                   try {
                     await _routeService.pushPosition(
                         driver.uid, location.latitude!, location.longitude!);
-                    _toast('Location broadcast to residents');
+                    final sent = await DriverBroadcastService().notifyNearby(
+                      driverId: driver.uid,
+                      driverName: driver.displayName ?? 'Your collector',
+                      latitude: location.latitude!,
+                      longitude: location.longitude!,
+                      plan: _plan,
+                    );
+                    _toast(
+                      sent == 0
+                          ? 'Location broadcast to residents'
+                          : 'Broadcast sent · $sent residents notified',
+                    );
                   } catch (e) {
                     _fail('broadcast your location', e);
                   }
                 },
+                onFix: _fixLocation,
               ),
               const SizedBox(height: 16),
               const LocationControls(),
@@ -532,6 +821,47 @@ class _DriverScreenState extends State<DriverScreen> {
           ),
         ),
       ),
+      bottomNavigationBar: const DriverNavBar(currentIndex: 0),
+    );
+  }
+}
+
+/// Explains exactly why tracking stopped. Never accuses the driver: the
+/// wording mirrors what the device reported.
+class _LocationWarning extends StatelessWidget {
+  const _LocationWarning({required this.state, required this.onEnable});
+
+  final DriverLocationState state;
+  final Future<void> Function() onEnable;
+
+  String get _message => switch (state) {
+        DriverLocationState.disabled =>
+          'Location tracking disabled. Please enable your device location to '
+              'continue your assigned collection route.',
+        DriverLocationState.permission =>
+          'Location permission is off. Allow EcoConnect to access your location '
+              'so barangay staff can monitor the route.',
+        DriverLocationState.offline =>
+          'You are offline. Barangay staff can see your last known position; '
+              'tracking resumes automatically when you reconnect.',
+        DriverLocationState.unknown =>
+          'Your location is temporarily unavailable. We will keep trying and '
+              'resume tracking automatically.',
+        DriverLocationState.ok => '',
+      };
+
+  bool get _canOpenSettings =>
+      state == DriverLocationState.disabled ||
+      state == DriverLocationState.permission;
+
+  @override
+  Widget build(BuildContext context) {
+    return EcoBanner(
+      message: _message,
+      icon: Icons.location_off_rounded,
+      color: AppColors.error,
+      actionLabel: _canOpenSettings ? 'Enable location' : null,
+      onAction: _canOpenSettings ? () => onEnable() : null,
     );
   }
 }
@@ -579,6 +909,8 @@ class _AssignmentCard extends StatelessWidget {
     required this.startedAt,
     required this.busy,
     required this.onActivate,
+    required this.onPause,
+    required this.onResume,
     required this.onEnd,
   });
 
@@ -587,17 +919,23 @@ class _AssignmentCard extends StatelessWidget {
   final DateTime? startedAt;
   final bool busy;
   final VoidCallback onActivate;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
   final VoidCallback onEnd;
 
   bool get _isLive =>
       status == RouteStatus.inTransit || status == RouteStatus.delayed;
 
+  bool get _isPaused => status == RouteStatus.paused;
+
+  bool get _isRunning => _isLive || _isPaused;
+
   @override
   Widget build(BuildContext context) {
     final badgeLabel =
-        _isLive ? status.label : plan?.status.label ?? 'Not scheduled';
+        _isRunning ? status.label : plan?.status.label ?? 'Not scheduled';
     final badgeColor =
-        _isLive ? status.color : plan?.status.color ?? Colors.white70;
+        _isRunning ? status.color : plan?.status.color ?? Colors.white70;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -637,7 +975,7 @@ class _AssignmentCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            _isLive ? 'Assigned zone' : 'Today’s assignment',
+            _isRunning ? 'Assigned zone' : 'Today’s assignment',
             style: const TextStyle(fontSize: 9, color: Color(0xB3FFFFFF)),
           ),
           const SizedBox(height: 2),
@@ -681,23 +1019,82 @@ class _AssignmentCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.7),
               ),
             ),
-          if (_isLive && startedAt != null) ...[
+          if (_isRunning && startedAt != null) ...[
             const SizedBox(height: 8),
             Text(
-              'Running for ${_runningFor(startedAt!)}',
-              style: const TextStyle(
+              _isPaused
+                  ? 'Paused · started ${_runningFor(startedAt!)} ago'
+                  : 'Running for ${_runningFor(startedAt!)}',
+              style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: AppColors.lime,
+                color: _isPaused ? AppColors.warning : AppColors.lime,
               ),
             ),
           ],
           const SizedBox(height: 16),
-          if (_isLive)
-            PrimaryButton(
-              label: 'End collection route',
-              onPressed: onEnd,
-              height: 44,
+          if (_isRunning)
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: FilledButton(
+                      onPressed: busy ? null : (_isPaused ? onResume : onPause),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _isPaused
+                            ? AppColors.lime
+                            : Colors.white.withValues(alpha: 0.16),
+                        foregroundColor: _isPaused
+                            ? AppColors.darkGreen
+                            : Colors.white,
+                        side: _isPaused
+                            ? null
+                            : BorderSide(
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _isPaused
+                                ? Icons.play_arrow_rounded
+                                : Icons.pause_rounded,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(_isPaused ? 'Resume' : 'Pause'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: busy ? null : onEnd,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.65),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: const Text('End route'),
+                    ),
+                  ),
+                ),
+              ],
             )
           else if (plan != null)
             PrimaryButton(
@@ -740,6 +1137,120 @@ class _AssignmentCard extends StatelessWidget {
     final minutes = duration.inMinutes.remainder(60);
     if (hours == 0) return '$minutes min';
     return '${hours}h ${minutes}m';
+  }
+}
+
+class _AssignedStopsCard extends StatelessWidget {
+  const _AssignedStopsCard({required this.points});
+
+  final List<CollectionPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final stops = RouteService.mergeAssignedStops(const [], points);
+    final preview = stops.take(3).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.alt_route_rounded,
+                  size: 16, color: AppColors.forest),
+              const SizedBox(width: 8),
+              const Text(
+                'Assigned stops',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.forest,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${stops.length} stop${stops.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < preview.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${i + 1}. ${preview[i].name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppColors.forest,
+                ),
+              ),
+            ),
+          if (stops.length > preview.length)
+            Text(
+              '+${stops.length - preview.length} more',
+              style: const TextStyle(
+                fontSize: 9,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RouteMapScreen(
+                        title: 'Assigned stops',
+                        stops: stops,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 15),
+                  label: const Text('Map'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _openDirections(context, stops),
+                  icon: const Icon(Icons.navigation_rounded, size: 15),
+                  label: const Text('Directions'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openDirections(
+    BuildContext context,
+    List<RouteStop> stops,
+  ) async {
+    if (!stops.any((stop) => stop.hasCoordinates)) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          title: 'Directions',
+          stops: stops,
+          openSteps: true,
+        ),
+      ),
+    );
   }
 }
 
@@ -827,13 +1338,34 @@ class _RouteStopsCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              plan.stops[i].name,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.forest,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  plan.stops[i].name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.forest,
+                                  ),
+                                ),
+                                if (plan.stops[i].address != null ||
+                                    plan.stops[i].schedule != null)
+                                  Text(
+                                    [
+                                      if (plan.stops[i].address != null)
+                                        plan.stops[i].address!,
+                                      if (plan.stops[i].schedule != null)
+                                        plan.stops[i].schedule!,
+                                    ].join(' · '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 8.5,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           if (plan.stops[i].hasCoordinates)
@@ -845,7 +1377,52 @@ class _RouteStopsCard extends StatelessWidget {
                 ],
               ),
             ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RouteMapScreen(
+                        title: 'Your route map',
+                        stops: plan.stops,
+                        truck: truck,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 15),
+                  label: const Text('Map'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: plan.mappedStops.isEmpty
+                      ? null
+                      : () => _openDirections(context),
+                  icon: const Icon(Icons.navigation_rounded, size: 15),
+                  label: const Text('Directions'),
+                ),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  /// Opens the in-app turn-by-turn sheet for this run.
+  Future<void> _openDirections(BuildContext context) async {
+    if (plan.mappedStops.isEmpty) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          title: 'Directions',
+          stops: plan.stops,
+          truck: truck,
+          openSteps: true,
+        ),
       ),
     );
   }
@@ -1087,15 +1664,20 @@ class _LocationCard extends StatelessWidget {
     required this.location,
     required this.isLive,
     required this.onBroadcast,
+    required this.onFix,
   });
 
   final LocationProvider location;
   final bool isLive;
   final VoidCallback onBroadcast;
+  final VoidCallback onFix;
 
   @override
   Widget build(BuildContext context) {
-    final denied = location.error != null;
+    final issue = location.issue;
+    final blocked = issue == LocationIssue.permissionDenied ||
+        issue == LocationIssue.permissionDeniedForever;
+    final denied = blocked || location.error != null;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1142,7 +1724,7 @@ class _LocationCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             denied
-                ? 'Location permission is required to run a collection route.'
+                ? _blockedMessage()
                 : location.hasLocation
                     ? location.locationString
                     : 'Waiting for a GPS fix…',
@@ -1163,18 +1745,16 @@ class _LocationCard extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: denied
-                  ? () => location.openAppSettings()
-                  : isLive
-                      ? onBroadcast
-                      : null,
+              onPressed: denied ? onFix : (isLive ? onBroadcast : null),
               icon: Icon(
-                denied ? Icons.settings_rounded : Icons.send_rounded,
+                denied
+                    ? (kIsWeb ? Icons.refresh_rounded : Icons.settings_rounded)
+                    : Icons.send_rounded,
                 size: 15,
               ),
               label: Text(
                 denied
-                    ? 'Open app settings'
+                    ? (kIsWeb ? 'Try again' : 'Open app settings')
                     : isLive
                         ? 'Broadcast now'
                         : 'Activate a route to broadcast',
@@ -1193,6 +1773,20 @@ class _LocationCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _blockedMessage() {
+    if (kIsWeb) {
+      return location.issue == LocationIssue.permissionDeniedForever
+          ? 'Your browser is blocking location for this site. Open the lock '
+              'icon in the address bar, allow Location, then tap Try again.'
+          : 'Allow location when your browser asks so residents can see the '
+              'truck on the map.';
+    }
+    return location.issue == LocationIssue.permissionDeniedForever
+        ? 'Location is blocked for EcoConnect. Allow it in Settings, then tap '
+            'Try again.'
+        : 'Location permission is required to run a collection route.';
   }
 }
 
@@ -1266,6 +1860,298 @@ class _TipCard extends StatelessWidget {
                 color: AppColors.forest.withValues(alpha: 0.8),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pickup requests staff assigned to this driver. The driver can only move a
+/// request forward to "on the way" and then "collected"; verification and
+/// scheduling stay with staff.
+class _DriverPickupsCard extends StatelessWidget {
+  const _DriverPickupsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    return StreamBuilder<List<CollectionRequest>>(
+      stream: CollectionRequestService().watchForDriver(user.uid),
+      builder: (context, snapshot) {
+        final items = (snapshot.data ?? const <CollectionRequest>[])
+            .where((r) => r.status.isOpen)
+            .toList(growable: false);
+        if (items.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.creamBright,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.assignment_outlined,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Pickup requests',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${items.length} open',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              for (final request in items) ...[
+                _PickupTile(request: request, driverName: user.displayName ?? 'Driver'),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PickupTile extends StatefulWidget {
+  const _PickupTile({required this.request, required this.driverName});
+
+  final CollectionRequest request;
+  final String driverName;
+
+  @override
+  State<_PickupTile> createState() => _PickupTileState();
+}
+
+class _PickupTileState extends State<_PickupTile> {
+  bool _busy = false;
+
+  Future<void> _advance(RequestStatus status) async {
+    setState(() => _busy = true);
+    try {
+      await CollectionRequestService().driverAdvance(
+        request: widget.request,
+        status: status,
+        driverName: widget.driverName,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == RequestStatus.inProgress
+                  ? 'Resident notified that you are on the way'
+                  : 'Marked as collected',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showDetails(BuildContext context, CollectionRequest request) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.65,
+        maxChildSize: 0.92,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
+          children: [
+            Text(
+              request.title,
+              style: const TextStyle(
+                fontSize: 18,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkGreen,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${request.category.label} · ${request.estimatedQuantity}',
+              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            ),
+            const SizedBox(height: 14),
+            _detailRow(Icons.person_outline_rounded,
+                '${request.requesterName}${request.requesterPhone == null ? '' : ' · ${request.requesterPhone}'}'),
+            _detailRow(Icons.place_outlined, request.location),
+            _detailRow(Icons.event_outlined,
+                'Preferred ${request.preferredDate.month}/${request.preferredDate.day}'),
+            if (request.scheduledAt != null)
+              _detailRow(Icons.event_available_rounded,
+                  'Scheduled ${request.scheduledAt!.month}/${request.scheduledAt!.day}'),
+            const SizedBox(height: 8),
+            Text(
+              request.description,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.6,
+                color: AppColors.textDark,
+              ),
+            ),
+            if (request.remarks?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Remarks: ${request.remarks!.trim()}',
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 10.5,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final request = widget.request;
+    return Container(      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              StatusBadge(
+                label: request.status.label,
+                color: request.status.color,
+                icon: request.status.icon,
+                compact: true,
+              ),
+              const Spacer(),
+              Text(
+                request.estimatedQuantity,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            request.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${request.requesterName} · ${request.location}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              if (request.status == RequestStatus.assigned)
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: FilledButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _advance(RequestStatus.inProgress),
+                      child: const Text(
+                        'On the way',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              if (request.status == RequestStatus.inProgress)
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: FilledButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _advance(RequestStatus.collected),
+                      child: const Text(
+                        'Mark collected',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 34,
+                child: OutlinedButton(
+                  onPressed: () => _showDetails(context, request),
+                  child: const Text(
+                    'Details',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

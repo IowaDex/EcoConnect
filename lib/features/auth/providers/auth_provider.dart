@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
+import '../../../core/utils/image_payload.dart';
 
 // Screens get these types through the provider, not the service.
 export '../models/user.dart';
@@ -53,6 +54,8 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     required UserRole role,
     Map<String, dynamic>? profile,
+    AccountType accountType = AccountType.resident,
+    UploadPayload? verificationDocument,
   }) async {
     _setLoading(true);
     _clearError();
@@ -64,6 +67,8 @@ class AuthProvider extends ChangeNotifier {
         name: name,
         role: role,
         profile: profile,
+        accountType: accountType,
+        verificationDocument: verificationDocument,
       );
       return true;
     } catch (e) {
@@ -134,6 +139,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> getAllUsers() => _authService.getAllUsers();
 
+  Future<List<Map<String, dynamic>>> getDrivers() => _authService.getDrivers();
+
   Future<void> updateUserRole(String uid, UserRole role) =>
       _authService.updateUserRole(uid, role);
 
@@ -144,6 +151,19 @@ class AuthProvider extends ChangeNotifier {
     required Future<void> Function() deleteLocationData,
   }) =>
       _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
+
+  /// Re-reads the profile so verification changes appear without a sign-out.
+  Future<void> refreshUser() async {
+    try {
+      final refreshed = await _authService.refreshProfile();
+      if (refreshed != null && refreshed.uid == _currentUser?.uid) {
+        _currentUser = refreshed;
+        notifyListeners();
+      }
+    } catch (e) {
+      AppLogger.error('Profile refresh failed', e);
+    }
+  }
 
   /// Returns an error message to show, or null when the reset email was sent.
   Future<String?> sendPasswordReset(String email) async {
