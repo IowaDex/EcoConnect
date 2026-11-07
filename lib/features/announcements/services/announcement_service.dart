@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/announcement.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 
 /// Announcement reads and writes.
 ///
@@ -13,6 +15,7 @@ class AnnouncementService {
   AnnouncementService._internal();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final NotificationService _notifications = NotificationService();
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('announcements');
 
@@ -79,19 +82,37 @@ class AnnouncementService {
     if (id == null) {
       data['createdAt'] = FieldValue.serverTimestamp();
       await ref.set(data);
+      if (status == AnnouncementStatus.published) {
+        await _notifications.notifyResidents(
+          title: 'New announcement',
+          body: title.trim(),
+          type: AppNotificationType.announcement,
+          data: {'announcementId': ref.id},
+        );
+      }
     } else {
       await ref.update(data);
     }
     return ref.id;
   }
 
-  Future<void> setStatus(String id, AnnouncementStatus status) {
-    return _col.doc(id).update({
+  Future<void> setStatus(String id, AnnouncementStatus status) async {
+    await _col.doc(id).update({
       'status': status.name,
       'updatedAt': FieldValue.serverTimestamp(),
       if (status == AnnouncementStatus.published)
         'publishAt': FieldValue.serverTimestamp(),
     });
+    if (status == AnnouncementStatus.published) {
+      final snap = await _col.doc(id).get();
+      final item = Announcement.fromDoc(id, snap.data() ?? const {});
+      await _notifications.notifyResidents(
+        title: 'New announcement',
+        body: item.title,
+        type: AppNotificationType.announcement,
+        data: {'announcementId': id},
+      );
+    }
   }
 
   Future<void> delete(String id) => _col.doc(id).delete();

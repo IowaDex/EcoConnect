@@ -10,12 +10,16 @@ import 'features/landing/screens/landing_screen.dart';
 import 'features/user/screens/user_screen.dart';
 import 'features/user/screens/wallet_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
+import 'features/driver/screens/driver_routes_screen.dart';
+import 'features/driver/screens/driver_completed_screen.dart';
+import 'features/driver/screens/driver_profile_screen.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/admin/screens/admin_panel_screen.dart';
 import 'features/admin/screens/live_routes_screen.dart';
 import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/alerts/screens/alerts_screen.dart';
 import 'features/community/screens/community_screen.dart';
+import 'features/community/screens/post_detail_screen.dart';
 import 'features/incident/screens/report_incident_screen.dart';
 import 'features/staff/screens/drop_off_station_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
@@ -32,6 +36,7 @@ import 'features/waste/screens/waste_history_screen.dart';
 import 'features/requests/screens/request_form_screen.dart';
 import 'features/requests/screens/my_requests_screen.dart';
 import 'features/notifications/screens/notifications_screen.dart';
+import 'features/notifications/widgets/notification_banner_host.dart';
 import 'features/splash/screens/splash_screen.dart';
 import 'features/tracking/screens/tracking_screen.dart';
 
@@ -47,6 +52,7 @@ const _sharedRoutes = {
   '/announcements',
   '/events',
   '/notifications',
+  '/community-post',
 };
 
 const _residentRoutes = {
@@ -66,6 +72,9 @@ const _residentRoutes = {
 
 const _driverRoutes = {
   '/driver',
+  '/driver-routes',
+  '/driver-completed',
+  '/driver-profile',
   ..._sharedRoutes,
 };
 
@@ -97,6 +106,15 @@ Set<String> _allowedFor(UserRole role) => switch (role) {
       UserRole.user => _residentRoutes,
     };
 
+/// Detail screens live under a collection path (`/community-post/{id}`), so a
+/// plain set lookup would reject them. A prefixed match keeps the guard while
+/// allowing nested ids.
+bool _canOpen(UserRole role, String location) {
+  final allowed = _allowedFor(role);
+  if (allowed.contains(location)) return true;
+  return allowed.any((route) => location.startsWith('$route/'));
+}
+
 /// Where to send the user, or null to stay. Pure so it can be unit tested.
 String? authRedirect({
   required bool initialized,
@@ -119,7 +137,7 @@ String? authRedirect({
     return _homeFor(role);
   }
   // A driver must not reach the staff desk by typing the URL, and vice versa.
-  if (!_allowedFor(role).contains(location)) return _homeFor(role);
+  if (!_canOpen(role, location)) return _homeFor(role);
   return null;
 }
 
@@ -160,6 +178,18 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
         GoRoute(path: '/driver', builder: (_, __) => const DriverScreen()),
         GoRoute(
+          path: '/driver-routes',
+          builder: (_, __) => const DriverRoutesScreen(),
+        ),
+        GoRoute(
+          path: '/driver-completed',
+          builder: (_, __) => const DriverCompletedScreen(),
+        ),
+        GoRoute(
+          path: '/driver-profile',
+          builder: (_, __) => const DriverProfileScreen(),
+        ),
+        GoRoute(
           path: '/admin-dashboard',
           builder: (_, __) => const AdminDashboardScreen(),
         ),
@@ -175,6 +205,11 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
         GoRoute(path: '/community', builder: (_, __) => const CommunityScreen()),
+        GoRoute(
+          path: '/community-post/:id',
+          builder: (_, state) =>
+              PostDetailScreen(postId: state.pathParameters['id'] ?? ''),
+        ),
         GoRoute(path: '/ask-ai', builder: (_, __) => const AskAiScreen()),
         GoRoute(path: '/alerts', builder: (_, __) => const AlertsScreen()),
         GoRoute(
@@ -244,6 +279,11 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       // The EcoConnect design system is a light-only brand palette.
       themeMode: ThemeMode.light,
       routerConfig: _router,
+      // Realtime notification banners float above every screen, so a new
+      // approval or broadcast shows up without pulling to refresh.
+      builder: (context, child) => NotificationBannerHost(
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }

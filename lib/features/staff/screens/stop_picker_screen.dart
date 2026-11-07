@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../route/models/route_plan.dart';
 import '../../location/providers/location_provider.dart';
+import '../../location/services/geocoding_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/primary_button.dart';
 
@@ -28,7 +29,12 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
   static const _fallback = LatLng(14.5995, 120.9842);
 
   final _mapController = MapController();
+  final _searchController = TextEditingController();
+  final _geocoder = GeocodingService();
   late List<RouteStop> _stops;
+
+  List<GeocodeResult> _results = const [];
+  bool _searching = false;
 
   @override
   void initState() {
@@ -49,13 +55,68 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
           15,
         );
       }
+      // Jump straight to the zone staff typed, so the map already shows the
+      // right barangay before the first pin is dropped.
+      if (first == null) _locateZone(silent: true);
     });
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// Centres the map on the zone/barangay typed on the assignment form.
+  Future<void> _locateZone({bool silent = false}) async {
+    final zone = widget.zone?.trim();
+    if (zone == null || zone.isEmpty) {
+      if (!silent) {
+        _toast('Type a zone or barangay on the assignment form first.');
+      }
+      return;
+    }
+    await _search('$zone, Philippines', moveToFirst: true, silent: silent);
+  }
+
+  Future<void> _search(
+    String query, {
+    bool moveToFirst = false,
+    bool silent = false,
+  }) async {
+    if (query.trim().isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final results = await _geocoder.search(query);
+      if (!mounted) return;
+      setState(() => _results = results);
+      if (results.isEmpty) {
+        if (!silent) _toast('No matching place found.');
+        return;
+      }
+      if (moveToFirst) {
+        _mapController.move(results.first.point, 14);
+        setState(() => _results = const []);
+        if (!silent) _toast('Map centred on ${results.first.shortName}');
+      }
+    } catch (e) {
+      if (!silent && mounted) _toast('Location search failed: $e');
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _moveTo(GeocodeResult result, {bool addStop = false}) {
+    setState(() => _results = const []);
+    _mapController.move(result.point, 16);
+    if (addStop) _addStop(result.point);
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _addStop(LatLng point) {
@@ -214,6 +275,138 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                                 ),
                           ],
                         ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: 10,
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.creamBright,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    AppColors.forest.withValues(alpha: 0.16),
+                                blurRadius: 14,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.search_rounded,
+                                  size: 18, color: AppColors.inkMuted),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: (value) => _search(value),
+                                  decoration: const InputDecoration(
+                                    hintText:
+                                        'Search a street, purok or barangay',
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                  ),
+                                  style: const TextStyle(fontSize: 11.5),
+                                ),
+                              ),
+                              if (_searching)
+                                const Padding(
+                                  padding: EdgeInsets.all(10),
+                                  child: SizedBox(
+                                    height: 14,
+                                    width: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                )
+                              else
+                                IconButton(
+                                  onPressed: () =>
+                                      _search(_searchController.text),
+                                  icon: const Icon(Icons.arrow_forward_rounded,
+                                      size: 18),
+                                  tooltip: 'Search',
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _searching ? null : _locateZone,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: AppColors.creamBright,
+                              side: const BorderSide(color: AppColors.sage),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            icon: const Icon(Icons.my_location_rounded,
+                                size: 15, color: AppColors.forest),
+                            label: const Text(
+                              'Get Zone / Barangay address',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (_results.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 190),
+                            decoration: BoxDecoration(
+                              color: AppColors.creamBright,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.sage),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: _results.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final result = _results[i];
+                                return ListTile(
+                                  dense: true,
+                                  leading: const Icon(
+                                    Icons.place_outlined,
+                                    size: 16,
+                                    color: AppColors.primary,
+                                  ),
+                                  title: Text(
+                                    result.shortName,
+                                    style: const TextStyle(fontSize: 10.5),
+                                  ),
+                                  subtitle: Text(
+                                    result.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 8.5),
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.add_location_alt_outlined,
+                                    size: 16,
+                                    color: AppColors.forest,
+                                  ),
+                                  onTap: () =>
+                                      _moveTo(result, addStop: true),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

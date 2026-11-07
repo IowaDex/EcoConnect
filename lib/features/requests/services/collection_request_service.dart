@@ -84,7 +84,10 @@ class CollectionRequestService {
       'history': [
         {
           'status': RequestStatus.pending.name,
-          'at': FieldValue.serverTimestamp(),
+          // FieldValue.serverTimestamp() is rejected inside an array, so the
+          // audit trail uses a client timestamp while the document itself
+          // still gets server timestamps on createdAt/updatedAt.
+          'at': Timestamp.now(),
           'byName': requesterName,
           'note': 'Request submitted',
         },
@@ -112,15 +115,10 @@ class CollectionRequestService {
     String? rejectionReason,
   }) async {
     final history = [
-      ...request.history.map((entry) => {
-            'status': entry.status.name,
-            'at': entry.at == null ? null : Timestamp.fromDate(entry.at!),
-            'byName': entry.byName,
-            'note': entry.note,
-          }),
+      ..._historyOf(request),
       {
         'status': status.name,
-        'at': FieldValue.serverTimestamp(),
+        'at': Timestamp.now(),
         'byName': actorName,
         'note': note,
       },
@@ -154,15 +152,10 @@ class CollectionRequestService {
     required String actorName,
   }) async {
     final history = [
-      ...request.history.map((entry) => {
-            'status': entry.status.name,
-            'at': entry.at == null ? null : Timestamp.fromDate(entry.at!),
-            'byName': entry.byName,
-            'note': entry.note,
-          }),
+      ..._historyOf(request),
       {
         'status': RequestStatus.assigned.name,
-        'at': FieldValue.serverTimestamp(),
+        'at': Timestamp.now(),
         'byName': actorName,
         'note': 'Assigned to $driverName',
       },
@@ -196,6 +189,54 @@ class CollectionRequestService {
   }
 
   Future<void> delete(String id) => _col.doc(id).delete();
+
+  /// Lets the assigned driver move their own job forward: assigned ->
+  /// inProgress -> collected. Staff keep full control of every other status.
+  Future<void> driverAdvance({
+    required CollectionRequest request,
+    required RequestStatus status,
+    required String driverName,
+  }) async {
+    await _col.doc(request.id).update({
+      'status': status.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'history': [
+        ..._historyOf(request),
+        {
+          'status': status.name,
+          'at': Timestamp.now(),
+          'byName': driverName,
+          'note': status == RequestStatus.inProgress
+              ? 'Driver is on the way'
+              : 'Waste collected',
+        },
+      ],
+    });
+
+    await _notifications.push(
+      userId: request.requesterId,
+      title: _statusTitle(status),
+      body: status == RequestStatus.inProgress
+          ? '$driverName is on the way to ${request.location}.'
+          : '$driverName collected the waste for "${request.title}".',
+      type: AppNotificationType.request,
+      data: {'requestId': request.id},
+    );
+  }
+
+  /// Converts the stored audit trail back to plain maps. FieldValue values
+  /// cannot be nested in a list, so timestamps are copied as-is.
+  List<Map<String, dynamic>> _historyOf(CollectionRequest request) {
+    return [
+      for (final entry in request.history)
+        {
+          'status': entry.status.name,
+          'at': entry.at == null ? null : Timestamp.fromDate(entry.at!),
+          'byName': entry.byName,
+          'note': entry.note,
+        },
+    ];
+  }
 
   String _statusTitle(RequestStatus status) => switch (status) {
         RequestStatus.approved => 'Request approved',

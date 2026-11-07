@@ -85,6 +85,37 @@ class NotificationService {
     }
   }
 
+  /// Fans a notice out to every active resident. Only staff can read the user
+  /// directory, so this is a staff-only action; failures stay silent because
+  /// the announcement itself has already been saved.
+  Future<void> notifyResidents({
+    required String title,
+    required String body,
+    AppNotificationType type = AppNotificationType.system,
+    Map<String, dynamic> data = const {},
+  }) async {
+    try {
+      final users =
+          await _db.collection('users').where('role', isEqualTo: 'user').get();
+      if (users.docs.isEmpty) return;
+      final batch = _db.batch();
+      for (final user in users.docs) {
+        batch.set(_col.doc(), {
+          'userId': user.id,
+          'title': title,
+          'body': body,
+          'type': type.name,
+          'read': false,
+          'createdAt': FieldValue.serverTimestamp(),
+          'data': data,
+        });
+      }
+      await batch.commit();
+    } catch (error) {
+      AppLogger.error('Resident notification fan-out failed', error);
+    }
+  }
+
   /// Staff see their own notifications plus the shared channel.
   Stream<List<AppNotification>> watchForStaff(String userId) {
     return _col

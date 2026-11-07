@@ -27,8 +27,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
 
   List<Map<String, dynamic>> _drivers = [];
   String? _driverId;
-  TimeOfDay _start = const TimeOfDay(hour: 6, minute: 0);
-  TimeOfDay _end = const TimeOfDay(hour: 10, minute: 0);
+  // Both window fields start empty on purpose: a route cannot be assigned
+  // until staff have chosen the full shift.
+  TimeOfDay? _start;
+  TimeOfDay? _end;
+  String? _windowError;
   bool _loadingDrivers = true;
   bool _busy = false;
 
@@ -82,9 +85,10 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       routeTimeKey(DateTime(2000, 1, 1, time.hour, time.minute));
 
   Future<void> _pickTime({required bool isStart}) async {
+    final current = isStart ? _start : _end;
     final picked = await showTimePicker(
       context: context,
-      initialTime: isStart ? _start : _end,
+      initialTime: current ?? const TimeOfDay(hour: 6, minute: 0),
     );
     if (picked == null) return;
     setState(() {
@@ -93,6 +97,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       } else {
         _end = picked;
       }
+      _windowError = null;
     });
   }
 
@@ -107,12 +112,26 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       _toast('Enter the zone this driver will cover', isError: true);
       return;
     }
-    final startMinutes = _start.hour * 60 + _start.minute;
-    final endMinutes = _end.hour * 60 + _end.minute;
+    final start = _start;
+    final end = _end;
+    if (start == null || end == null) {
+      setState(() => _windowError =
+          'Set both the window start and window end before assigning.');
+      _toast(
+        'Set both the window start and window end before assigning.',
+        isError: true,
+      );
+      return;
+    }
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
     if (endMinutes <= startMinutes) {
+      setState(() => _windowError =
+          'The window must end after it starts.');
       _toast('The window must end after it starts', isError: true);
       return;
     }
+    setState(() => _windowError = null);
 
     final driver = _drivers.firstWhere(
       (d) => d['uid'] == driverId,
@@ -128,8 +147,8 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
         driverName: name,
         zone: zone,
         date: DateTime.now(),
-        windowStart: _timeKey(_start),
-        windowEnd: _timeKey(_end),
+        windowStart: _timeKey(start),
+        windowEnd: _timeKey(end),
         stops: _stops,
         createdBy: context.read<AuthProvider>().currentUser?.uid,
       );
@@ -267,6 +286,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 stops: _stops,
                 start: _start,
                 end: _end,
+                windowError: _windowError,
                 busy: _busy,
                 onDriverChanged: (value) {
                   setState(() => _driverId = value);
@@ -346,6 +366,7 @@ class _AssignCard extends StatelessWidget {
     required this.stops,
     required this.start,
     required this.end,
+    required this.windowError,
     required this.busy,
     required this.onDriverChanged,
     required this.onPickStart,
@@ -360,8 +381,9 @@ class _AssignCard extends StatelessWidget {
   final String? driverId;
   final TextEditingController zoneController;
   final List<RouteStop> stops;
-  final TimeOfDay start;
-  final TimeOfDay end;
+  final TimeOfDay? start;
+  final TimeOfDay? end;
+  final String? windowError;
   final bool busy;
   final ValueChanged<String?> onDriverChanged;
   final VoidCallback onPickStart;
@@ -370,8 +392,9 @@ class _AssignCard extends StatelessWidget {
   final ValueChanged<int> onRemoveStop;
   final VoidCallback onAssign;
 
-  String _label(TimeOfDay time) =>
-      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  String? _label(TimeOfDay? time) => time == null
+      ? null
+      : '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
@@ -464,6 +487,27 @@ class _AssignCard extends StatelessWidget {
               ),
             ],
           ),
+          if (windowError != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline_rounded,
+                    size: 13, color: AppColors.danger),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    windowError!,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      height: 1.4,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           _StopsField(
             stops: stops,
@@ -624,11 +668,12 @@ class _TimeField extends StatelessWidget {
   });
 
   final String label;
-  final String value;
+  final String? value;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final text = value;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -642,7 +687,13 @@ class _TimeField extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Text(value, style: const TextStyle(fontSize: 12)),
+            Text(
+              text ?? 'Select time',
+              style: TextStyle(
+                fontSize: 12,
+                color: text == null ? AppColors.inkMuted : AppColors.textDark,
+              ),
+            ),
             const Spacer(),
             const Icon(Icons.schedule_rounded,
                 size: 14, color: AppColors.inkMuted),

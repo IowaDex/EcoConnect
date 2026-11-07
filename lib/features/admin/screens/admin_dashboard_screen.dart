@@ -8,6 +8,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../incident/services/incident_service.dart';
 import '../../route/services/route_service.dart';
+import '../../requests/models/collection_request.dart';
+import '../../requests/services/collection_request_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/confirm_logout.dart';
@@ -86,6 +88,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 14),
+                  const _RequestsCard(),
                   const SizedBox(height: 22),
                   StreamBuilder<List<Incident>>(
                     stream: _incidentStream,
@@ -720,6 +724,169 @@ class _QuickTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Live queue of resident collection requests. New submissions appear here
+/// without a refresh, and tapping opens the staff desk to verify and assign.
+class _RequestsCard extends StatelessWidget {
+  const _RequestsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<CollectionRequest>>(
+      stream: CollectionRequestService().watchAll(),
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? const <CollectionRequest>[];
+        final open = all
+            .where((r) =>
+                r.status == RequestStatus.pending ||
+                r.status == RequestStatus.underReview ||
+                r.status == RequestStatus.approved)
+            .toList(growable: false);
+        final pending =
+            open.where((r) => r.status == RequestStatus.pending).length;
+
+        return InkWell(
+          onTap: () => context.go('/staff-requests'),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+            decoration: BoxDecoration(
+              color: AppColors.creamBright,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: open.isEmpty
+                    ? AppColors.sage.withValues(alpha: 0.7)
+                    : AppColors.forest.withValues(alpha: 0.45),
+                width: open.isEmpty ? 1 : 1.2,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      height: 34,
+                      width: 34,
+                      decoration: const BoxDecoration(
+                        color: AppColors.mint,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.assignment_outlined,
+                          size: 17, color: AppColors.forest),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Collection requests',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            open.isEmpty
+                                ? 'Nothing waiting for review'
+                                : pending == 0
+                                    ? '${open.length} in progress with staff'
+                                    : '$pending waiting for review · ${open.length} open',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (pending > 0)
+                      Container(
+                        height: 22,
+                        constraints: const BoxConstraints(minWidth: 22),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: AppColors.danger,
+                          borderRadius: BorderRadius.all(Radius.circular(11)),
+                        ),
+                        child: Text(
+                          '$pending',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 20, color: AppColors.moss),
+                  ],
+                ),
+                if (open.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  for (final request in open.take(3))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 7),
+                      child: Row(
+                        children: [
+                          Container(
+                            height: 6,
+                            width: 6,
+                            decoration: BoxDecoration(
+                              color: request.status.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              request.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            request.status.label,
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w700,
+                              color: request.status.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (open.length > 3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '+${open.length - 3} more',
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

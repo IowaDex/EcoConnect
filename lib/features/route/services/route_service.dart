@@ -289,6 +289,22 @@ class RouteService {
     });
   }
 
+  /// A driver's finished runs, newest first, for the Completed tab.
+  Stream<List<RoutePlan>> watchCompletedPlans(String driverId) {
+    return _plans.where('driverId', isEqualTo: driverId).snapshots().map((snap) {
+      final plans = snap.docs
+          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+          .where((plan) => plan.status == RoutePlanStatus.completed)
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.completedAt ?? a.createdAt ?? DateTime(2000);
+          final bDate = b.completedAt ?? b.createdAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
+      return plans;
+    });
+  }
+
   /// Staff (or a driver starting an unassigned run) creates a plan.
   Future<RoutePlan> createPlan({
     required String driverId,

@@ -19,9 +19,14 @@ import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
 import '../../notifications/services/notification_service.dart';
+import '../../requests/models/collection_request.dart';
+import '../../requests/services/collection_request_service.dart';
+import '../../../core/models/waste_category.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
 import '../services/driver_session_service.dart';
+import '../services/driver_broadcast_service.dart';
+import '../widgets/driver_nav_bar.dart';
 import '../../../core/widgets/status_badge.dart';
 
 class DriverScreen extends StatefulWidget {
@@ -212,14 +217,30 @@ class _DriverScreenState extends State<DriverScreen> {
 
   void _startBroadcast(String driverId) {
     if (_broadcastTimer?.isActive ?? false) return;
+    var tick = 0;
     _broadcastTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (!mounted) return;
       final location = context.read<LocationProvider>();
-      if (location.hasLocation) {
-        _routeService
-            .pushPosition(driverId, location.latitude!, location.longitude!)
-            .catchError((_) {});
-      }
+      if (!location.hasLocation) return;
+      final lat = location.latitude!;
+      final lng = location.longitude!;
+      _routeService.pushPosition(driverId, lat, lng).catchError((_) {});
+
+      // The map updates every 15 s, but residents are only alerted once a
+      // minute so a parked truck does not spam the neighbourhood.
+      tick++;
+      if (tick % 4 != 0) return;
+      final name = context.read<AuthProvider>().currentUser?.displayName ??
+          'Your collector';
+      DriverBroadcastService()
+          .notifyNearby(
+            driverId: driverId,
+            driverName: name,
+            latitude: lat,
+            longitude: lng,
+            plan: _plan,
+          )
+          .catchError((_) => 0);
     });
   }
 
@@ -732,6 +753,8 @@ class _DriverScreenState extends State<DriverScreen> {
                 const SizedBox(height: 14),
                 _AssignedStopsCard(points: _assignedPoints),
               ],
+              const SizedBox(height: 14),
+              const _DriverPickupsCard(),
               if (_isLive) ...[
                 const SizedBox(height: 16),
                 const Text(
@@ -772,7 +795,18 @@ class _DriverScreenState extends State<DriverScreen> {
                   try {
                     await _routeService.pushPosition(
                         driver.uid, location.latitude!, location.longitude!);
-                    _toast('Location broadcast to residents');
+                    final sent = await DriverBroadcastService().notifyNearby(
+                      driverId: driver.uid,
+                      driverName: driver.displayName ?? 'Your collector',
+                      latitude: location.latitude!,
+                      longitude: location.longitude!,
+                      plan: _plan,
+                    );
+                    _toast(
+                      sent == 0
+                          ? 'Location broadcast to residents'
+                          : 'Broadcast sent · $sent residents notified',
+                    );
                   } catch (e) {
                     _fail('broadcast your location', e);
                   }
@@ -787,6 +821,7 @@ class _DriverScreenState extends State<DriverScreen> {
           ),
         ),
       ),
+      bottomNavigationBar: const DriverNavBar(currentIndex: 0),
     );
   }
 }
@@ -1825,6 +1860,298 @@ class _TipCard extends StatelessWidget {
                 color: AppColors.forest.withValues(alpha: 0.8),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pickup requests staff assigned to this driver. The driver can only move a
+/// request forward to "on the way" and then "collected"; verification and
+/// scheduling stay with staff.
+class _DriverPickupsCard extends StatelessWidget {
+  const _DriverPickupsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    return StreamBuilder<List<CollectionRequest>>(
+      stream: CollectionRequestService().watchForDriver(user.uid),
+      builder: (context, snapshot) {
+        final items = (snapshot.data ?? const <CollectionRequest>[])
+            .where((r) => r.status.isOpen)
+            .toList(growable: false);
+        if (items.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.creamBright,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.assignment_outlined,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Pickup requests',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${items.length} open',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              for (final request in items) ...[
+                _PickupTile(request: request, driverName: user.displayName ?? 'Driver'),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PickupTile extends StatefulWidget {
+  const _PickupTile({required this.request, required this.driverName});
+
+  final CollectionRequest request;
+  final String driverName;
+
+  @override
+  State<_PickupTile> createState() => _PickupTileState();
+}
+
+class _PickupTileState extends State<_PickupTile> {
+  bool _busy = false;
+
+  Future<void> _advance(RequestStatus status) async {
+    setState(() => _busy = true);
+    try {
+      await CollectionRequestService().driverAdvance(
+        request: widget.request,
+        status: status,
+        driverName: widget.driverName,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == RequestStatus.inProgress
+                  ? 'Resident notified that you are on the way'
+                  : 'Marked as collected',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showDetails(BuildContext context, CollectionRequest request) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.65,
+        maxChildSize: 0.92,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 28),
+          children: [
+            Text(
+              request.title,
+              style: const TextStyle(
+                fontSize: 18,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkGreen,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${request.category.label} · ${request.estimatedQuantity}',
+              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            ),
+            const SizedBox(height: 14),
+            _detailRow(Icons.person_outline_rounded,
+                '${request.requesterName}${request.requesterPhone == null ? '' : ' · ${request.requesterPhone}'}'),
+            _detailRow(Icons.place_outlined, request.location),
+            _detailRow(Icons.event_outlined,
+                'Preferred ${request.preferredDate.month}/${request.preferredDate.day}'),
+            if (request.scheduledAt != null)
+              _detailRow(Icons.event_available_rounded,
+                  'Scheduled ${request.scheduledAt!.month}/${request.scheduledAt!.day}'),
+            const SizedBox(height: 8),
+            Text(
+              request.description,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.6,
+                color: AppColors.textDark,
+              ),
+            ),
+            if (request.remarks?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Remarks: ${request.remarks!.trim()}',
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 10.5,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final request = widget.request;
+    return Container(      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              StatusBadge(
+                label: request.status.label,
+                color: request.status.color,
+                icon: request.status.icon,
+                compact: true,
+              ),
+              const Spacer(),
+              Text(
+                request.estimatedQuantity,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            request.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${request.requesterName} · ${request.location}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              if (request.status == RequestStatus.assigned)
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: FilledButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _advance(RequestStatus.inProgress),
+                      child: const Text(
+                        'On the way',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              if (request.status == RequestStatus.inProgress)
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: FilledButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _advance(RequestStatus.collected),
+                      child: const Text(
+                        'Mark collected',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 34,
+                child: OutlinedButton(
+                  onPressed: () => _showDetails(context, request),
+                  child: const Text(
+                    'Details',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -54,10 +54,12 @@ service cloud.firestore {
     }
 
     function uploadListOk(data, field) {
+      // An empty list is valid; indexing it would raise a rule error and deny
+      // the write, so the size check short-circuits first.
       return !(field in data) || data[field] == null
         || (data[field] is list
             && data[field].size() <= 3
-            && data[field][0].dataUrl is string);
+            && (data[field].size() == 0 || data[field][0].dataUrl is string));
     }
 
     function isRemoved(uid) {
@@ -240,7 +242,13 @@ service cloud.firestore {
         && request.resource.data.location is string
         && request.resource.data.preferredDate is timestamp
         && uploadListOk(request.resource.data, 'images');
-      allow update: if isAdmin();
+      // Staff drive the workflow; the assigned driver may only advance their
+      // own job to inProgress/collected.
+      allow update: if isAdmin()
+        || (isSelf(resource.data.assignedDriverId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'updatedAt', 'history'])
+            && request.resource.data.status in ['inProgress', 'collected']);
       allow delete: if isAdmin()
         || (isSelf(resource.data.requesterId)
             && resource.data.status == 'pending');
@@ -289,6 +297,22 @@ service cloud.firestore {
         || isAdmin();
       allow delete: if signedIn()
         && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Community feed. Any active member may post; neighbours may react and
+    // reply, while only the author or an admin may delete.
+    match /communityPosts/{postId} {
+      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow create: if isActive()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 2000
+        && uploadOk(request.resource.data, 'image');
+      allow update: if isActive()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['likedBy', 'comments', 'updatedAt']);
+      allow delete: if isAdmin() || resource.data.authorId == request.auth.uid;
     }
 
     // Designated collection points.
