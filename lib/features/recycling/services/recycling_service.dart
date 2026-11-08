@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 import '../models/drop_off.dart';
 
 class RecyclingException implements Exception {
@@ -104,6 +106,17 @@ class RecyclingService {
         'pointsUpdatedAt': FieldValue.serverTimestamp(),
       });
     });
+
+    // Tell the resident the points arrived. A failed notification must never
+    // undo a credit that has already been recorded; push() swallows its errors.
+    await NotificationService().push(
+      userId: residentId,
+      title: 'Points credited',
+      body: '+$points points for ${weightKg.toStringAsFixed(2)} kg of '
+          '${material.label.toLowerCase()} at the drop-off station.',
+      type: AppNotificationType.points,
+      data: {'dropOffId': dropRef.id, 'points': points},
+    );
 
     return points;
   }

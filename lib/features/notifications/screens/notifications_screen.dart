@@ -165,6 +165,9 @@ class NotificationsScreen extends StatelessWidget {
         context.push('/announcements');
       case AppNotificationType.event:
         context.push('/events');
+      case AppNotificationType.points:
+        // Residents see the balance and history in their wallet.
+        if (!isStaff) context.push('/wallet');
       case AppNotificationType.account:
       case AppNotificationType.system:
         break;

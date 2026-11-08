@@ -11,6 +11,7 @@ enum AppNotificationType {
   route,
   announcement,
   event,
+  points,
   system,
 }
 
@@ -23,6 +24,7 @@ extension AppNotificationTypeX on AppNotificationType {
         AppNotificationType.route => 'Route',
         AppNotificationType.announcement => 'Announcement',
         AppNotificationType.event => 'Event',
+        AppNotificationType.points => 'Points',
         AppNotificationType.system => 'System',
       };
 
@@ -34,6 +36,7 @@ extension AppNotificationTypeX on AppNotificationType {
         AppNotificationType.route => Icons.local_shipping_outlined,
         AppNotificationType.announcement => Icons.campaign_outlined,
         AppNotificationType.event => Icons.event_outlined,
+        AppNotificationType.points => Icons.stars_rounded,
         AppNotificationType.system => Icons.notifications_none_rounded,
       };
 
@@ -45,6 +48,7 @@ extension AppNotificationTypeX on AppNotificationType {
         AppNotificationType.route => const Color(0xFFEF6C00),
         AppNotificationType.announcement => const Color(0xFF00838F),
         AppNotificationType.event => const Color(0xFF558B2F),
+        AppNotificationType.points => const Color(0xFFF9A825),
         AppNotificationType.system => AppColors.inkMuted,
       };
 
