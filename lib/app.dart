@@ -305,6 +305,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       // session notice is outermost so it is never hidden.
       builder: (context, child) => SessionEndedHost(
         child: OfflineGate(
+          // Drivers keep working through dead spots instead of being blocked.
+          enabled: context.watch<AuthProvider>().currentUser?.role !=
+              UserRole.driver,
           child: NotificationBannerHost(
             child: RunBroadcastHost(
               child: TruckProximityHost(

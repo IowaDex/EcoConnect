@@ -16,6 +16,20 @@ void main() {
       expect(keys, {'mabini st'});
     });
 
+    test('keeps streets whose name starts like a house marker', () {
+      expect(streetKeyOf('Northville St'), 'northville st');
+      expect(streetKeyOf('Norte Street'), 'norte st');
+      expect(streetKeyOf('Lotus St'), 'lotus st');
+      expect(streetKeyOf('Houseman Rd'), 'houseman rd');
+      expect(streetKeyOf('Northville St'), isNot(streetKeyOf('Lotus St')));
+    });
+
+    test('strips stacked block and lot markers', () {
+      expect(streetKeyOf('Blk 7 Lot 12 Mabini St'), 'mabini st');
+      expect(streetKeyOf('No. 12 Mabini St'), 'mabini st');
+      expect(streetKeyOf('Unit4B Rizal Ave'), 'rizal ave');
+    });
+
     test('keeps genuinely different streets apart', () {
       expect(streetKeyOf('Mabini St'), isNot(streetKeyOf('Rizal St')));
       expect(streetKeyOf('Mabini St'), isNot(streetKeyOf('Mabini Ave')));

@@ -20,16 +20,20 @@ const Color _inkMuted = Color(0xFF5B7A5F);
 /// covers the notification banners too — there is no point announcing an event
 /// over a screen that is saying the phone is offline.
 class OfflineGate extends StatelessWidget {
-  const OfflineGate({super.key, required this.child});
+  const OfflineGate({super.key, required this.child, this.enabled = true});
 
   final Widget child;
+
+  /// False keeps the app usable offline (e.g. a driver mid-run, whose queued
+  /// location history and cached routes still work without a connection).
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     // Nullable lookup: widget tests build screens without the provider, and a
     // missing provider must mean "online", never a crash.
     final status = context.watch<NetworkStatus?>();
-    final offline = status?.isOffline ?? false;
+    final offline = enabled && (status?.isOffline ?? false);
 
     return Stack(
       children: [

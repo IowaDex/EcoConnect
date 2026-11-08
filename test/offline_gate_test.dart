@@ -9,9 +9,9 @@ import 'package:eco_connect/core/network/network_status.dart';
 import 'package:eco_connect/core/widgets/eco_loading.dart';
 import 'package:eco_connect/core/widgets/offline_gate.dart';
 
-Widget _host(NetworkStatus? status) {
+Widget _host(NetworkStatus? status, {bool enabled = true}) {
   const child = Scaffold(body: Center(child: Text('app content')));
-  const gate = OfflineGate(child: child);
+  final gate = OfflineGate(enabled: enabled, child: child);
   return MaterialApp(
     home: status == null
         ? gate
@@ -61,6 +61,24 @@ void main() {
       findsOneWidget,
       reason: 'the app stays mounted behind the offline card',
     );
+  });
+
+  testWidgets('can be switched off so a driver keeps working offline',
+      (tester) async {
+    final harness = _controllable();
+    final status = harness.status;
+    await tester.runAsync(status.start);
+    addTearDown(status.dispose);
+
+    await tester.pumpWidget(_host(status, enabled: false));
+    harness.setOnline(false);
+    await tester.runAsync(status.refresh);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(status.isOffline, isTrue);
+    expect(find.text('No internet connection'), findsNothing);
+    expect(find.text('app content'), findsOneWidget);
   });
 
   testWidgets('stays out of the way while online', (tester) async {

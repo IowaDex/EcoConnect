@@ -18,6 +18,7 @@ const {
   doc,
   getDoc,
   getDocs,
+  serverTimestamp,
   setDoc,
   updateDoc,
 } = require('firebase/firestore');
@@ -121,6 +122,25 @@ test('a device replaced by a newer login is refused everywhere, the new one is n
   const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
   await assertFails(setDoc(doc(asSignedInAt('dan', 1000), 'routes/dan'), live));
   await assertSucceeds(setDoc(doc(asSignedInAt('dan', 3000), 'routes/dan'), live));
+});
+
+test('event sign-ups: own row only, fixed shape, server join time', async () => {
+  const row = (uid, extra = {}) => ({
+    uid, name: 'Alice', street: 'Mabini St', streetKey: 'mabini st',
+    barangay: 'Bangcagan', joinedAt: serverTimestamp(), ...extra,
+  });
+  const path = 'events/e1/participants/alice';
+  await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
+  // Joining twice is a harmless re-write.
+  await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
+  await assertFails(setDoc(doc(as('dan'), path), row('alice')));
+  await assertFails(setDoc(doc(as('alice'), path), row('alice', {role: 'admin'})));
+  await assertFails(setDoc(doc(as('alice'), path), row('alice', {joinedAt: Timestamp.fromMillis(1)})));
+  await assertFails(setDoc(doc(as('alice'), path), row('alice', {name: 'x'.repeat(200)})));
+  await assertFails(deleteDoc(doc(as('dan'), path)));
+  await assertSucceeds(deleteDoc(doc(as('root'), path)));
+  await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
+  await assertSucceeds(deleteDoc(doc(as('alice'), path)));
 });
 
 test('nobody can publish a location for others to see', async () => {

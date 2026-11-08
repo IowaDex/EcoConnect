@@ -84,7 +84,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (elapsed.inMinutes < 10) {
                   final remaining = 10 - elapsed.inMinutes;
                   Navigator.of(ctx).pop();
-                  _snack('Please wait $remaining more minute(s) before resending.');
+                  _snack(
+                    'Please wait $remaining more minute(s) before resending.',
+                  );
                   return;
                 }
               }
@@ -133,8 +135,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: AppColors.cream,
-                        borderRadius:
-                            const BorderRadius.vertical(top: Radius.circular(34)),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(34),
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: AppColors.forest.withValues(alpha: 0.08),
@@ -143,142 +146,153 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(gutter, 26, gutter, 24),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Center(
-                            child: Text(
-                              'Log in Account',
-                              style: TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.forest,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          AppTextField(
-                            label: 'Email',
-                            hint: 'you@email.com',
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            validator: Validators.validateEmail,
-                            autofillHints: const [AutofillHints.email],
-                          ),
-                          const SizedBox(height: 14),
-                          AppTextField(
-                            label: 'Password',
-                            hint: 'Input password',
-                            controller: _passwordController,
-                            obscureText: _obscurePassword,
-                            textInputAction: TextInputAction.done,
-                            validator: Validators.validatePassword,
-                            autofillHints: const [AutofillHints.password],
-                            onFieldSubmitted: (_) => _handleLogin(),
-                            suffix: IconButton(
-                              padding: EdgeInsets.zero,
-                              splashRadius: 18,
-                              iconSize: 18,
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: AppColors.inkMuted,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                            ),
-                          ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () => context.go('/forgot-password'),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.only(top: 6, bottom: 2),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Forgot password?',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.inkMuted,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          PrimaryButton(
-                            label: 'Log in',
-                            loading: authProvider.isLoading,
-                            onPressed: _handleLogin,
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            alignment: WrapAlignment.center,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(gutter, 26, gutter, 24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const Text(
-                                'No account?',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.inkMuted,
+                              const Center(
+                                child: Text(
+                                  'Log in Account',
+                                  style: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.forest,
+                                  ),
                                 ),
                               ),
-                              TextButton(
-                                onPressed: () => context.go('/signup'),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                child: const Text(
-                                  'Sign up',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                              const SizedBox(height: 24),
+                              AppTextField(
+                                label: 'Email',
+                                hint: 'you@email.com',
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
+                                validator: Validators.validateEmail,
+                                autofillHints: const [AutofillHints.email],
+                              ),
+                              const SizedBox(height: 14),
+                              AppTextField(
+                                label: 'Password',
+                                hint: 'Input password',
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                textInputAction: TextInputAction.done,
+                                validator: Validators.validatePassword,
+                                autofillHints: const [AutofillHints.password],
+                                onFieldSubmitted: (_) => _handleLogin(),
+                                suffix: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  splashRadius: 18,
+                                  iconSize: 18,
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.inkMuted,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
                                 ),
                               ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () =>
+                                      context.go('/forgot-password'),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.only(
+                                      top: 6,
+                                      bottom: 2,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: const Text(
+                                    'Forgot password?',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              PrimaryButton(
+                                label: 'Log in',
+                                loading: authProvider.isLoading,
+                                onPressed: _handleLogin,
+                              ),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  const Text(
+                                    'No account?',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => context.go('/signup'),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                      ),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text(
+                                      'Sign up',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              const _ContinueWithDivider(),
+                              const SizedBox(height: 14),
+                              const _SocialRow(),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          const _ContinueWithDivider(),
-                          const SizedBox(height: 14),
-                          const _SocialRow(),
-                        ],
+                        ),
                       ),
                     ),
                   ),
+                ],
+              ),
+              // The only way back to the landing page — without it a visitor who
+              // taps "I already have an account" is stuck on the login screen.
+              Positioned(
+                top: 2,
+                left: 4,
+                child: IconButton(
+                  onPressed: () => context.go('/welcome'),
+                  tooltip: 'Back to home',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.78),
+                    foregroundColor: AppColors.forest,
+                    padding: const EdgeInsets.all(10),
+                  ),
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
                 ),
               ),
             ],
           ),
-          // The only way back to the landing page — without it a visitor who
-          // taps "I already have an account" is stuck on the login screen.
-          Positioned(
-            top: 2,
-            left: 4,
-            child: IconButton(
-              onPressed: () => context.go('/welcome'),
-              tooltip: 'Back to home',
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.78),
-                foregroundColor: AppColors.forest,
-                padding: const EdgeInsets.all(10),
-              ),
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  ),
-);
+    );
   }
 }
 
@@ -308,7 +322,11 @@ class _LoginHero extends StatelessWidget {
               'Real-time garbage truck tracking and timely notifications, making '
               'waste disposal easier and more convenient.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 8, height: 1.5, color: AppColors.inkMuted),
+              style: TextStyle(
+                fontSize: 8,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
             ),
           ),
         ],

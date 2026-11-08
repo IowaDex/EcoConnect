@@ -10,9 +10,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 String streetKeyOf(String? raw) {
   if (raw == null) return '';
   var s = raw.toLowerCase().trim();
-  // "unit 4b", "blk 7 lot 12", "#12", "no. 12" prefixes.
+  // "unit 4b", "blk 7 lot 12", "#12", "no. 12" prefixes. A marker only counts
+  // when a number follows it, so streets such as "Northville", "Lotus" or
+  // "Houseman" keep their names.
   s = s.replaceAll(
-    RegExp(r'^(unit|blk|block|lot|house|no\.?|#)\s*[\w\-]*\s*'),
+    RegExp(
+      r'^(?:(?:unit|blk|block|lot|house|no\.?)\s*#?\s*\d[\w\-]*\s*'
+      r'|#\s*\d[\w\-]*\s*)+',
+    ),
     '',
   );
   s = s.replaceAll(RegExp(r'^[\d\-\s]+'), '');
