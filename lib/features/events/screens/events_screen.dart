@@ -16,6 +16,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/community_event.dart';
+import '../models/event_participant.dart';
 import '../services/event_service.dart';
 import '../../notifications/widgets/notification_bell.dart';
 
@@ -93,6 +94,9 @@ class _EventsScreenState extends State<EventsScreen> {
                       .where((e) => _tab == 0 ? e.isUpcoming : e.isCompleted)
                       .toList(growable: false);
                   if (items.isEmpty) {
+                    // No action button here on purpose: the FAB above already
+                    // does the same job, and two buttons with one behaviour on
+                    // the same screen just looks like a bug.
                     return EmptyState(
                       icon: Icons.event_outlined,
                       title: _tab == 0
@@ -101,8 +105,6 @@ class _EventsScreenState extends State<EventsScreen> {
                       message: isStaff
                           ? 'Create an event and publish it so residents can join.'
                           : 'Check back soon for clean-up drives and community programs.',
-                      actionLabel: isStaff ? 'Create event' : null,
-                      onAction: isStaff ? () => _openEditor(context) : null,
                     );
                   }
                   return ListView.separated(
@@ -114,7 +116,7 @@ class _EventsScreenState extends State<EventsScreen> {
                       return _EventCard(
                         event: item,
                         canManage: isStaff,
-                        onTap: () => _openDetail(context, item, isStaff),
+                        onTap: () => _openDetail(context, item, isStaff, user),
                         onEdit: () => _openEditor(context, existing: item),
                         onToggle: () => _toggle(context, item),
                         onDelete: () => _delete(context, item),
@@ -194,6 +196,7 @@ class _EventsScreenState extends State<EventsScreen> {
     BuildContext context,
     CommunityEvent item,
     bool canManage,
+    AppUser? user,
   ) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -201,6 +204,7 @@ class _EventsScreenState extends State<EventsScreen> {
       builder: (ctx) => _EventDetail(
         event: item,
         canManage: canManage,
+        user: user,
         onEdit: () {
           Navigator.of(ctx).pop();
           _openEditor(context, existing: item);
@@ -375,6 +379,10 @@ class _EventCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (event.isUpcoming) ...[
+                        const SizedBox(height: 6),
+                        _ParticipantCount(eventId: event.id),
+                      ],
                     ],
                   ),
                 ),
@@ -383,6 +391,47 @@ class _EventCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "12 going" chip on an event card.
+class _ParticipantCount extends StatefulWidget {
+  const _ParticipantCount({required this.eventId});
+
+  final String eventId;
+
+  @override
+  State<_ParticipantCount> createState() => _ParticipantCountState();
+}
+
+class _ParticipantCountState extends State<_ParticipantCount> {
+  late final Stream<int> _stream =
+      EventService().watchParticipantCount(widget.eventId);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+        return Row(
+          children: [
+            const Icon(Icons.groups_rounded,
+                size: 12, color: AppColors.primary),
+            const SizedBox(width: 4),
+            Text(
+              '$count going',
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -442,20 +491,63 @@ Uint8List _bytes(String dataUrl) {
   return base64Decode(dataUrl.substring(comma + 1));
 }
 
-class _EventDetail extends StatelessWidget {
+class _EventDetail extends StatefulWidget {
   const _EventDetail({
     required this.event,
     required this.canManage,
+    required this.user,
     required this.onEdit,
   });
 
   final CommunityEvent event;
   final bool canManage;
+
+  /// Passed in rather than read from the provider: the sheet lives on its own
+  /// route, and the caller already has the signed-in resident.
+  final AppUser? user;
+
   final VoidCallback onEdit;
 
   @override
+  State<_EventDetail> createState() => _EventDetailState();
+}
+
+class _EventDetailState extends State<_EventDetail> {
+  final _service = EventService();
+  bool _busy = false;
+
+  Future<void> _toggleJoin(AppUser user, bool joined) async {
+    setState(() => _busy = true);
+    try {
+      if (joined) {
+        await _service.leave(widget.event.id, user.uid);
+      } else {
+        await _service.join(
+          eventId: widget.event.id,
+          uid: user.uid,
+          name: user.displayName ?? 'Resident',
+          street: user.houseStreet,
+          barangay: user.barangay,
+        );
+      }
+      if (!mounted) return;
+      AppFeedback.success(
+        context,
+        joined ? 'You left this event' : "You're signed up — see you there!",
+      );
+    } catch (e) {
+      if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final event = widget.event;
+    final user = widget.user;
     final image = event.imageUrl;
+
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.76,
@@ -506,10 +598,20 @@ class _EventDetail extends StatelessWidget {
               color: AppColors.textDark,
             ),
           ),
-          if (canManage) ...[
+          const SizedBox(height: 22),
+          _ParticipantsPanel(
+            eventId: event.id,
+            currentUid: user?.uid,
+            canJoin: !widget.canManage && event.isUpcoming,
+            busy: _busy,
+            onToggle: user == null
+                ? null
+                : (joined) => _toggleJoin(user, joined),
+          ),
+          if (widget.canManage) ...[
             const SizedBox(height: 22),
             OutlinedButton.icon(
-              onPressed: onEdit,
+              onPressed: widget.onEdit,
               icon: const Icon(Icons.edit_outlined, size: 17),
               label: const Text('Edit event'),
             ),
@@ -540,6 +642,210 @@ class _EventDetail extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Headcount, the join button, and where the crowd is coming from.
+///
+/// One listener does all three jobs: the roster length is the count, the
+/// current uid in the roster is the join state, and the streets group straight
+/// out of the same list. The stream is held in the state — building it in
+/// `build` would resubscribe on every rebuild and blank the panel out.
+class _ParticipantsPanel extends StatefulWidget {
+  const _ParticipantsPanel({
+    required this.eventId,
+    required this.currentUid,
+    required this.canJoin,
+    required this.busy,
+    required this.onToggle,
+  });
+
+  final String eventId;
+  final String? currentUid;
+  final bool canJoin;
+  final bool busy;
+  final ValueChanged<bool>? onToggle;
+
+  @override
+  State<_ParticipantsPanel> createState() => _ParticipantsPanelState();
+}
+
+class _ParticipantsPanelState extends State<_ParticipantsPanel> {
+  late final Stream<List<EventParticipant>> _stream =
+      EventService().watchParticipants(widget.eventId);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<EventParticipant>>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        final list = snapshot.data ?? const <EventParticipant>[];
+        final currentUid = widget.currentUid;
+        final joined =
+            currentUid != null && list.any((p) => p.uid == currentUid);
+        final groups = _groupByStreet(list);
+        final top = groups.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final maxCount = top.isEmpty ? 1 : top.first.value;
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.groups_rounded,
+                      size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${list.length} ${list.length == 1 ? 'resident' : 'residents'} going',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (joined)
+                    const StatusBadge(
+                      label: "You're in",
+                      color: AppColors.primary,
+                      icon: Icons.check_circle_rounded,
+                      compact: true,
+                    ),
+                ],
+              ),
+              if (top.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                const Text(
+                  'BY STREET',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    letterSpacing: 0.8,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (final entry in top.take(4))
+                  _streetRow(entry.key, entry.value, maxCount),
+                if (top.length > 4)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '+${top.length - 4} more '
+                      '${top.length - 4 == 1 ? 'street' : 'streets'}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ),
+              ],
+              if (widget.canJoin) ...[
+                const SizedBox(height: 14),
+                if (joined)
+                  OutlinedButton.icon(
+                    onPressed:
+                        widget.busy ? null : () => widget.onToggle?.call(true),
+                    icon: const Icon(Icons.event_busy_rounded, size: 16),
+                    label: const Text('Cancel my spot'),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed:
+                        widget.busy ? null : () => widget.onToggle?.call(false),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                    icon: widget.busy
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.how_to_reg_rounded, size: 17),
+                    label: const Text('Join this event'),
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _streetRow(String label, int count, int max) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: AppColors.textDark,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 62,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: count / max,
+                minHeight: 5,
+                backgroundColor: AppColors.sage,
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 16,
+            child: Text(
+              '$count',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkGreen,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// street bucket → headcount, keeping the friendliest spelling as the label.
+  Map<String, int> _groupByStreet(List<EventParticipant> list) {
+    final labels = <String, String>{};
+    final counts = <String, int>{};
+    for (final person in list) {
+      if (person.streetKey.isEmpty) continue;
+      labels.putIfAbsent(person.streetKey, () => person.streetLabel);
+      counts.update(person.streetKey, (v) => v + 1, ifAbsent: () => 1);
+    }
+    return {
+      for (final entry in counts.entries) labels[entry.key]!: entry.value,
+    };
   }
 }
 

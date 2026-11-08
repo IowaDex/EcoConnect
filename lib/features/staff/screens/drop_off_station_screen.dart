@@ -7,6 +7,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../recycling/services/recycling_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/primary_button.dart';
 
 /// Staff-side recycling station: find a resident, weigh the recyclables,
@@ -347,15 +348,9 @@ class _DropOffStationScreenState extends State<DropOffStationScreen> {
                   }
                   final items = snapshot.data ?? const <DropOff>[];
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(
-                        child: SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
+                    return const EcoLoadingView(
+                      truckWidth: 96,
+                      label: 'Loading drop-offs',
                     );
                   }
                   if (items.isEmpty) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/offline_gate.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
 import 'features/auth/screens/login_screen.dart';
@@ -29,6 +30,7 @@ import 'features/staff/screens/verification_screen.dart';
 import 'features/staff/screens/collection_requests_screen.dart';
 import 'features/staff/screens/waste_validation_screen.dart';
 import 'features/staff/screens/collection_points_screen.dart';
+import 'features/staff/screens/event_participation_screen.dart';
 import 'features/announcements/screens/announcements_screen.dart';
 import 'features/events/screens/events_screen.dart';
 import 'features/waste/screens/waste_upload_screen.dart';
@@ -37,7 +39,6 @@ import 'features/requests/screens/request_form_screen.dart';
 import 'features/requests/screens/my_requests_screen.dart';
 import 'features/notifications/screens/notifications_screen.dart';
 import 'features/notifications/widgets/notification_banner_host.dart';
-import 'features/splash/screens/splash_screen.dart';
 import 'features/tracking/screens/tracking_screen.dart';
 import 'features/tracking/widgets/truck_proximity_host.dart';
 import 'features/driver/widgets/run_broadcast_host.dart';
@@ -94,6 +95,7 @@ const _staffRoutes = {
   '/staff-requests',
   '/waste-validation',
   '/collection-points',
+  '/event-participation',
   ..._sharedRoutes,
 };
 
@@ -143,6 +145,17 @@ String? authRedirect({
   return null;
 }
 
+/// Both entry routes render the same hero screen.
+///
+/// The redirect swaps `/splash` for `/welcome` the instant the saved session
+/// resolves, so the two routes must produce the *same* page key. Without it the
+/// navigator would tear the screen down and rebuild it, restarting the truck
+/// animation and the copy reveal in front of the user.
+Page<void> _heroPage() => const MaterialPage<void>(
+      key: ValueKey<String>('ecoconnect-hero'),
+      child: LandingScreen(),
+    );
+
 class EcoConnectApp extends StatefulWidget {
   const EcoConnectApp({super.key});
 
@@ -169,8 +182,8 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         );
       },
       routes: [
-        GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
-        GoRoute(path: '/welcome', builder: (_, __) => const LandingScreen()),
+        GoRoute(path: '/splash', pageBuilder: (_, __) => _heroPage()),
+        GoRoute(path: '/welcome', pageBuilder: (_, __) => _heroPage()),
         GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
         GoRoute(path: '/signup', builder: (_, __) => const SignupScreen()),
         GoRoute(
@@ -244,6 +257,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (_, __) => const CollectionPointsScreen(),
         ),
         GoRoute(
+          path: '/event-participation',
+          builder: (_, __) => const EventParticipationScreen(),
+        ),
+        GoRoute(
           path: '/announcements',
           builder: (_, __) => const AnnouncementsScreen(),
         ),
@@ -283,10 +300,17 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       routerConfig: _router,
       // Realtime notification banners float above every screen, so a new
       // approval or broadcast shows up without pulling to refresh.
+      // The offline truck sits outside the banner host: if the phone has no
+      // network there is nothing worth announcing over the top of it. The
+      // session notice is outermost so it is never hidden.
       builder: (context, child) => SessionEndedHost(
-        child: NotificationBannerHost(
-          child: RunBroadcastHost(
-            child: TruckProximityHost(child: child ?? const SizedBox.shrink()),
+        child: OfflineGate(
+          child: NotificationBannerHost(
+            child: RunBroadcastHost(
+              child: TruckProximityHost(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
           ),
         ),
       ),

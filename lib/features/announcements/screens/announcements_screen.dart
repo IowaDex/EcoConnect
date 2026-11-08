@@ -95,9 +95,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       message: isStaff
                           ? 'Publish a collection schedule or community reminder so residents stay informed.'
                           : 'Your barangay will post schedules and reminders here.',
-                      actionLabel: isStaff ? 'Create announcement' : null,
-                      onAction:
-                          isStaff ? () => _openEditor(context) : null,
+                      // The FAB already creates one; a second button doing the
+                      // same thing just reads as a duplicate.
                     );
                   }
                   return ListView.separated(

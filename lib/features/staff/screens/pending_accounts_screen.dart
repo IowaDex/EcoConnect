@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_loading.dart';
 
 class PendingAccountsScreen extends StatefulWidget {
   const PendingAccountsScreen({super.key});
@@ -96,13 +97,7 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
                 future: _future,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
+                    return const EcoLoadingView(label: 'Loading accounts');
                   }
                   if (snapshot.hasError) {
                     return Center(

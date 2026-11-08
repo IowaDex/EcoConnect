@@ -8,6 +8,7 @@ import '../../route/services/route_service.dart';
 import 'stop_picker_screen.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/primary_button.dart';
 
 /// Staff dispatch board: assign one collection run per driver per day.
@@ -328,15 +329,9 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                     );
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18),
-                      child: Center(
-                        child: SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
+                    return const EcoLoadingView(
+                      truckWidth: 96,
+                      label: 'Loading today\u2019s routes',
                     );
                   }
                   final plans = snapshot.data ?? const <RoutePlan>[];

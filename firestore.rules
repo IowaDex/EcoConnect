@@ -270,6 +270,29 @@ service cloud.firestore {
         && request.resource.data.status in ['draft', 'published']
         && uploadOk(request.resource.data, 'image');
       allow delete: if isAdmin();
+
+      // Event sign-ups. A resident may only write their own row, and only the
+      // fields the roster needs — the street is copied in at join time so the
+      // per-street ranking still works after a profile edit.
+      match /participants/{uid} {
+        allow read: if signedIn() && hasProfile(request.auth.uid);
+        // create + update share one clause: a resident who taps Join twice
+        // (or whose row was written from a stale screen) sends a second set(),
+        // which Firestore classifies as an update. Treating that as a denial
+        // is what surfaced "You do not have permission to do that" on the
+        // events list, so re-joining is now idempotent.
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.street is string
+          && request.resource.data.street.size() <= 160
+          && request.resource.data.streetKey is string
+          && request.resource.data.barangay is string;
+        allow delete: if signedIn()
+          && (request.auth.uid == uid || isAdmin());
+      }
     }
 
     // Collection requests. Special requests require a verified government
