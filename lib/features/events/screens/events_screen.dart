@@ -666,10 +666,11 @@ class _EventDetailState extends State<_EventDetail> {
 
 /// Headcount, the join button, and where the crowd is coming from.
 ///
-/// One listener does all three jobs: the roster length is the count, the
-/// current uid in the roster is the join state, and the streets group straight
-/// out of the same list. The stream is held in the state — building it in
-/// `build` would resubscribe on every rebuild and blank the panel out.
+/// The count and the street breakdown come from the anonymous street counters,
+/// and the join state from the resident's own sign-up row; other residents'
+/// rows (names, streets) are private and never read here. The streams are held
+/// in the state — building them in `build` would resubscribe on every rebuild
+/// and blank the panel out.
 class _ParticipantsPanel extends StatefulWidget {
   const _ParticipantsPanel({
     required this.eventId,
@@ -690,116 +691,126 @@ class _ParticipantsPanel extends StatefulWidget {
 }
 
 class _ParticipantsPanelState extends State<_ParticipantsPanel> {
-  late final Stream<List<EventParticipant>> _stream =
-      EventService().watchParticipants(widget.eventId);
+  late final Stream<List<StreetCount>> _counts =
+      EventService().watchStreetCounts(widget.eventId);
+  late final Stream<bool> _joined = widget.currentUid == null
+      ? Stream<bool>.value(false)
+      : EventService().watchJoined(widget.eventId, widget.currentUid!);
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<EventParticipant>>(
-      stream: _stream,
+    return StreamBuilder<List<StreetCount>>(
+      stream: _counts,
       builder: (context, snapshot) {
-        final list = snapshot.data ?? const <EventParticipant>[];
-        final currentUid = widget.currentUid;
-        final joined =
-            currentUid != null && list.any((p) => p.uid == currentUid);
-        final groups = _groupByStreet(list);
-        final top = groups.entries.toList()
-          ..sort((a, b) => b.value.compareTo(a.value));
+        final counts = snapshot.data ?? const <StreetCount>[];
+        final total = counts.fold<int>(0, (sum, c) => sum + c.count);
+        // Biggest street first. Residents with no street count towards the
+        // total but have no street row.
+        final top = [
+          for (final c in counts)
+            if (c.key != StreetCount.noStreetKey) MapEntry(c.label, c.count),
+        ];
         final maxCount = top.isEmpty ? 1 : top.first.value;
 
-        return Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.sage),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.groups_rounded,
-                      size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${list.length} ${list.length == 1 ? 'resident' : 'residents'} going',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.darkGreen,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (joined)
-                    const StatusBadge(
-                      label: "You're in",
-                      color: AppColors.primary,
-                      icon: Icons.check_circle_rounded,
-                      compact: true,
-                    ),
-                ],
+        return StreamBuilder<bool>(
+          stream: _joined,
+          builder: (context, joinedSnapshot) {
+            final joined = joinedSnapshot.data ?? false;
+            return Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.sage),
               ),
-              if (top.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                const Text(
-                  'BY STREET',
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.inkMuted,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.groups_rounded,
+                          size: 18, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$total ${total == 1 ? 'resident' : 'residents'} going',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkGreen,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (joined)
+                        const StatusBadge(
+                          label: "You're in",
+                          color: AppColors.primary,
+                          icon: Icons.check_circle_rounded,
+                          compact: true,
+                        ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                for (final entry in top.take(4))
-                  _streetRow(entry.key, entry.value, maxCount),
-                if (top.length > 4)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '+${top.length - 4} more '
-                      '${top.length - 4 == 1 ? 'street' : 'streets'}',
-                      style: const TextStyle(
-                        fontSize: 9,
+                  if (top.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'BY STREET',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.inkMuted,
                       ),
                     ),
-                  ),
-              ],
-              if (widget.canJoin) ...[
-                const SizedBox(height: 14),
-                if (joined)
-                  OutlinedButton.icon(
-                    onPressed:
-                        widget.busy ? null : () => widget.onToggle?.call(true),
-                    icon: const Icon(Icons.event_busy_rounded, size: 16),
-                    label: const Text('Cancel my spot'),
-                  )
-                else
-                  FilledButton.icon(
-                    onPressed:
-                        widget.busy ? null : () => widget.onToggle?.call(false),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(46),
-                    ),
-                    icon: widget.busy
-                        ? const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.how_to_reg_rounded, size: 17),
-                    label: const Text('Join this event'),
-                  ),
-              ],
-            ],
-          ),
+                    const SizedBox(height: 8),
+                    for (final entry in top.take(4))
+                      _streetRow(entry.key, entry.value, maxCount),
+                    if (top.length > 4)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '+${top.length - 4} more '
+                          '${top.length - 4 == 1 ? 'street' : 'streets'}',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ),
+                  ],
+                  if (widget.canJoin) ...[
+                    const SizedBox(height: 14),
+                    if (joined)
+                      OutlinedButton.icon(
+                        onPressed:
+                            widget.busy ? null : () => widget.onToggle?.call(true),
+                        icon: const Icon(Icons.event_busy_rounded, size: 16),
+                        label: const Text('Cancel my spot'),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed:
+                            widget.busy ? null : () => widget.onToggle?.call(false),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                        icon: widget.busy
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.how_to_reg_rounded, size: 17),
+                        label: const Text('Join this event'),
+                      ),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -851,20 +862,6 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
         ],
       ),
     );
-  }
-
-  /// street bucket → headcount, keeping the friendliest spelling as the label.
-  Map<String, int> _groupByStreet(List<EventParticipant> list) {
-    final labels = <String, String>{};
-    final counts = <String, int>{};
-    for (final person in list) {
-      if (person.streetKey.isEmpty) continue;
-      labels.putIfAbsent(person.streetKey, () => person.streetLabel);
-      counts.update(person.streetKey, (v) => v + 1, ifAbsent: () => 1);
-    }
-    return {
-      for (final entry in counts.entries) labels[entry.key]!: entry.value,
-    };
   }
 }
 

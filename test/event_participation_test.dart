@@ -70,6 +70,20 @@ void main() {
     });
   });
 
+  group('StreetCount', () {
+    test('uses a fixed bucket for residents with no street', () {
+      expect(StreetCount.bucketOf(''), '_none');
+      expect(StreetCount.bucketOf('mabini st'), 'mabini st');
+    });
+
+    test('reads a counter document and tolerates missing fields', () {
+      final c = StreetCount.fromDoc('mabini st', {'label': 'Mabini St', 'count': 3});
+      expect((c.key, c.label, c.count), ('mabini st', 'Mabini St', 3));
+      final blank = StreetCount.fromDoc('_none', {});
+      expect((blank.label, blank.count), ('Street not set', 0));
+    });
+  });
+
   group('EventParticipant', () {
     test('falls back to the street label when the street is blank', () {
       const person = EventParticipant(

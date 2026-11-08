@@ -268,6 +268,28 @@ service cloud.firestore {
              : get(path).data.startAt + duration.value(4, 'h'));
     }
 
+    // The street counters are only allowed to move together with the caller's
+    // own sign-up row, in the same write. `bucket` is the street key, or
+    // '_none' for a resident with no street.
+    function keyMatches(bucket, storedKey) {
+      return bucket == '_none' ? storedKey == '' : storedKey == bucket;
+    }
+
+    function joinsAs(eventId, bucket) {
+      let me = /databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid);
+      return eventOpen(eventId)
+        && !exists(me)
+        && existsAfter(me)
+        && keyMatches(bucket, getAfter(me).data.streetKey);
+    }
+
+    function leavesAs(eventId, bucket) {
+      let me = /databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid);
+      return exists(me)
+        && !existsAfter(me)
+        && keyMatches(bucket, get(me).data.streetKey);
+    }
+
     // Community events.
     match /events/{eventId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
@@ -285,8 +307,10 @@ service cloud.firestore {
       // Event sign-ups. A resident may only write their own row, and only the
       // fields the roster needs — the street is copied in at join time so the
       // per-street ranking still works after a profile edit.
+      // Only the resident and staff can read a row (name, street, barangay).
+      // Other residents see the anonymous street counters below instead.
       match /participants/{uid} {
-        allow read: if signedIn() && hasProfile(request.auth.uid);
+        allow read: if isSelf(uid) || isAdmin();
         // Create-only: the street and join time recorded at the first sign-up
         // can never be rewritten to move attendance to another street. The app
         // checks for an existing row first, so a second tap is a no-op rather
@@ -309,6 +333,33 @@ service cloud.firestore {
           && request.resource.data.joinedAt == request.time;
         allow delete: if signedIn()
           && (request.auth.uid == uid || isAdmin());
+      }
+
+      // Anonymous per-street headcount shown to every resident: a street label
+      // and a number, never a name or user id. A resident can only add or remove
+      // their own single place, in the same write as their sign-up row; staff
+      // can repair the counters.
+      match /streets/{bucket} {
+        allow read: if signedIn() && hasProfile(request.auth.uid);
+        allow create: if isActive()
+          && !isRemoved(request.auth.uid)
+          && request.resource.data.keys().hasOnly(['label', 'count'])
+          && request.resource.data.label is string
+          && request.resource.data.label.size() <= 160
+          && request.resource.data.count == 1
+          && joinsAs(eventId, bucket);
+        allow update: if isActive()
+          && !isRemoved(request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
+          && ((request.resource.data.count == resource.data.count + 1
+               && joinsAs(eventId, bucket))
+              || (request.resource.data.count == resource.data.count - 1
+                  && request.resource.data.count >= 1
+                  && leavesAs(eventId, bucket)));
+        allow delete: if (isActive()
+            && resource.data.count == 1
+            && leavesAs(eventId, bucket));
+        allow create, update, delete: if isAdmin();
       }
     }
 

@@ -94,6 +94,38 @@ class EventParticipant {
   }
 }
 
+/// Anonymous headcount for one street at one event, stored at
+/// `events/{eventId}/streets/{key}`. It is all a resident may see about
+/// who is going: a street label and a number, never a name or a user id.
+class StreetCount {
+  const StreetCount({
+    required this.key,
+    required this.label,
+    required this.count,
+  });
+
+  /// Document id: the street key, or [noStreetKey] when the resident has none.
+  final String key;
+  final String label;
+  final int count;
+
+  /// Bucket for residents whose profile has no street.
+  static const noStreetKey = '_none';
+
+  /// The counter document id for a stored street key.
+  static String bucketOf(String streetKey) =>
+      streetKey.isEmpty ? noStreetKey : streetKey;
+
+  static StreetCount fromDoc(String key, Map<String, dynamic> data) {
+    final label = (data['label'] as String?)?.trim() ?? '';
+    return StreetCount(
+      key: key,
+      label: label.isEmpty ? 'Street not set' : label,
+      count: (data['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// A street's standing across every event.
 class StreetStanding {
   const StreetStanding({

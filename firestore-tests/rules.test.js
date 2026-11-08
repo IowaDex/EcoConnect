@@ -18,9 +18,11 @@ const {
   doc,
   getDoc,
   getDocs,
+  increment,
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } = require('firebase/firestore');
 
 let env;
@@ -171,6 +173,106 @@ test('event sign-ups: own row only, fixed shape, create-only, open events only',
   await assertFails(setDoc(doc(as('alice'), 'events/over/participants/alice'), row('alice')));
   await assertFails(setDoc(doc(as('alice'), 'events/missing/participants/alice'), row('alice')));
   await assertSucceeds(setDoc(doc(as('alice'), 'events/running/participants/alice'), row('alice')));
+});
+
+// An open event, plus the residents and a closed event the street tests use.
+const seedEvents = async () => {
+  const now = Date.now();
+  const hour = 3600 * 1000;
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    const event = (startH, endH) => ({
+      title: 'Clean-up', description: 'x', status: 'published',
+      startAt: Timestamp.fromMillis(now + startH * hour),
+      endAt: Timestamp.fromMillis(now + endH * hour),
+    });
+    await setDoc(doc(db, 'events/e1'), event(24, 28));
+    await setDoc(doc(db, 'events/past'), event(-30, -26));
+    await setDoc(doc(db, 'users/bob'), {name: 'Bob', role: 'user'});
+  });
+};
+
+const signUpRow = (uid, key, extra = {}) => ({
+  uid, name: uid, street: key, streetKey: key, barangay: 'B1',
+  joinedAt: serverTimestamp(), ...extra,
+});
+
+test('sign-up rows are private: only the owner and staff can read them', async () => {
+  await seedEvents();
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'events/e1/participants/alice'), {
+      uid: 'alice', name: 'Alice', street: 'Mabini St', streetKey: 'mabini st',
+      barangay: 'B1', joinedAt: Timestamp.now(),
+    }));
+  const row = 'events/e1/participants/alice';
+  await assertSucceeds(getDoc(doc(as('alice'), row)));
+  await assertSucceeds(getDoc(doc(as('root'), row)));
+  await assertSucceeds(getDocs(collection(as('root'), 'events/e1/participants')));
+  await assertFails(getDoc(doc(as('bob'), row)));
+  await assertFails(getDoc(doc(as('dan'), row)));
+  await assertFails(getDocs(collection(as('bob'), 'events/e1/participants')));
+});
+
+test('street counters follow the caller\'s own sign-up and nothing else', async () => {
+  await seedEvents();
+  const join = (db, uid, key, label, exists) => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, `events/e1/participants/${uid}`), signUpRow(uid, key));
+    const bucket = key === '' ? '_none' : key;
+    const counter = doc(db, `events/e1/streets/${bucket}`);
+    if (exists) batch.update(counter, {count: increment(1)});
+    else batch.set(counter, {label, count: 1});
+    return batch.commit();
+  };
+  const leave = (db, uid, key, last) => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, `events/e1/participants/${uid}`));
+    const counter = doc(db, `events/e1/streets/${key === '' ? '_none' : key}`);
+    if (last) batch.delete(counter);
+    else batch.update(counter, {count: increment(-1)});
+    return batch.commit();
+  };
+
+  // First resident on a street creates its counter with a count of 1.
+  await assertSucceeds(join(as('alice'), 'alice', 'mabini st', 'Mabini St', false));
+  // A counter cannot start higher, be created without a sign-up, or for someone else.
+  await assertFails(setDoc(doc(as('bob'), 'events/e1/streets/rizal st'), {label: 'Rizal St', count: 1}));
+  await assertFails(setDoc(doc(as('bob'), 'events/e1/streets/rizal st'), {label: 'Rizal St', count: 5}));
+
+  // Everyone with a profile reads the counters, which hold no names or ids.
+  await assertSucceeds(getDoc(doc(as('bob'), 'events/e1/streets/mabini st')));
+  await assertSucceeds(getDocs(collection(as('bob'), 'events/e1/streets')));
+
+  // A second resident adds exactly one place with their own row.
+  await assertFails(updateDoc(doc(as('bob'), 'events/e1/streets/mabini st'), {count: increment(1)}));
+  await assertSucceeds(join(as('bob'), 'bob', 'mabini st', 'Mabini St', true));
+  // The counter cannot jump by two, nor use a different street than the row.
+  await assertFails(updateDoc(doc(as('dan'), 'events/e1/streets/mabini st'), {count: increment(2)}));
+  const dan = as('dan');
+  const wrongBucket = writeBatch(dan);
+  wrongBucket.set(doc(dan, 'events/e1/participants/dan'), signUpRow('dan', 'rizal st'));
+  wrongBucket.update(doc(dan, 'events/e1/streets/mabini st'), {count: increment(1)});
+  await assertFails(wrongBucket.commit());
+  // The label is fixed once the street exists.
+  await assertFails(updateDoc(doc(as('bob'), 'events/e1/streets/mabini st'), {label: 'Hacked'}));
+
+  // Leaving takes exactly one place off, and only together with your own row.
+  await assertFails(updateDoc(doc(as('bob'), 'events/e1/streets/mabini st'), {count: increment(-1)}));
+  await assertSucceeds(leave(as('bob'), 'bob', 'mabini st', false));
+  // The last person out removes the counter.
+  await assertFails(deleteDoc(doc(as('dan'), 'events/e1/streets/mabini st')));
+  await assertSucceeds(leave(as('alice'), 'alice', 'mabini st', true));
+
+  // A resident with no street counts under '_none'.
+  await assertSucceeds(join(as('bob'), 'bob', '', 'Street not set', false));
+  // Closed events take no counter changes.
+  const alice = as('alice');
+  const closed = writeBatch(alice);
+  closed.set(doc(alice, 'events/past/participants/alice'), signUpRow('alice', 'mabini st'));
+  closed.set(doc(alice, 'events/past/streets/mabini st'), {label: 'Mabini St', count: 1});
+  await assertFails(closed.commit());
+  // Staff can repair a counter.
+  await assertSucceeds(setDoc(doc(as('root'), 'events/e1/streets/mabini st'), {label: 'Mabini St', count: 7}));
 });
 
 test('nobody can publish a location for others to see', async () => {
