@@ -115,7 +115,8 @@ class AppUser {
   }
 
   String get fullAddress {
-    final parts = [province, city, barangay, houseStreet]
+    // Street first, province last, the way a Philippine address is written.
+    final parts = [houseStreet, barangay, city, province]
         .where((p) => p != null && p.trim().isNotEmpty)
         .cast<String>();
     return parts.isEmpty ? 'No address on file' : parts.join(', ');

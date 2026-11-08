@@ -44,6 +44,8 @@ class _SignupScreenState extends State<SignupScreen> {
   AccountType _accountType = AccountType.resident;
   UploadPayload? _idDocument;
   bool _idError = false;
+  bool _consent = false;
+  bool _consentError = false;
 
   bool get _isGovernment => _accountType == AccountType.government;
 
@@ -167,8 +169,11 @@ class _SignupScreenState extends State<SignupScreen> {
     // The profile form is only mounted on step 2. On the ID step it has
     // already been validated by _toVerification.
     if (_step == 2 && !_profileKey.currentState!.validate()) return;
-    if (_isGovernment && _idDocument == null) {
-      setState(() => _idError = true);
+    if (_isGovernment && (_idDocument == null || !_consent)) {
+      setState(() {
+        _idError = _idDocument == null;
+        _consentError = !_consent;
+      });
       return;
     }
     FocusScope.of(context).unfocus();
@@ -274,12 +279,6 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(width: 8),
                     const BrandWordmark(fontSize: 12),
-                    const Spacer(),
-                    if (_step == 0)
-                      TextButton(
-                        onPressed: () => context.go('/login'),
-                        child: const Text('Log in'),
-                      ),
                   ],
                 ),
               ),
@@ -509,7 +508,7 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           const SizedBox(height: 26),
           PrimaryButton(
-            label: 'Sign up',
+            label: 'Next',
             loading: auth.isLoading,
             onPressed: _toProfile,
           ),
@@ -774,7 +773,55 @@ class _SignupScreenState extends State<SignupScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 14),
+        const Text(
+          'Data Privacy Consent',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.darkGreen,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'In accordance with the Data Privacy Act of 2012 (Republic Act No. '
+          '10173), EcoConnect collects your name, contact details, address and '
+          'government ID solely to verify your government personnel status and '
+          'to process special collection requests within this app. Your '
+          'personal information will not be sold, shared with third parties, '
+          'or used for any other purpose without your consent, and is '
+          'accessible only to you and authorized barangay staff. You may '
+          'request access to, correction of, or deletion of your data at any '
+          'time.',
+          style: TextStyle(
+            fontSize: 10,
+            height: 1.55,
+            color: AppColors.inkMuted,
+          ),
+        ),
+        const SizedBox(height: 6),
+        CheckboxListTile(
+          value: _consent,
+          onChanged: (v) => setState(() {
+            _consent = v ?? false;
+            if (_consent) _consentError = false;
+          }),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          activeColor: AppColors.primary,
+          title: const Text(
+            'I have read and agree to the collection and use of my personal '
+            'information as described above.',
+            style: TextStyle(fontSize: 10.5, height: 1.45),
+          ),
+        ),
+        if (_consentError)
+          const Text(
+            'You must give your consent to continue.',
+            style: TextStyle(fontSize: 10.5, color: AppColors.error),
+          ),
+        const SizedBox(height: 16),
         PrimaryButton(
           label: 'Submit for verification',
           loading: auth.isLoading,
