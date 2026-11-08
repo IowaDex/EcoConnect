@@ -190,6 +190,8 @@ void main() {
         find.byType(RoutePreviewMap),
         matchesGoldenFile('goldens/route_preview.png'),
       );
-    });
+      // The reference image is drawn on Windows; other platforms can differ by a
+      // few pixels, so CI on macOS skips this tag (flutter test --exclude-tags golden).
+    }, tags: ['golden']);
   });
 }
