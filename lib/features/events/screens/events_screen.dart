@@ -17,6 +17,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/community_event.dart';
 import '../services/event_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// Community events feed with staff management and resident browsing.
 class EventsScreen extends StatefulWidget {
@@ -55,12 +56,7 @@ class _EventsScreenState extends State<EventsScreen> {
                   ? 'Organise clean-ups, tree planting and recycling drives.'
                   : 'Join programs that keep your barangay green.',
               onBack: () => context.go(isStaff ? '/admin-dashboard' : '/user'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.push('/notifications'),
-                  icon: const Icon(Icons.notifications_none_rounded),
-                ),
-              ],
+              actions: const [NotificationBell()],
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),

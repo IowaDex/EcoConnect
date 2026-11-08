@@ -16,6 +16,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../waste/models/waste_submission.dart';
 import '../../waste/services/waste_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// Staff review queue for waste photos uploaded by residents.
 class WasteValidationScreen extends StatefulWidget {
@@ -40,12 +41,7 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
               title: 'Waste validation',
               subtitle: 'Review the waste residents upload before collection.',
               onBack: () => context.go('/admin-dashboard'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.push('/notifications'),
-                  icon: const Icon(Icons.notifications_none_rounded),
-                ),
-              ],
+              actions: const [NotificationBell()],
             ),
             StreamBuilder<List<WasteSubmission>>(
               stream: _service.watchAll(),

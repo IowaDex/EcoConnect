@@ -43,18 +43,11 @@ class DriverProfileScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Row(
-                children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => context.push('/notifications'),
-                    icon: const Icon(Icons.notifications_none_rounded,
-                        size: 19, color: AppColors.inkMuted),
-                  ),
-                ],
+            const Padding(
+              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: BrandWordmark(fontSize: 10.5),
               ),
             ),
             Expanded(

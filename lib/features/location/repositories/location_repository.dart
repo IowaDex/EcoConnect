@@ -6,7 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import '../../../core/utils/app_logger.dart';
 import '../database/local_database.dart';
 import '../models/location_record.dart';
-import '../models/shared_location.dart';
 
 class LocationRepository {
   LocationRepository({
@@ -24,10 +23,6 @@ class LocationRepository {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final LocalDatabase _database;
-  bool _sharingEnabled = false;
-  Map<String, dynamic>? _profile;
-
-  bool get sharingEnabled => _sharingEnabled;
 
   /// The signed-in account, so callers never touch Firebase Auth themselves.
   String? get currentUserId => _auth.currentUser?.uid;
@@ -50,8 +45,6 @@ class LocationRepository {
 
   /// Forgets everything tied to the previous signed-in account.
   void reset() {
-    _sharingEnabled = false;
-    _profile = null;
     _lastSaved = null;
   }
 
@@ -149,53 +142,9 @@ class LocationRepository {
     return uploaded;
   }
 
-  Stream<List<SharedLocation>> watchSharedLocations() {
-    return _firestore.collection('shared_locations').snapshots().map(
-          (snapshot) => snapshot.docs
-              .map((doc) => SharedLocation.tryParse(doc.id, doc.data()))
-              .whereType<SharedLocation>()
-              .toList(growable: false),
-        );
-  }
-
-  /// Reads whether this account is already sharing, e.g. after an app restart.
-  /// Throws if the read fails; the flag then keeps its current value.
-  Future<bool> loadSharingEnabled() async {
-    final user = _auth.currentUser;
-    if (user == null) return false;
-    final doc =
-        await _firestore.collection('shared_locations').doc(user.uid).get();
-    if (_auth.currentUser?.uid == user.uid) _sharingEnabled = doc.exists;
-    return _sharingEnabled;
-  }
-
-  /// Returns false when turning sharing off could only be queued (offline):
-  /// Firestore sends the delete once the phone reconnects.
-  Future<bool> setSharingEnabled(bool enabled) async {
-    final user = _auth.currentUser;
-    if (user == null) return true;
-
-    // Flip the flag first so no publish can land after the delete.
-    _sharingEnabled = enabled;
-    if (enabled) return true;
-    try {
-      await _firestore
-          .collection('shared_locations')
-          .doc(user.uid)
-          .delete()
-          .timeout(const Duration(seconds: 5));
-      return true;
-    } on TimeoutException {
-      return false;
-    } catch (_) {
-      // Not deleted: keep publishing so the visible pin doesn't freeze.
-      _sharingEnabled = true;
-      rethrow;
-    }
-  }
-
-  /// Removes the signed-in user's shared pin. Call it while still signed in,
-  /// before sign-out. Returns false if it could not be removed (e.g. offline).
+  /// Purges a location document published by an older app version, which
+  /// others could once read. Call it while still signed in, before sign-out.
+  /// Returns false if it could not be removed (e.g. offline).
   Future<bool> removeSharedLocation() async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return true;
@@ -226,33 +175,5 @@ class LocationRepository {
       await batch.commit();
     }
     await _firestore.collection('shared_locations').doc(userId).delete();
-  }
-
-  Future<void> publishSharedLocation(Position position) async {
-    if (!_sharingEnabled) return;
-    final user = _auth.currentUser;
-    if (user == null) return;
-    final profileData = _profile ??=
-        (await _firestore.collection('users').doc(user.uid).get()).data() ??
-            const <String, dynamic>{};
-    // Sharing may have been turned off while the profile was loading.
-    if (!_sharingEnabled || _auth.currentUser?.uid != user.uid) return;
-
-    try {
-      await _firestore.collection('shared_locations').doc(user.uid).set({
-        'displayName': profileData['name'] as String? ??
-            user.displayName ??
-            'EcoConnect user',
-        'role': profileData['role'] as String? ?? 'user',
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'accuracy': position.accuracy,
-        'recordedAt': Timestamp.fromDate(position.timestamp.toUtc()),
-      });
-    } catch (_) {
-      // The cached role may be stale (an admin changed it); re-read next time.
-      _profile = null;
-      rethrow;
-    }
   }
 }

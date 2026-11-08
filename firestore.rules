@@ -3,8 +3,18 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
+    // The newest login owns the account. sessions/{uid}.authTime is the sign-in
+    // time of that login; a token issued before it belongs to a replaced device
+    // and is refused everywhere, even if that device was offline or modified.
+    // Accounts with no session yet are unaffected.
+    function sessionCurrent() {
+      let path = /databases/$(database)/documents/sessions/$(request.auth.uid);
+      return !exists(path)
+        || request.auth.token.get('auth_time', 0) >= get(path).data.get('authTime', 0);
+    }
+
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null && sessionCurrent();
     }
 
     function isSelf(uid) {
@@ -126,12 +136,30 @@ service cloud.firestore {
       // Not their own profile: that would lock the admin out for good.
       allow delete: if isAdmin() && request.auth.uid != userId;
 
+      // Private location history: only its owner can read it. Staff can read
+      // it solely once the user is being deleted (the tombstone exists), so the
+      // delete-user cleanup can list and remove it.
       match /locations/{locationId} {
-        allow read: if isSelf(userId);
+        allow read: if isSelf(userId) || (isAdmin() && isRemoved(userId));
         // !isRemoved also covers the window while an admin delete is running.
         allow write: if isSelf(userId) && hasProfile(userId) && !isRemoved(userId);
-        allow read, delete: if isAdmin();
+        allow delete: if isAdmin();
       }
+    }
+
+    // One active sign-in per account: the newest login writes its session id
+    // here and other devices sign themselves out when it stops matching theirs.
+    match /sessions/{userId} {
+      allow read: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && isActive()
+        && !isRemoved(userId)
+        && request.resource.data.keys().hasOnly(['sessionId', 'startedAt', 'platform', 'authTime'])
+        && request.resource.data.authTime == request.auth.token.get('auth_time', -1)
+        && request.resource.data.sessionId is string
+        && request.resource.data.sessionId.size() >= 16
+        && request.resource.data.sessionId.size() <= 64;
+      allow delete: if isAdmin();
     }
 
     // Written by an admin when deleting a user; blocks re-creating the profile.
@@ -139,19 +167,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Retired: locations are no longer published for others to see. A driver's
+    // live position lives in routes/{uid}; a resident's never leaves their own
+    // device and private history. Only deletes remain, to purge old documents.
     match /shared_locations/{userId} {
-      allow read: if signedIn()
-        && request.auth.token.email_verified == true
-        && hasProfile(request.auth.uid);
-      allow create, update: if isSelf(userId)
-        && isActive()
-        && !isRemoved(userId)
-        && request.resource.data.latitude is number
-        && request.resource.data.longitude is number
-        && request.resource.data.accuracy is number
-        && request.resource.data.recordedAt is timestamp
-        && request.resource.data.displayName is string
-        && request.resource.data.role == profile(userId).role;
+      allow read: if isSelf(userId);
       allow delete: if isSelf(userId) || isAdmin();
     }
 

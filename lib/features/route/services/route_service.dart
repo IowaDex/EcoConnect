@@ -550,6 +550,11 @@ class RouteService {
       'endedAt': FieldValue.serverTimestamp(),
       'completedAt': FieldValue.serverTimestamp(),
       'pausedAt': null,
+      // The run is over: stop publishing where the truck was.
+      'lat': null,
+      'lng': null,
+      'lastKnownLat': null,
+      'lastKnownLng': null,
       'updatedAt': FieldValue.serverTimestamp(),
       'lastSeenAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));

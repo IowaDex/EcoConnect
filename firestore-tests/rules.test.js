@@ -37,6 +37,10 @@ const shared = (role, overrides = {}) => ({
 const as = (uid, emailVerified = true) =>
   env.authenticatedContext(uid, {email_verified: emailVerified}).firestore();
 
+// A token issued at [authTime] seconds, like a device that signed in then.
+const asSignedInAt = (uid, authTime) =>
+  env.authenticatedContext(uid, {email_verified: true, auth_time: authTime}).firestore();
+
 before(async () => {
   env = await initializeTestEnvironment({
     projectId: 'demo-ecoconnect',
@@ -61,9 +65,81 @@ beforeEach(async () => {
   });
 });
 
-test('only verified accounts can read shared locations', async () => {
-  await assertFails(getDoc(doc(as('alice', false), 'shared_locations/dan')));
-  await assertSucceeds(getDoc(doc(as('alice'), 'shared_locations/dan')));
+test('nobody but the owner can read a location, not residents, drivers or admins', async () => {
+  await assertSucceeds(getDoc(doc(as('alice'), 'shared_locations/alice')));
+  await assertFails(getDoc(doc(as('dan'), 'shared_locations/alice')));
+  await assertFails(getDoc(doc(as('root'), 'shared_locations/alice')));
+  await assertFails(getDoc(doc(as('alice'), 'shared_locations/dan')));
+  await assertFails(getDocs(collection(as('alice'), 'shared_locations')));
+  await assertSucceeds(getDocs(collection(as('alice'), 'users/alice/locations')));
+  await assertFails(getDocs(collection(as('dan'), 'users/alice/locations')));
+  await assertFails(getDocs(collection(as('root'), 'users/alice/locations')));
+});
+
+test('only the owner reads or writes their login session, with a valid shape', async () => {
+  const session = (id, authTime = 1000) => ({sessionId: id, startedAt: Timestamp.now(), platform: 'android', authTime});
+  const id = 'a'.repeat(32);
+  await assertSucceeds(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), session(id)));
+  await assertSucceeds(getDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice')));
+  await assertFails(getDoc(doc(as('dan'), 'sessions/alice')));
+  await assertFails(getDoc(doc(as('root'), 'sessions/alice')));
+  await assertFails(setDoc(doc(as('dan'), 'sessions/alice'), session(id)));
+  await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), session('short')));
+  await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), {...session(id), role: 'admin'}));
+  // The recorded login time must be the token's own, not a made-up one.
+  await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), session(id, 5000)));
+  await assertFails(deleteDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice')));
+  await assertSucceeds(deleteDoc(doc(as('root'), 'sessions/alice')));
+});
+
+test('a device replaced by a newer login is refused everywhere, the new one is not', async () => {
+  const claim = (id, authTime) => ({sessionId: id, startedAt: Timestamp.now(), platform: 'android', authTime});
+  const oldDevice = () => asSignedInAt('alice', 1000);
+  const newDevice = () => asSignedInAt('alice', 2000);
+
+  // Before any session exists nobody is locked out.
+  await assertSucceeds(getDoc(doc(oldDevice(), 'users/alice')));
+
+  await assertSucceeds(setDoc(doc(oldDevice(), 'sessions/alice'), claim('a'.repeat(32), 1000)));
+  await assertSucceeds(getDoc(doc(oldDevice(), 'users/alice')));
+
+  // A newer login takes over...
+  await assertSucceeds(setDoc(doc(newDevice(), 'sessions/alice'), claim('b'.repeat(32), 2000)));
+  await assertSucceeds(getDoc(doc(newDevice(), 'users/alice')));
+
+  // ...and the old device can no longer read or write anything, including its own session.
+  await assertFails(getDoc(doc(oldDevice(), 'users/alice')));
+  await assertFails(updateDoc(doc(oldDevice(), 'users/alice'), {name: 'Al'}));
+  await assertFails(getDoc(doc(oldDevice(), 'sessions/alice')));
+  await assertFails(setDoc(doc(oldDevice(), 'sessions/alice'), claim('c'.repeat(32), 1000)));
+
+  // Another account is unaffected.
+  await assertSucceeds(getDoc(doc(as('dan'), 'users/dan')));
+  // A driver's replaced device cannot publish a position either.
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'sessions/dan'), claim('d'.repeat(32), 3000)));
+  const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
+  await assertFails(setDoc(doc(asSignedInAt('dan', 1000), 'routes/dan'), live));
+  await assertSucceeds(setDoc(doc(asSignedInAt('dan', 3000), 'routes/dan'), live));
+});
+
+test('nobody can publish a location for others to see', async () => {
+  await assertFails(setDoc(doc(as('alice'), 'shared_locations/alice'), shared('user')));
+  await assertFails(setDoc(doc(as('dan'), 'shared_locations/dan'), shared('driver')));
+});
+
+test('a driver position stays readable to every signed-in user through routes', async () => {
+  const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
+  await assertSucceeds(setDoc(doc(as('dan'), 'routes/dan'), live));
+  await assertSucceeds(getDoc(doc(as('alice'), 'routes/dan')));
+});
+
+test('ending a run lets the driver clear the published position', async () => {
+  const live = {status: 'inTransit', lat: 1, lng: 2, lastKnownLat: 1, lastKnownLng: 2, updatedAt: Timestamp.now()};
+  await assertSucceeds(setDoc(doc(as('dan'), 'routes/dan'), live));
+  const end = {status: 'completed', lat: null, lng: null, lastKnownLat: null, lastKnownLng: null, updatedAt: Timestamp.now()};
+  await assertSucceeds(setDoc(doc(as('dan'), 'routes/dan'), end, {merge: true}));
+  await assertFails(setDoc(doc(as('alice'), 'routes/dan'), end, {merge: true}));
 });
 
 test('signup cannot choose the admin role', async () => {
@@ -88,19 +164,17 @@ test('users cannot approve themselves, edit points or set a huge photo', async (
   await assertSucceeds(updateDoc(doc(as('root'), 'users/pd'), {accountStatus: 'active'}));
 });
 
-test('a pending driver cannot publish a route, plan or shared location until approved', async () => {
+test('a pending driver cannot publish a route or plan until approved', async () => {
   await env.withSecurityRulesDisabled((c) =>
     setDoc(doc(c.firestore(), 'users/pd'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
   const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
   const plan = {driverId: 'pd', adHoc: true, status: 'scheduled'};
   await assertFails(setDoc(doc(as('pd'), 'routes/pd'), live));
   await assertFails(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
-  await assertFails(setDoc(doc(as('pd'), 'shared_locations/pd'), shared('driver')));
   await env.withSecurityRulesDisabled((c) =>
     updateDoc(doc(c.firestore(), 'users/pd'), {accountStatus: 'active'}));
   await assertSucceeds(setDoc(doc(as('pd'), 'routes/pd'), live));
   await assertSucceeds(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
-  await assertSucceeds(setDoc(doc(as('pd'), 'shared_locations/pd'), shared('driver')));
 });
 
 test('only admins write the audit log, only as themselves, and entries are permanent', async () => {
@@ -123,19 +197,10 @@ test('users cannot read other profiles', async () => {
   await assertFails(getDoc(doc(as('dan'), 'users/alice')));
 });
 
-test('shared location writes are type-checked and keep the real role', async () => {
-  const mine = doc(as('alice'), 'shared_locations/alice');
-  await assertFails(setDoc(mine, shared('user', {latitude: 'abc'})));
-  await assertFails(setDoc(mine, shared('driver')));
-  await assertSucceeds(setDoc(mine, shared('user')));
-  await assertFails(setDoc(doc(as('alice'), 'shared_locations/dan'), shared('user')));
-});
-
 test('the calls the app makes every day are allowed', async () => {
   const alice = as('alice');
   await assertSucceeds(getDoc(doc(alice, 'users/alice')));
   await assertSucceeds(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
-  await assertSucceeds(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
   await assertSucceeds(deleteDoc(doc(alice, 'shared_locations/alice')));
   await assertFails(deleteDoc(doc(as('alice'), 'shared_locations/dan')));
 });
@@ -148,6 +213,8 @@ test('admins can run every step of delete user and change roles; others cannot',
   const root = as('root');
   await assertSucceeds(getDocs(collection(root, 'users')));
   await assertSucceeds(updateDoc(doc(root, 'users/alice'), {role: 'driver'}));
+  // Staff can list location history only once the deletion tombstone exists.
+  await assertFails(getDocs(collection(root, 'users/alice/locations')));
   await assertSucceeds(setDoc(doc(root, 'removed_users/alice'), {removedAt: 1}));
   await assertSucceeds(getDocs(collection(root, 'users/alice/locations')));
   await assertSucceeds(deleteDoc(doc(root, 'users/alice/locations/l1')));
@@ -166,9 +233,7 @@ test('a deleted user is locked out even though their login still works', async (
     await deleteDoc(doc(db, 'users/alice'));
   });
   const alice = as('alice');
-  await assertFails(getDoc(doc(alice, 'shared_locations/dan')));
   await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
-  await assertFails(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
   await assertFails(setDoc(doc(alice, 'users/alice'), {name: 'Alice', role: 'user'}));
 });
 
@@ -260,5 +325,4 @@ test('a user being deleted cannot write while the delete is still running', asyn
   });
   const alice = as('alice');
   await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
-  await assertFails(setDoc(doc(alice, 'shared_locations/alice'), shared('user')));
 });

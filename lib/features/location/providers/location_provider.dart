@@ -3,7 +3,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/location_sync_state.dart';
-import '../models/shared_location.dart';
 import '../repositories/location_repository.dart';
 import '../services/location_service.dart';
 import '../../../core/utils/app_logger.dart';
@@ -35,9 +34,6 @@ class LocationProvider extends ChangeNotifier {
   int _pendingCount = 0;
   bool _isSyncing = false;
   Future<void> _locationOperation = Future<void>.value();
-  bool _isSharingLocation = false;
-  StreamSubscription<List<SharedLocation>>? _sharedLocationsSubscription;
-  List<SharedLocation> _sharedLocations = const [];
   StreamSubscription<String?>? _authSubscription;
   // Seeded so the stream's first event (the same user) isn't seen as a change.
   late String? _userId;
@@ -63,10 +59,6 @@ class LocationProvider extends ChangeNotifier {
     if (userId == _userId) return;
     _userId = userId;
     stopTracking();
-    _sharedLocationsSubscription?.cancel();
-    _sharedLocationsSubscription = null;
-    _sharedLocations = const [];
-    _isSharingLocation = false;
     _currentPosition = null;
     _locationRepository.reset();
     notifyListeners();
@@ -78,8 +70,6 @@ class LocationProvider extends ChangeNotifier {
   bool get isTracking => _isTracking;
   LocationSyncState get syncState => _syncState;
   int get pendingCount => _pendingCount;
-  bool get isSharingLocation => _isSharingLocation;
-  List<SharedLocation> get sharedLocations => _sharedLocations;
 
   /// Last diagnosed device/location problem. [LocationIssue.none] when healthy.
   LocationIssue get issue => _issue;
@@ -158,54 +148,8 @@ class LocationProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> setSharingLocation(bool enabled) async {
-    // Show the change right away; offline, Firestore only confirms on reconnect.
-    _isSharingLocation = enabled;
-    notifyListeners();
-    try {
-      final sent = await _locationRepository.setSharingEnabled(enabled);
-      if (!sent) {
-        _error = 'You are offline. Your location will be hidden as soon as '
-            'you reconnect.';
-      }
-      if (enabled && _currentPosition != null) {
-        await _locationRepository.publishSharedLocation(_currentPosition!);
-      }
-    } catch (error) {
-      AppLogger.error('Updating location sharing failed', error);
-      _error = enabled
-          ? 'Could not share your location yet. It will update with your '
-              'next location.'
-          : 'Could not turn off sharing. Please try again.';
-    }
-    _isSharingLocation = _locationRepository.sharingEnabled;
-    notifyListeners();
-  }
-
-  void startSharedLocationUpdates() {
-    if (_sharedLocationsSubscription != null) return;
-    _locationRepository.loadSharingEnabled().then((_) {
-      _isSharingLocation = _locationRepository.sharingEnabled;
-      notifyListeners();
-    }, onError: (Object error) {
-      AppLogger.error('Checking location sharing failed', error);
-      _error = 'Could not check whether you are sharing your location.';
-      notifyListeners();
-    });
-    _sharedLocationsSubscription =
-        _locationRepository.watchSharedLocations().listen(
-      (locations) {
-        _sharedLocations = locations;
-        notifyListeners();
-      },
-      onError: (Object error) {
-        _error = 'Unable to load shared locations: $error';
-        notifyListeners();
-      },
-    );
-  }
-
-  Future<void> startTracking() async {
+  /// [background] keeps GPS running with the app minimised (driver runs).
+  Future<void> startTracking({bool background = false}) async {
     if (_isTracking) return;
 
     final permission = await _locationService.requestPermissions();
@@ -219,7 +163,9 @@ class LocationProvider extends ChangeNotifier {
     unawaited(syncPending());
     notifyListeners();
 
-    _positionSubscription = _locationService.startLocationUpdates().listen(
+    _positionSubscription = _locationService
+        .startLocationUpdates(background: background)
+        .listen(
       (Position position) {
         _currentPosition = position;
         _queueLocationOperation(position);
@@ -245,9 +191,9 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Call before signing out. Stops tracking so no new shared position lands
-  /// after the pin is deleted, then deletes it while still signed in.
-  /// Returns false if the pin could not be removed (e.g. offline).
+  /// Call before signing out. Stops tracking, then purges any location
+  /// document an older app version published. Returns false if that could not
+  /// be removed (e.g. offline).
   Future<bool> endSession() async {
     stopTracking();
     _locationRepository.reset();
@@ -271,18 +217,6 @@ class LocationProvider extends ChangeNotifier {
     // Not awaited: offline these wait for the network indefinitely and must
     // not hold up saving the next position locally.
     unawaited(syncPending());
-    unawaited(_publishShared(position));
-  }
-
-  Future<void> _publishShared(Position position) async {
-    try {
-      await _locationRepository.publishSharedLocation(position);
-    } catch (error) {
-      AppLogger.error('Updating shared location failed', error);
-      _error = 'Could not update your shared location. It will retry with '
-          'your next location.';
-      notifyListeners();
-    }
   }
 
   Future<void> syncPending() async {
@@ -370,7 +304,6 @@ class LocationProvider extends ChangeNotifier {
   void dispose() {
     stopTracking();
     _connectivitySubscription?.cancel();
-    _sharedLocationsSubscription?.cancel();
     _authSubscription?.cancel();
     super.dispose();
   }

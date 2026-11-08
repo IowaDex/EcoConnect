@@ -18,6 +18,7 @@ import '../../events/models/community_event.dart';
 import '../../events/services/event_service.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/profile_sheet.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 class UserScreen extends StatefulWidget {
   const UserScreen({super.key});
@@ -32,7 +33,6 @@ class _UserScreenState extends State<UserScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final location = context.read<LocationProvider>();
-      location.startSharedLocationUpdates();
       if (!location.hasLocation) location.getCurrentLocation();
       // Pick up a staff verification that happened since the last sign-in.
       context.read<AuthProvider>().refreshUser();
@@ -141,7 +141,11 @@ class _Hero extends StatelessWidget {
             children: [
               const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
               const Spacer(),
-              _HeroBell(onTap: () => context.push('/notifications')),
+              NotificationBell(
+                iconSize: 19,
+                color: AppColors.creamBright,
+                circleColor: AppColors.creamBright.withValues(alpha: 0.14),
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -204,51 +208,6 @@ class _Hero extends StatelessWidget {
               const SizedBox(width: 10),
               _HeroPill(label: 'Edit profile', onTap: onEditProfile),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Bell button in the hero's top-right corner with an unread dot.
-class _HeroBell extends StatelessWidget {
-  const _HeroBell({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            height: 38,
-            width: 38,
-            decoration: BoxDecoration(
-              color: AppColors.creamBright.withValues(alpha: 0.14),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.notifications_none_rounded,
-              size: 19,
-              color: AppColors.creamBright,
-            ),
-          ),
-          Positioned(
-            right: 1,
-            top: 1,
-            child: Container(
-              height: 10,
-              width: 10,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE2574C),
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.forestDeep, width: 2),
-              ),
-            ),
           ),
         ],
       ),

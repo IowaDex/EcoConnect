@@ -122,7 +122,7 @@ The emulator compiles the same file during CI, so a syntax error fails fast.
 | collectionPoints | Designated pickup locations |
 | notifications | Personal and shared staff notifications |
 | routes / routePlans | Driver presence and staff assignments |
-| shared_locations | Resident location sharing |
+| shared_locations | Retired; kept only so old documents can be deleted |
 | dropOffs / incidents | Recycling ledger and incident reports |
 
 ### Uploads
@@ -323,8 +323,7 @@ Signup only allows the `user` and `driver` roles. To make an admin, edit
 `users/{uid}` in Firebase Console > Firestore and set `role` to `admin`. After
 that, admins can change roles from the Admin Panel.
 
-Deleting a user in the Admin Panel removes their profile, location history and
-shared location, and records them in `removed_users` so they can't re-create a
+Deleting a user in the Admin Panel removes their profile and location history, and records them in `removed_users` so they can't re-create a
 profile. From then on the app refuses to log them in and the rules deny them the
 map and location writes. Their login account stays in Firebase Authentication;
 remove or disable it in Firebase Console > Authentication if needed (doing that
@@ -536,13 +535,12 @@ Firestore. If connectivity is unavailable, the app keeps the points locally
 and retries when connectivity returns. The location card shows whether points
 are synced, pending, or saved offline.
 
-Users can optionally enable **Share my location**. When enabled, the app
-publishes the user's latest location to the `shared_locations/{uid}` document.
-Signed-in users with a verified email can read these opted-in locations and see
-them as additional markers on the map. Turning sharing off or logging out
-deletes the user's shared location document (if the phone is offline at logout,
-the delete is only sent the next time that user signs in); private location history remains
-restricted to its owner and admins.
+A driver's live position is published to `routes/{uid}` while a route is running, so
+residents always see the truck on the tracking map. A resident's location is private:
+it is never shared. The app only compares it on the resident's own phone with the
+truck's position to send "Truck approaching" alerts, and the optional private history
+in `users/{uid}/locations` is readable only by its owner (staff can read it only while
+deleting that user, to clean it up).
 
 The current Android and iOS configuration requests foreground location. The
 tracking stream remains app-session based; continuous tracking after the app
@@ -565,7 +563,7 @@ flutter pub upgrade
 ### AuthProvider
 - `signUp(name, email, password)` - Create account and send verification
 - `login(email, password)` - Authenticate user
-- `logout()` - Try to remove the shared location (5 s limit), then sign out
+- `logout()` - Try to purge any old shared location (5 s limit), then sign out
 
 ### LocationProvider
 - `getCurrentLocation()` - Get one-time location
@@ -573,7 +571,6 @@ flutter pub upgrade
 - `stopTracking()` - Disable real-time updates
 - `checkPermissions()` - Check location permission status
 - `requestPermissions()` - Request location permissions
-- `setSharingLocation(enabled)` - Turn live location sharing on or off
 
 ## 🔄 Future Enhancements
 

@@ -39,6 +39,9 @@ import 'features/notifications/screens/notifications_screen.dart';
 import 'features/notifications/widgets/notification_banner_host.dart';
 import 'features/splash/screens/splash_screen.dart';
 import 'features/tracking/screens/tracking_screen.dart';
+import 'features/tracking/widgets/truck_proximity_host.dart';
+import 'features/driver/widgets/run_broadcast_host.dart';
+import 'features/auth/widgets/session_ended_host.dart';
 
 const _publicRoutes = {
   '/splash',
@@ -280,8 +283,12 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       routerConfig: _router,
       // Realtime notification banners float above every screen, so a new
       // approval or broadcast shows up without pulling to refresh.
-      builder: (context, child) => NotificationBannerHost(
-        child: child ?? const SizedBox.shrink(),
+      builder: (context, child) => SessionEndedHost(
+        child: NotificationBannerHost(
+          child: RunBroadcastHost(
+            child: TruckProximityHost(child: child ?? const SizedBox.shrink()),
+          ),
+        ),
       ),
     );
   }

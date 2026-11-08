@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 
 void main() {
-  group('driver broadcast proximity', () {
+  group('truck proximity rule', () {
     test('alerts arrival inside the arrived radius', () {
       expect(
         DriverBroadcastService.stageFor(metres: 90, previous: null),

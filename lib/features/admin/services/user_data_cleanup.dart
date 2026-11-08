@@ -31,6 +31,7 @@ class UserDataCleanup {
     await _cleanCommunityPosts(uid);
     // A driver's live presence document is keyed by their uid.
     await _db.collection('routes').doc(uid).delete();
+    await _db.collection('sessions').doc(uid).delete();
   }
 
   /// Deletes the user's own posts and strips their likes and comments from

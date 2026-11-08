@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../providers/location_provider.dart';
 
-/// Real-time tracking (offline-first history) and "share my location" switches,
-/// styled for the EcoConnect design. Backed by [LocationProvider].
+/// Real-time tracking switch (offline-first, private history), styled for the
+/// EcoConnect design. Backed by [LocationProvider].
 class LocationControls extends StatelessWidget {
   const LocationControls({super.key});
 
@@ -36,8 +36,8 @@ class LocationControls extends StatelessWidget {
             title: const Text('Real-time tracking', style: _titleStyle),
             subtitle: Text(
               location.isTracking
-                  ? 'Updating your location automatically'
-                  : 'Turn on to record your location as you move',
+                  ? 'Updating your location · only you can see it'
+                  : 'Turn on to record your location · only you can see it',
               style: _subtitleStyle,
             ),
             value: location.isTracking,
@@ -46,27 +46,6 @@ class LocationControls extends StatelessWidget {
             secondary: Icon(
               Icons.gps_fixed,
               color: location.isTracking ? AppColors.moss : AppColors.inkMuted,
-            ),
-          ),
-          const Divider(height: 1, color: AppColors.sage),
-          SwitchListTile(
-            activeThumbColor: AppColors.forest,
-            title: const Text('Share my location', style: _titleStyle),
-            subtitle: Text(
-              location.isSharingLocation
-                  ? 'Other signed-in users can see your latest location'
-                  : 'Your location is private',
-              style: _subtitleStyle,
-            ),
-            value: location.isSharingLocation,
-            onChanged: location.setSharingLocation,
-            secondary: Icon(
-              location.isSharingLocation
-                  ? Icons.visibility
-                  : Icons.visibility_off,
-              color: location.isSharingLocation
-                  ? AppColors.moss
-                  : AppColors.inkMuted,
             ),
           ),
         ],

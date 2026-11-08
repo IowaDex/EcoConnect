@@ -1,11 +1,43 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
   // Location stream for real-time updates; skips fixes under 20 m apart.
-  Stream<Position> get positionStream {
+  // With [background] the stream keeps running while the app is minimised or
+  // the screen is off: an Android foreground service (with its ongoing
+  // notification) or the iOS background-location mode.
+  Stream<Position> positionStream({bool background = false}) {
     return Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(distanceFilter: 20),
+      locationSettings: _settings(background),
     );
+  }
+
+  LocationSettings _settings(bool background) {
+    if (!background || kIsWeb) return const LocationSettings(distanceFilter: 20);
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return AndroidSettings(
+          distanceFilter: 20,
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationTitle: 'EcoConnect collection run',
+            notificationText:
+                'Your truck location is shared with residents until the run ends.',
+            enableWakeLock: true,
+            setOngoing: true,
+          ),
+        );
+      case TargetPlatform.iOS:
+        return AppleSettings(
+          accuracy: LocationAccuracy.best,
+          distanceFilter: 20,
+          activityType: ActivityType.automotiveNavigation,
+          pauseLocationUpdatesAutomatically: false,
+          showBackgroundLocationIndicator: true,
+          allowBackgroundLocationUpdates: true,
+        );
+      default:
+        return const LocationSettings(distanceFilter: 20);
+    }
   }
 
   /// Check if location services are enabled
@@ -90,9 +122,8 @@ class LocationService {
   }
 
   /// Start listening to location updates (real-time)
-  Stream<Position> startLocationUpdates() {
-    return positionStream;
-  }
+  Stream<Position> startLocationUpdates({bool background = false}) =>
+      positionStream(background: background);
 
   /// Get the last known location (faster but may be stale)
   Future<Position?> getLastKnownPosition() async {

@@ -154,6 +154,9 @@ class NotificationService {
     });
   }
 
+  Stream<int> watchUnreadCountForStaff(String userId) => watchForStaff(userId)
+      .map((items) => items.where((n) => !n.read).length);
+
   /// Marks both personal and shared staff alerts as read.
   Future<void> markAllReadForStaff(String userId) async {
     final all = await _col

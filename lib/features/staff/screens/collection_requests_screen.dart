@@ -16,6 +16,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// Staff desk for every resident and government collection request.
 class CollectionRequestsScreen extends StatefulWidget {
@@ -51,12 +52,7 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
               title: 'Collection requests',
               subtitle: 'Review, schedule and dispatch resident requests.',
               onBack: () => context.go('/admin-dashboard'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.push('/notifications'),
-                  icon: const Icon(Icons.notifications_none_rounded),
-                ),
-              ],
+              actions: const [NotificationBell()],
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),

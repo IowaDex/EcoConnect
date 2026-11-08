@@ -17,6 +17,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/announcement.dart';
 import '../services/announcement_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// Shared announcement feed. Residents see published posts; barangay staff
 /// see every post plus the create, edit, publish and delete controls.
@@ -58,13 +59,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               onBack: () => context.go(
                 isStaff ? '/admin-dashboard' : '/user',
               ),
-              actions: [
-                IconButton(
-                  onPressed: () => context.push('/notifications'),
-                  icon: const Icon(Icons.notifications_none_rounded),
-                  tooltip: 'Notifications',
-                ),
-              ],
+              actions: const [NotificationBell()],
             ),
             _CategoryFilter(
               selected: _filter,
