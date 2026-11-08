@@ -124,23 +124,53 @@ test('a device replaced by a newer login is refused everywhere, the new one is n
   await assertSucceeds(setDoc(doc(asSignedInAt('dan', 3000), 'routes/dan'), live));
 });
 
-test('event sign-ups: own row only, fixed shape, server join time', async () => {
+test('event sign-ups: own row only, fixed shape, create-only, open events only', async () => {
+  const now = Date.now();
+  const hour = 3600 * 1000;
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    const event = (status, startOffsetH, endOffsetH) => ({
+      title: 'Clean-up', description: 'x', status,
+      startAt: Timestamp.fromMillis(now + startOffsetH * hour),
+      endAt: endOffsetH === null ? null : Timestamp.fromMillis(now + endOffsetH * hour),
+    });
+    await setDoc(doc(db, 'events/e1'), event('published', 24, 28));
+    await setDoc(doc(db, 'events/draft'), event('draft', 24, 28));
+    await setDoc(doc(db, 'events/past'), event('published', -30, -26));
+    // No end time: still open for 4 hours after the start.
+    await setDoc(doc(db, 'events/running'), event('published', -2, null));
+    await setDoc(doc(db, 'events/over'), event('published', -5, null));
+  });
   const row = (uid, extra = {}) => ({
     uid, name: 'Alice', street: 'Mabini St', streetKey: 'mabini st',
     barangay: 'Bangcagan', joinedAt: serverTimestamp(), ...extra,
   });
   const path = 'events/e1/participants/alice';
+
   await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
-  // Joining twice is a harmless re-write.
-  await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
+  // The first sign-up is final: street and join time cannot be rewritten.
+  await assertFails(setDoc(doc(as('alice'), path), row('alice', {street: '5th Ave', streetKey: '5th ave'})));
+  await assertFails(setDoc(doc(as('alice'), path), row('alice')));
   await assertFails(setDoc(doc(as('dan'), path), row('alice')));
+  await assertFails(deleteDoc(doc(as('dan'), path)));
+  await assertSucceeds(deleteDoc(doc(as('root'), path)));
+
+  // Shape and size checks, on a fresh row each time.
   await assertFails(setDoc(doc(as('alice'), path), row('alice', {role: 'admin'})));
   await assertFails(setDoc(doc(as('alice'), path), row('alice', {joinedAt: Timestamp.fromMillis(1)})));
   await assertFails(setDoc(doc(as('alice'), path), row('alice', {name: 'x'.repeat(200)})));
-  await assertFails(deleteDoc(doc(as('dan'), path)));
-  await assertSucceeds(deleteDoc(doc(as('root'), path)));
+
+  // Leaving then joining again starts a fresh row.
   await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
   await assertSucceeds(deleteDoc(doc(as('alice'), path)));
+  await assertSucceeds(setDoc(doc(as('alice'), path), row('alice')));
+
+  // Only an open, published event takes sign-ups.
+  await assertFails(setDoc(doc(as('alice'), 'events/draft/participants/alice'), row('alice')));
+  await assertFails(setDoc(doc(as('alice'), 'events/past/participants/alice'), row('alice')));
+  await assertFails(setDoc(doc(as('alice'), 'events/over/participants/alice'), row('alice')));
+  await assertFails(setDoc(doc(as('alice'), 'events/missing/participants/alice'), row('alice')));
+  await assertSucceeds(setDoc(doc(as('alice'), 'events/running/participants/alice'), row('alice')));
 });
 
 test('nobody can publish a location for others to see', async () => {

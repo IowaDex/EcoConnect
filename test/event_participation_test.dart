@@ -24,6 +24,16 @@ void main() {
       expect(streetKeyOf('Northville St'), isNot(streetKeyOf('Lotus St')));
     });
 
+    test('keeps ordinal street names apart', () {
+      expect(streetKeyOf('1st Street'), '1st st');
+      expect(streetKeyOf('2nd Street'), '2nd st');
+      expect(streetKeyOf('5th Ave'), '5th ave');
+      expect(streetKeyOf('15th Ave'), '15th ave');
+      expect(streetKeyOf('5th Ave'), isNot(streetKeyOf('15th Ave')));
+      expect(streetKeyOf('12 5th Ave'), '5th ave');
+      expect(streetKeyOf('12A 5th Ave.'), '5th ave');
+    });
+
     test('strips stacked block and lot markers', () {
       expect(streetKeyOf('Blk 7 Lot 12 Mabini St'), 'mabini st');
       expect(streetKeyOf('No. 12 Mabini St'), 'mabini st');
@@ -36,7 +46,7 @@ void main() {
     });
 
     test('drops house numbers and punctuation', () {
-      expect(streetKeyOf('24-B Sampaguita Lane'), 'b sampaguita lane');
+      expect(streetKeyOf('24-B Sampaguita Lane'), 'sampaguita lane');
       expect(streetKeyOf('7 Katipunan Ave.'), 'katipunan ave');
     });
 
@@ -70,6 +80,16 @@ void main() {
         barangay: 'Barangay 1',
       );
       expect(person.streetLabel, 'Street not set');
+    });
+
+    test('derives the ranking key from the street, not the stored key', () {
+      final person = EventParticipant.fromDoc('u1', {
+        'name': 'Ana',
+        'street': '1st Street',
+        'streetKey': 'st st', // written by an older, buggy build
+        'barangay': 'B1',
+      });
+      expect(person.streetKey, '1st st');
     });
   });
 }

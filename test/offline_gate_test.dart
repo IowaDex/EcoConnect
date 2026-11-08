@@ -81,6 +81,39 @@ void main() {
     expect(find.text('app content'), findsOneWidget);
   });
 
+  testWidgets('"Keep using saved data" lets the user past the card for this outage',
+      (tester) async {
+    final harness = _controllable();
+    final status = harness.status;
+    await tester.runAsync(status.start);
+    addTearDown(status.dispose);
+
+    await tester.pumpWidget(_host(status));
+    harness.setOnline(false);
+    await tester.runAsync(status.refresh);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2200)); // retry row reveals
+    await tester.pump(); // the reveal timer fired; build the new row
+    await tester.pump(const Duration(milliseconds: 400)); // let it finish growing
+    expect(find.text('No internet connection'), findsOneWidget);
+
+    await tester.tap(find.text('Keep using saved data'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('No internet connection'), findsNothing);
+    expect(find.text('app content'), findsOneWidget);
+
+    // Back online, then offline again: the card returns.
+    harness.setOnline(true);
+    await tester.runAsync(status.refresh);
+    await tester.pump();
+    harness.setOnline(false);
+    await tester.runAsync(status.refresh);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('No internet connection'), findsOneWidget);
+  });
+
   testWidgets('stays out of the way while online', (tester) async {
     final harness = _controllable();
     final status = harness.status;

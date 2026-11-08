@@ -406,13 +406,32 @@ class _ParticipantCount extends StatefulWidget {
 }
 
 class _ParticipantCountState extends State<_ParticipantCount> {
-  late final Stream<int> _stream =
-      EventService().watchParticipantCount(widget.eventId);
+  late Future<int> _count;
+
+  @override
+  void initState() {
+    super.initState();
+    _count = EventService().participantCount(widget.eventId);
+    EventService.membershipVersion.addListener(_refresh);
+  }
+
+  // The list shows a plain headcount, so it is counted on the server and
+  // refreshed when this device joins or leaves, not streamed live per card.
+  void _refresh() {
+    if (!mounted) return;
+    setState(() => _count = EventService().participantCount(widget.eventId));
+  }
+
+  @override
+  void dispose() {
+    EventService.membershipVersion.removeListener(_refresh);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<int>(
-      stream: _stream,
+    return FutureBuilder<int>(
+      future: _count,
       builder: (context, snapshot) {
         final count = snapshot.data ?? 0;
         if (count == 0) return const SizedBox.shrink();

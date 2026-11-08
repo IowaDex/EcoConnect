@@ -1,5 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// A leading house number: "12", "12a", "24-b", "24-26". Ordinals such as
+/// "1st" or "5th" are street names ("5th Ave"), so they never match.
+final _houseNumber = RegExp(r'^(?:\d+[a-z]?(?:-\d*[a-z]?)?|-+)$');
+
+/// "unit 4b", "blk 7 lot 12", "#12", "no. 12" prefixes. A marker only counts
+/// when a number follows it, so streets such as "Northville", "Lotus" or
+/// "Houseman" keep their names.
+final _markerPrefix = RegExp(
+  r'^(?:(?:unit|blk|block|lot|house|no\.?)\s*#?\s*\d[\w\-]*\s*'
+  r'|#\s*\d[\w\-]*\s*)+',
+);
+
 /// Turns a free-text street into a bucket key.
 ///
 /// `houseStreet` is typed by the resident ("House no/Unit/street"), so the same
@@ -9,22 +21,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// collapse whitespace, and fold "street" into "st".
 String streetKeyOf(String? raw) {
   if (raw == null) return '';
-  var s = raw.toLowerCase().trim();
-  // "unit 4b", "blk 7 lot 12", "#12", "no. 12" prefixes. A marker only counts
-  // when a number follows it, so streets such as "Northville", "Lotus" or
-  // "Houseman" keep their names.
-  s = s.replaceAll(
-    RegExp(
-      r'^(?:(?:unit|blk|block|lot|house|no\.?)\s*#?\s*\d[\w\-]*\s*'
-      r'|#\s*\d[\w\-]*\s*)+',
-    ),
-    '',
-  );
-  s = s.replaceAll(RegExp(r'^[\d\-\s]+'), '');
-  s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
-  s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-  s = s.replaceAll(RegExp(r'\bstreet$'), 'st');
-  return s;
+  var s = raw.toLowerCase().trim().replaceAll(_markerPrefix, '');
+  s = s.replaceAll(RegExp(r'[^a-z0-9\s\-]'), ' ');
+  final words = s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  while (words.isNotEmpty && _houseNumber.hasMatch(words.first)) {
+    words.removeAt(0);
+  }
+  s = words
+      .join(' ')
+      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return s.replaceAll(RegExp(r'\bstreet$'), 'st');
 }
 
 /// One resident signed up for one event.
@@ -74,9 +82,11 @@ class EventParticipant {
           ? data['name'] as String
           : 'Resident',
       street: street,
-      streetKey: (data['streetKey'] as String?)?.isNotEmpty == true
-          ? data['streetKey'] as String
-          : streetKeyOf(street),
+      // Derived from the street text, not the stored key: a stored key could be
+      // forged by a modified app, and rows written before a key fix stay right.
+      streetKey: street.trim().isNotEmpty
+          ? streetKeyOf(street)
+          : ((data['streetKey'] as String?) ?? ''),
       barangay: (data['barangay'] as String?) ?? '',
       joinedAt:
           data['joinedAt'] is Timestamp ? (data['joinedAt'] as Timestamp).toDate() : null,

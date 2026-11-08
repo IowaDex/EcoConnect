@@ -19,7 +19,7 @@ const Color _inkMuted = Color(0xFF5B7A5F);
 /// red toast. It sits above the router's child but below nothing else, so it
 /// covers the notification banners too — there is no point announcing an event
 /// over a screen that is saying the phone is offline.
-class OfflineGate extends StatelessWidget {
+class OfflineGate extends StatefulWidget {
   const OfflineGate({super.key, required this.child, this.enabled = true});
 
   final Widget child;
@@ -29,11 +29,23 @@ class OfflineGate extends StatelessWidget {
   final bool enabled;
 
   @override
+  State<OfflineGate> createState() => _OfflineGateState();
+}
+
+class _OfflineGateState extends State<OfflineGate> {
+  /// The user chose to keep using saved data for this outage.
+  bool _dismissed = false;
+
+  @override
   Widget build(BuildContext context) {
     // Nullable lookup: widget tests build screens without the provider, and a
     // missing provider must mean "online", never a crash.
     final status = context.watch<NetworkStatus?>();
-    final offline = enabled && (status?.isOffline ?? false);
+    final isOffline = status?.isOffline ?? false;
+    // Back online: the next outage shows the card again.
+    if (!isOffline) _dismissed = false;
+    final offline = widget.enabled && isOffline && !_dismissed;
+    final child = widget.child;
 
     return Stack(
       children: [
@@ -47,6 +59,7 @@ class OfflineGate extends StatelessWidget {
                 ? EcoOfflineScreen(
                     key: const ValueKey('offline'),
                     onRetry: status?.refresh,
+                    onContinue: () => setState(() => _dismissed = true),
                   )
                 : const SizedBox.shrink(key: ValueKey('online')),
           ),
@@ -58,9 +71,13 @@ class OfflineGate extends StatelessWidget {
 
 /// Full-screen "no internet" state, built from the same truck as the loader.
 class EcoOfflineScreen extends StatefulWidget {
-  const EcoOfflineScreen({super.key, this.onRetry});
+  const EcoOfflineScreen({super.key, this.onRetry, this.onContinue});
 
   final Future<void> Function()? onRetry;
+
+  /// Lets the user carry on with saved data; the offline card comes back on
+  /// the next outage.
+  final VoidCallback? onContinue;
 
   @override
   State<EcoOfflineScreen> createState() => _EcoOfflineScreenState();
@@ -146,12 +163,28 @@ class _EcoOfflineScreenState extends State<EcoOfflineScreen> {
                       child: _showRetry
                           ? Padding(
                               padding: const EdgeInsets.only(top: 18),
-                              child: SizedBox(
-                                width: 178,
-                                child: _RetryButton(
-                                  busy: _retrying,
-                                  onPressed: _retry,
-                                ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 178,
+                                    child: _RetryButton(
+                                      busy: _retrying,
+                                      onPressed: _retry,
+                                    ),
+                                  ),
+                                  if (widget.onContinue != null)
+                                    TextButton(
+                                      onPressed: widget.onContinue,
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: _inkMuted,
+                                      ),
+                                      child: const Text(
+                                        'Keep using saved data',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                ],
                               ),
                             )
                           : const SizedBox.shrink(),

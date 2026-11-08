@@ -257,6 +257,17 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // An event residents may still sign up for: it exists, is published and has
+    // not ended (same 4-hour default as the app when no end time is set).
+    function eventOpen(eventId) {
+      let path = /databases/$(database)/documents/events/$(eventId);
+      return exists(path)
+        && get(path).data.status == 'published'
+        && request.time < (get(path).data.get('endAt', null) != null
+             ? get(path).data.endAt
+             : get(path).data.startAt + duration.value(4, 'h'));
+    }
+
     // Community events.
     match /events/{eventId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
@@ -276,14 +287,14 @@ service cloud.firestore {
       // per-street ranking still works after a profile edit.
       match /participants/{uid} {
         allow read: if signedIn() && hasProfile(request.auth.uid);
-        // create + update share one clause: a resident who taps Join twice
-        // (or whose row was written from a stale screen) sends a second set(),
-        // which Firestore classifies as an update. Treating that as a denial
-        // is what surfaced "You do not have permission to do that" on the
-        // events list, so re-joining is now idempotent.
-        allow create, update: if isActive()
+        // Create-only: the street and join time recorded at the first sign-up
+        // can never be rewritten to move attendance to another street. The app
+        // checks for an existing row first, so a second tap is a no-op rather
+        // than a write; leaving and joining again starts a fresh row.
+        allow create: if isActive()
           && request.auth.uid == uid
           && !isRemoved(uid)
+          && eventOpen(eventId)
           && request.resource.data.keys().hasOnly(
                ['uid', 'name', 'street', 'streetKey', 'barangay', 'joinedAt'])
           && request.resource.data.uid == uid
