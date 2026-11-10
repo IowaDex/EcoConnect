@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../../../core/utils/image_payload.dart';
@@ -16,6 +18,8 @@ class AuthProvider extends ChangeNotifier {
   String? _error;
   AuthErrorType? _loginErrorType;
   bool _isInitialized = false;
+  StreamSubscription<bool>? _sessionSub;
+  bool _sessionReplaced = false;
 
   AppUser? get currentUser => _currentUser;
   /// False until Firebase has restored (or ruled out) the saved session.
@@ -25,6 +29,10 @@ class AuthProvider extends ChangeNotifier {
   AuthErrorType? get loginErrorType => _loginErrorType;
   bool get isAuthenticated => _currentUser != null;
   bool get isEmailVerified => _currentUser?.emailVerified ?? false;
+
+  /// True once another device has signed in to this account. The app shows a
+  /// notice and waits for the user to continue before signing out.
+  bool get sessionReplaced => _sessionReplaced;
 
   AuthProvider() {
     _initAuth();
@@ -38,6 +46,12 @@ class AuthProvider extends ChangeNotifier {
               (!user.emailVerified && user.role == UserRole.user));
       _currentUser = blocked ? null : user;
       _isInitialized = true;
+      // A login claims its own session first; login() starts the watch then.
+      if (_currentUser != null && !_authService.isClaimingSession) {
+        _watchSession(_currentUser!.uid);
+      } else if (_currentUser == null) {
+        _stopWatchingSession();
+      }
       notifyListeners();
     }, onError: (Object e) {
       // e.g. offline with no cached profile: fall back to the login screen.
@@ -95,7 +109,9 @@ class AuthProvider extends ChangeNotifier {
     _loginErrorType = null;
 
     try {
-      await _authService.login(email: email, password: password);
+      final user =
+          await _authService.login(email: email, password: password);
+      _watchSession(user.uid);
       return true;
     } on AuthException catch (e) {
       _loginErrorType = e.type;
@@ -222,7 +238,39 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void _watchSession(String uid) {
+    _sessionSub?.cancel();
+    _sessionSub = _authService.watchSession(uid).listen((active) {
+      if (!active) _onSessionReplaced();
+    }, onError: (Object e) => AppLogger.error('Session check failed', e));
+  }
+
+  void _stopWatchingSession() {
+    _sessionSub?.cancel();
+    _sessionSub = null;
+  }
+
+  void _onSessionReplaced() {
+    _stopWatchingSession();
+    if (_currentUser == null) return;
+    _sessionReplaced = true;
+    notifyListeners();
+  }
+
+  /// The user acknowledged the notice: sign out, which sends them to login.
+  Future<void> continueAfterSessionReplaced() async {
+    _sessionReplaced = false;
+    await logout();
+  }
+
+  @override
+  void dispose() {
+    _sessionSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> logout() async {
+    _stopWatchingSession();
     _setLoading(true);
     try {
       await _authService.logout();

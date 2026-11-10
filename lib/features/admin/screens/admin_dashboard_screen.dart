@@ -6,6 +6,7 @@ import '../../route/models/collection_route.dart';
 import '../../incident/models/incident.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
+import '../../notifications/widgets/notification_bell.dart';
 import '../../incident/services/incident_service.dart';
 import '../../route/services/route_service.dart';
 import '../../requests/models/collection_request.dart';
@@ -107,6 +108,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onPoints: () => context.go('/collection-points'),
                         onAnnouncements: () => context.go('/announcements'),
                         onEvents: () => context.go('/events'),
+                        onParticipation: () => context.go('/event-participation'),
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
                       );
@@ -156,22 +158,10 @@ class _Hero extends StatelessWidget {
             children: [
               const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
               const Spacer(),
-              InkWell(
-                onTap: () => context.push('/notifications'),
-                customBorder: const CircleBorder(),
-                child: Container(
-                  height: 38,
-                  width: 38,
-                  decoration: BoxDecoration(
-                    color: AppColors.creamBright.withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.notifications_none_rounded,
-                    size: 18,
-                    color: AppColors.creamBright,
-                  ),
-                ),
+              NotificationBell(
+                iconSize: 18,
+                color: AppColors.creamBright,
+                circleColor: AppColors.creamBright.withValues(alpha: 0.14),
               ),
               const SizedBox(width: 8),
               InkWell(
@@ -559,6 +549,7 @@ class _QuickActions extends StatelessWidget {
     required this.onPoints,
     required this.onAnnouncements,
     required this.onEvents,
+    required this.onParticipation,
     required this.onRecycling,
     required this.onUsers,
   });
@@ -574,6 +565,7 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onEvents;
   final VoidCallback onRecycling;
   final VoidCallback onUsers;
+  final VoidCallback onParticipation;
 
   @override
   Widget build(BuildContext context) {
@@ -618,6 +610,11 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.event_available_outlined,
         label: 'Events',
         onTap: onEvents,
+      ),
+      _QuickTile(
+        icon: Icons.groups_2_outlined,
+        label: 'Sign-ups',
+        onTap: onParticipation,
       ),
       _QuickTile(
         icon: Icons.recycling_rounded,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -14,6 +13,7 @@ import '../../requests/services/collection_request_service.dart';
 import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
 import '../widgets/driver_nav_bar.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// History tab: finished runs and completed pickups, newest first.
 class DriverCompletedScreen extends StatelessWidget {
@@ -32,17 +32,13 @@ class DriverCompletedScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
               child: Row(
                 children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => context.push('/notifications'),
-                    icon: const Icon(Icons.notifications_none_rounded,
-                        size: 19, color: AppColors.inkMuted),
-                  ),
+                  BrandWordmark(fontSize: 10.5),
+                  Spacer(),
+                  NotificationBell(iconSize: 19, color: AppColors.inkMuted),
                 ],
               ),
             ),

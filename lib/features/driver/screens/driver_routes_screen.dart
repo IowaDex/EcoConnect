@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -16,6 +15,7 @@ import '../../route/models/route_plan.dart';
 import '../../route/screens/route_map_screen.dart';
 import '../../route/services/route_service.dart';
 import '../widgets/driver_nav_bar.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// Everything the driver is scheduled to do today: the assignment, its stops
 /// and any collection points staff pinned to them.
@@ -36,17 +36,13 @@ class DriverRoutesScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
               child: Row(
                 children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => context.push('/notifications'),
-                    icon: const Icon(Icons.notifications_none_rounded,
-                        size: 19, color: AppColors.inkMuted),
-                  ),
+                  BrandWordmark(fontSize: 10.5),
+                  Spacer(),
+                  NotificationBell(iconSize: 19, color: AppColors.inkMuted),
                 ],
               ),
             ),

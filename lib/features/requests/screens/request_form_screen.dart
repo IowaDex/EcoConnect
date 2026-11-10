@@ -256,7 +256,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                                 alignLabelWithHint: true,
                               ),
                               validator: (value) =>
-                                  (value == null || value.trim().length < 10)
+                                  (value == null || value.trim().isEmpty)
                                   ? 'Please describe the request'
                                   : null,
                             ),

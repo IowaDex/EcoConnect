@@ -3,8 +3,18 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
+    // The newest login owns the account. sessions/{uid}.authTime is the sign-in
+    // time of that login; a token issued before it belongs to a replaced device
+    // and is refused everywhere, even if that device was offline or modified.
+    // Accounts with no session yet are unaffected.
+    function sessionCurrent() {
+      let path = /databases/$(database)/documents/sessions/$(request.auth.uid);
+      return !exists(path)
+        || request.auth.token.get('auth_time', 0) >= get(path).data.get('authTime', 0);
+    }
+
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null && sessionCurrent();
     }
 
     function isSelf(uid) {
@@ -62,6 +72,37 @@ service cloud.firestore {
             && (data[field].size() == 0 || data[field][0].dataUrl is string));
     }
 
+    // Community post reactions: a member may add or remove only their own
+    // like, and may only append a comment that names them as the author.
+    function changesOnlyOwnLike(uid) {
+      let before = resource.data.get('likedBy', []);
+      let after = request.resource.data.get('likedBy', []);
+      return after is list
+        && after.toSet().difference(before.toSet()).hasOnly([uid])
+        && before.toSet().difference(after.toSet()).hasOnly([uid])
+        && after.size() <= before.size() + 1;
+    }
+
+    function appendsOnlyOwnComment(uid) {
+      let before = resource.data.get('comments', []);
+      let after = request.resource.data.get('comments', []);
+      return after is list
+        && (after == before
+            || (after.size() == before.size() + 1
+                && after[0:before.size()] == before
+                && after[before.size()].keys()
+                     .hasOnly(['id', 'authorId', 'authorName', 'body', 'createdAt'])
+                && after[before.size()].authorId == uid
+                && after[before.size()].authorName is string
+                && after[before.size()].authorName.size() <= 80
+                // The sign-in token carries the Auth display name once it has
+                // refreshed; a brand-new token has none, so only pin when set.
+                && after[before.size()].authorName
+                     == request.auth.token.get('name', after[before.size()].authorName)
+                && after[before.size()].body is string
+                && after[before.size()].body.size() <= 1000));
+    }
+
     function isRemoved(uid) {
       return exists(/databases/$(database)/documents/removed_users/$(uid));
     }
@@ -95,12 +136,30 @@ service cloud.firestore {
       // Not their own profile: that would lock the admin out for good.
       allow delete: if isAdmin() && request.auth.uid != userId;
 
+      // Private location history: only its owner can read it. Staff can read
+      // it solely once the user is being deleted (the tombstone exists), so the
+      // delete-user cleanup can list and remove it.
       match /locations/{locationId} {
-        allow read: if isSelf(userId);
+        allow read: if isSelf(userId) || (isAdmin() && isRemoved(userId));
         // !isRemoved also covers the window while an admin delete is running.
         allow write: if isSelf(userId) && hasProfile(userId) && !isRemoved(userId);
-        allow read, delete: if isAdmin();
+        allow delete: if isAdmin();
       }
+    }
+
+    // One active sign-in per account: the newest login writes its session id
+    // here and other devices sign themselves out when it stops matching theirs.
+    match /sessions/{userId} {
+      allow read: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && isActive()
+        && !isRemoved(userId)
+        && request.resource.data.keys().hasOnly(['sessionId', 'startedAt', 'platform', 'authTime'])
+        && request.resource.data.authTime == request.auth.token.get('auth_time', -1)
+        && request.resource.data.sessionId is string
+        && request.resource.data.sessionId.size() >= 16
+        && request.resource.data.sessionId.size() <= 64;
+      allow delete: if isAdmin();
     }
 
     // Written by an admin when deleting a user; blocks re-creating the profile.
@@ -108,19 +167,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Retired: locations are no longer published for others to see. A driver's
+    // live position lives in routes/{uid}; a resident's never leaves their own
+    // device and private history. Only deletes remain, to purge old documents.
     match /shared_locations/{userId} {
-      allow read: if signedIn()
-        && request.auth.token.email_verified == true
-        && hasProfile(request.auth.uid);
-      allow create, update: if isSelf(userId)
-        && isActive()
-        && !isRemoved(userId)
-        && request.resource.data.latitude is number
-        && request.resource.data.longitude is number
-        && request.resource.data.accuracy is number
-        && request.resource.data.recordedAt is timestamp
-        && request.resource.data.displayName is string
-        && request.resource.data.role == profile(userId).role;
+      allow read: if isSelf(userId);
       allow delete: if isSelf(userId) || isAdmin();
     }
 
@@ -206,6 +257,39 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // An event residents may still sign up for: it exists, is published and has
+    // not ended (same 4-hour default as the app when no end time is set).
+    function eventOpen(eventId) {
+      let path = /databases/$(database)/documents/events/$(eventId);
+      return exists(path)
+        && get(path).data.status == 'published'
+        && request.time < (get(path).data.get('endAt', null) != null
+             ? get(path).data.endAt
+             : get(path).data.startAt + duration.value(4, 'h'));
+    }
+
+    // The street counters are only allowed to move together with the caller's
+    // own sign-up row, in the same write. `bucket` is the street key, or
+    // '_none' for a resident with no street.
+    function keyMatches(bucket, storedKey) {
+      return bucket == '_none' ? storedKey == '' : storedKey == bucket;
+    }
+
+    function joinsAs(eventId, bucket) {
+      let me = /databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid);
+      return eventOpen(eventId)
+        && !exists(me)
+        && existsAfter(me)
+        && keyMatches(bucket, getAfter(me).data.streetKey);
+    }
+
+    function leavesAs(eventId, bucket) {
+      let me = /databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid);
+      return exists(me)
+        && !existsAfter(me)
+        && keyMatches(bucket, get(me).data.streetKey);
+    }
+
     // Community events.
     match /events/{eventId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
@@ -219,6 +303,64 @@ service cloud.firestore {
         && request.resource.data.status in ['draft', 'published']
         && uploadOk(request.resource.data, 'image');
       allow delete: if isAdmin();
+
+      // Event sign-ups. A resident may only write their own row, and only the
+      // fields the roster needs — the street is copied in at join time so the
+      // per-street ranking still works after a profile edit.
+      // Only the resident and staff can read a row (name, street, barangay).
+      // Other residents see the anonymous street counters below instead.
+      match /participants/{uid} {
+        allow read: if isSelf(uid) || isAdmin();
+        // Create-only: the street and join time recorded at the first sign-up
+        // can never be rewritten to move attendance to another street. The app
+        // checks for an existing row first, so a second tap is a no-op rather
+        // than a write; leaving and joining again starts a fresh row.
+        allow create: if isActive()
+          && request.auth.uid == uid
+          && !isRemoved(uid)
+          && eventOpen(eventId)
+          && request.resource.data.keys().hasOnly(
+               ['uid', 'name', 'street', 'streetKey', 'barangay', 'joinedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.street is string
+          && request.resource.data.street.size() <= 160
+          && request.resource.data.streetKey is string
+          && request.resource.data.streetKey.size() <= 160
+          && request.resource.data.barangay is string
+          && request.resource.data.barangay.size() <= 120
+          && request.resource.data.joinedAt == request.time;
+        allow delete: if signedIn()
+          && (request.auth.uid == uid || isAdmin());
+      }
+
+      // Anonymous per-street headcount shown to every resident: a street label
+      // and a number, never a name or user id. A resident can only add or remove
+      // their own single place, in the same write as their sign-up row; staff
+      // can repair the counters.
+      match /streets/{bucket} {
+        allow read: if signedIn() && hasProfile(request.auth.uid);
+        allow create: if isActive()
+          && !isRemoved(request.auth.uid)
+          && request.resource.data.keys().hasOnly(['label', 'count'])
+          && request.resource.data.label is string
+          && request.resource.data.label.size() <= 160
+          && request.resource.data.count == 1
+          && joinsAs(eventId, bucket);
+        allow update: if isActive()
+          && !isRemoved(request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
+          && ((request.resource.data.count == resource.data.count + 1
+               && joinsAs(eventId, bucket))
+              || (request.resource.data.count == resource.data.count - 1
+                  && request.resource.data.count >= 1
+                  && leavesAs(eventId, bucket)));
+        allow delete: if (isActive()
+            && resource.data.count == 1
+            && leavesAs(eventId, bucket));
+        allow create, update, delete: if isAdmin();
+      }
     }
 
     // Collection requests. Special requests require a verified government
@@ -280,12 +422,19 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // In-app notifications. Everyone writes their own fan-out; only the
-    // recipient (or staff) can read a notification.
+    // In-app notifications. Residents may notify themselves or the shared staff
+    // channel; only staff and drivers (truck proximity alerts) may notify other
+    // users. Only the recipient (or staff) can read a notification.
     match /notifications/{notificationId} {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isActive()
         && request.resource.data.userId is string
+        && (request.resource.data.userId == request.auth.uid
+            || request.resource.data.userId == 'staff'
+            || profile(request.auth.uid).role == 'admin'
+            // Drivers send truck alerts and job updates, nothing else.
+            || (profile(request.auth.uid).role == 'driver'
+                && request.resource.data.get('type', '') in ['route', 'request']))
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.body is string
@@ -309,9 +458,12 @@ service cloud.firestore {
         && request.resource.data.body.size() > 0
         && request.resource.data.body.size() <= 2000
         && uploadOk(request.resource.data, 'image');
-      allow update: if isActive()
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['likedBy', 'comments', 'updatedAt']);
+      allow update: if isAdmin()
+        || (isActive()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['likedBy', 'comments', 'updatedAt'])
+            && changesOnlyOwnLike(request.auth.uid)
+            && appendsOnlyOwnComment(request.auth.uid));
       allow delete: if isAdmin() || resource.data.authorId == request.auth.uid;
     }
 

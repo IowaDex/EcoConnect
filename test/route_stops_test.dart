@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:eco_connect/core/models/route_plan.dart';
-import 'package:eco_connect/core/widgets/route_preview_map.dart';
+import 'package:eco_connect/features/route/models/route_plan.dart';
+import 'package:eco_connect/features/route/widgets/route_preview_map.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -190,6 +190,8 @@ void main() {
         find.byType(RoutePreviewMap),
         matchesGoldenFile('goldens/route_preview.png'),
       );
-    });
+      // The reference image is drawn on Windows; other platforms can differ by a
+      // few pixels, so CI on macOS skips this tag (flutter test --exclude-tags golden).
+    }, tags: ['golden']);
   });
 }

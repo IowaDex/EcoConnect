@@ -14,6 +14,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 const _fallbackCentre = LatLng(14.5995, 120.9842);
 
@@ -86,12 +87,7 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                   subtitle:
                       'Pin designated pickup locations and assign them to drivers.',
                   onBack: () => context.go('/admin-dashboard'),
-                  actions: [
-                    IconButton(
-                      onPressed: () => context.push('/notifications'),
-                      icon: const Icon(Icons.notifications_none_rounded),
-                    ),
-                  ],
+                  actions: const [NotificationBell()],
                 ),
                 SizedBox(
                   height: 250,

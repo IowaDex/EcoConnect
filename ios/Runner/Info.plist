@@ -29,7 +29,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>EcoConnect uses your location to show you on the map and to save your location history to your account, where administrators can see it. If you turn on sharing, other verified EcoConnect users can see your current position.</string>
+	<string>EcoConnect uses your location to show you on the map and to keep a private location history that only you can see. Drivers share their live position with residents only while a collection run is active.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
 import '../models/account_type.dart';
+import 'session_service.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/image_payload.dart';
 export '../models/user.dart';
@@ -24,6 +25,9 @@ class AuthService {
   static final AuthService _instance = AuthService._internal();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late final SessionService _sessions =
+      SessionService(_currentAuthTime);
+  bool _loggingIn = false;
 
   factory AuthService() {
     return _instance;
@@ -157,6 +161,9 @@ class AuthService {
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
 
+    // The auth listener fires mid-login; it must not watch the session before
+    // this device has claimed it.
+    _loggingIn = true;
     try {
       final credential = await _auth.signInWithEmailAndPassword(
         email: normalizedEmail,
@@ -184,6 +191,14 @@ class AuthService {
         throw const AuthException(AuthErrorType.emailNotVerified);
       }
 
+      // The newest login owns the account; any other device is signed out.
+      try {
+        await _sessions.claim(appUser.uid);
+      } catch (_) {
+        await _auth.signOut();
+        rethrow;
+      }
+
       AppLogger.info('Login successful');
       return appUser;
     } on FirebaseAuthException catch (e) {
@@ -194,12 +209,32 @@ class AuthService {
         throw const AuthException(AuthErrorType.wrongPassword);
       }
       rethrow;
+    } finally {
+      _loggingIn = false;
     }
   }
 
   // Callers remove any data that needs the signed-in session (e.g. the shared
   // location) before calling this.
-  Future<void> logout() => _auth.signOut();
+  Future<void> logout() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) await _sessions.forget(uid);
+    await _auth.signOut();
+  }
+
+  /// When the current login was issued (epoch seconds); the rules compare it
+  /// with the session's recorded time.
+  Future<int> _currentAuthTime() async {
+    final token = await _auth.currentUser?.getIdTokenResult();
+    final issued = token?.authTime;
+    if (issued == null) throw StateError('No sign-in time on the login token');
+    return issued.millisecondsSinceEpoch ~/ 1000;
+  }
+
+  bool get isClaimingSession => _loggingIn || _sessions.isClaiming;
+
+  /// False once another device signs in to this account.
+  Stream<bool> watchSession(String uid) => _sessions.watch(uid);
 
   // Sends Firebase's password reset email. An unknown address is treated as
   // success so the screen cannot be used to find out who has an account.

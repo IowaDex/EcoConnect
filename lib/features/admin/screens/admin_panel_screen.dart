@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/repositories/location_repository.dart';
+import '../services/user_data_cleanup.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/utils/app_logger.dart';
@@ -103,7 +104,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     try {
       await context.read<AuthProvider>().deleteUser(
         uid,
-        deleteLocationData: () => LocationRepository().deleteAllFor(uid),
+        deleteLocationData: () async {
+          await LocationRepository().deleteAllFor(uid);
+          await UserDataCleanup().deleteAllFor(uid);
+        },
       );
     } catch (e) {
       AppLogger.error('Delete user failed', e);

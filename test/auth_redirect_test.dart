@@ -10,9 +10,10 @@ void main() {
 
   test('a restored session skips the login screen', () {
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/splash'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), '/admin-dashboard');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/login'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/forgot-password'), '/user');
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/splash'), '/admin-dashboard');
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/welcome'), '/user');
   });
 
   test('no session goes to the landing page and stays on public screens', () {

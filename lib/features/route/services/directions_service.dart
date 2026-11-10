@@ -139,9 +139,10 @@ class DirectionsService {
             ? 'Turn $direction'
             : 'Turn $direction onto $road';
       case 'end of road':
+        final direction = _turnWord(modifier);
         return road == null
-            ? 'Turn $_turnWord(modifier) at the end of the road'
-            : 'Turn $_turnWord(modifier) onto $road';
+            ? 'Turn $direction at the end of the road'
+            : 'Turn $direction onto $road';
       case 'new name':
         return road == null ? 'Continue' : 'Continue onto $road';
       case 'merge':

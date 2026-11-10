@@ -17,6 +17,7 @@ import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../verification/models/verification_request.dart';
 import '../../verification/services/verification_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 /// User validation desk: pending driver/staff accounts, government ID
 /// submissions and the resident directory.
@@ -48,12 +49,7 @@ class _VerificationScreenState extends State<VerificationScreen>
               title: 'User validation',
               subtitle: 'Verify accounts before they unlock barangay services.',
               onBack: () => context.go('/admin-dashboard'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.push('/notifications'),
-                  icon: const Icon(Icons.notifications_none_rounded),
-                ),
-              ],
+              actions: const [NotificationBell()],
             ),
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 18),

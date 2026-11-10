@@ -17,8 +17,6 @@ class _FakeRepository extends Fake implements LocationRepository {
   String? currentUserId = 'u1';
   @override
   Stream<String?> get userIdChanges => userChanges.stream;
-  @override
-  bool sharingEnabled = false;
 
   @override
   void reset() => calls.add('reset');
@@ -60,7 +58,7 @@ void main() {
     await connectivity.close();
   });
 
-  test('endSession resets, removes the shared pin, then reports the result',
+  test('endSession resets, purges the old shared pin, then reports the result',
       () async {
     expect(await provider.endSession(), isTrue);
     expect(repository.calls, ['reset', 'removeSharedLocation']);
@@ -80,8 +78,6 @@ void main() {
     repository.userChanges.add('u2');
     await Future<void>.delayed(Duration.zero);
     expect(repository.calls, ['reset']);
-    expect(provider.sharedLocations, isEmpty);
-    expect(provider.isSharingLocation, isFalse);
     expect(notified, greaterThan(0));
   });
 

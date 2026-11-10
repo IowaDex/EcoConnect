@@ -10,7 +10,6 @@ import '../../route/models/collection_route.dart';
 import '../../route/models/route_plan.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
-import '../../location/widgets/location_controls.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/confirm_logout.dart';
@@ -18,16 +17,15 @@ import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
-import '../../notifications/services/notification_service.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
 import '../../../core/models/waste_category.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
 import '../services/driver_session_service.dart';
-import '../services/driver_broadcast_service.dart';
 import '../widgets/driver_nav_bar.dart';
 import '../../../core/widgets/status_badge.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -43,7 +41,6 @@ class _DriverScreenState extends State<DriverScreen> {
   StreamSubscription<RoutePlan?>? _planSub;
   StreamSubscription<List<CollectionPoint>>? _pointsSub;
   List<CollectionPoint> _assignedPoints = const [];
-  Timer? _broadcastTimer;
   Timer? _clockTimer;
   Timer? _healthTimer;
   final _sessionService = DriverSessionService();
@@ -76,9 +73,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _bootstrap() async {
     final location = context.read<LocationProvider>();
-    location.startSharedLocationUpdates();
     if (!location.hasLocation) await location.getCurrentLocation();
-    if (!location.isTracking) location.startTracking();
     // Record why a fix is missing so the card can explain it accurately
     // instead of leaving a stale error from a previous attempt.
     await location.refreshLocationHealth();
@@ -98,11 +93,7 @@ class _DriverScreenState extends State<DriverScreen> {
           _activePlanId = route?.planId;
         });
         if (status == RouteStatus.inTransit || status == RouteStatus.delayed) {
-          _startBroadcast(uid);
           _checkLocationHealth();
-        } else {
-          _broadcastTimer?.cancel();
-          _broadcastTimer = null;
         }
       },
       onError: (_) {
@@ -185,7 +176,8 @@ class _DriverScreenState extends State<DriverScreen> {
     setState(() => _locationState = state);
     if (state == _lastReportedState) return;
 
-    final wasProblem = _lastReportedState.needsAttention;
+    final previousState = _lastReportedState;
+    final wasProblem = previousState.needsAttention;
     _lastReportedState = state;
     final user = context.read<AuthProvider>().currentUser;
     try {
@@ -199,8 +191,10 @@ class _DriverScreenState extends State<DriverScreen> {
         notifyStaff: state.needsAttention && !wasProblem,
       );
     } catch (_) {
-      // The route heartbeat still carries the position; a failed status write
-      // must not interrupt the driver.
+      // A failed status write must not interrupt the driver, but it must be
+      // retried: the heartbeat no longer rewrites locationState, so keeping
+      // the new value here would leave the route document wrong for good.
+      _lastReportedState = previousState;
     }
   }
 
@@ -209,39 +203,9 @@ class _DriverScreenState extends State<DriverScreen> {
     _routeSub?.cancel();
     _planSub?.cancel();
     _pointsSub?.cancel();
-    _broadcastTimer?.cancel();
     _clockTimer?.cancel();
     _healthTimer?.cancel();
     super.dispose();
-  }
-
-  void _startBroadcast(String driverId) {
-    if (_broadcastTimer?.isActive ?? false) return;
-    var tick = 0;
-    _broadcastTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (!mounted) return;
-      final location = context.read<LocationProvider>();
-      if (!location.hasLocation) return;
-      final lat = location.latitude!;
-      final lng = location.longitude!;
-      _routeService.pushPosition(driverId, lat, lng).catchError((_) {});
-
-      // The map updates every 15 s, but residents are only alerted once a
-      // minute so a parked truck does not spam the neighbourhood.
-      tick++;
-      if (tick % 4 != 0) return;
-      final name = context.read<AuthProvider>().currentUser?.displayName ??
-          'Your collector';
-      DriverBroadcastService()
-          .notifyNearby(
-            driverId: driverId,
-            driverName: name,
-            latitude: lat,
-            longitude: lng,
-            plan: _plan,
-          )
-          .catchError((_) => 0);
-    });
   }
 
   Future<void> _activate() async {
@@ -308,7 +272,6 @@ class _DriverScreenState extends State<DriverScreen> {
         longitude: location.longitude,
         overrideWindow: overrideWindow,
       );
-      _startBroadcast(user.uid);
       _ensureHealthTimer();
       await _checkLocationHealth();
       if (mounted) {
@@ -453,8 +416,6 @@ class _DriverScreenState extends State<DriverScreen> {
         driverName: user.displayName ?? 'Collector',
         zone: _plan?.zone,
       );
-      _broadcastTimer?.cancel();
-      _broadcastTimer = null;
       if (!mounted) return;
       setState(() => _status = RouteStatus.paused);
       _toast('Route paused — resume when you are ready');
@@ -476,7 +437,6 @@ class _DriverScreenState extends State<DriverScreen> {
         driverName: user.displayName ?? 'Collector',
         zone: _plan?.zone,
       );
-      _startBroadcast(user.uid);
       _ensureHealthTimer();
       await _checkLocationHealth();
       if (!mounted) return;
@@ -523,14 +483,9 @@ class _DriverScreenState extends State<DriverScreen> {
         driverName: user.displayName ?? 'Collector',
         zone: _plan?.zone,
       );
-      _broadcastTimer?.cancel();
-      _broadcastTimer = null;
       _healthTimer?.cancel();
       _healthTimer = null;
       if (!mounted) return;
-      // Stop streaming GPS once the run is over — no route means no reason
-      // to keep the device radio busy.
-      context.read<LocationProvider>().stopTracking();
       setState(() {
         _status = RouteStatus.idle;
         _startedAt = null;
@@ -605,7 +560,6 @@ class _DriverScreenState extends State<DriverScreen> {
     if (!confirmed) return;
 
     final uid = _uid;
-    _broadcastTimer?.cancel();
     if (uid != null && _isLive) {
       try {
         await _routeService.endRoute(uid, planId: _activePlanId);
@@ -639,47 +593,9 @@ class _DriverScreenState extends State<DriverScreen> {
                 children: [
                   const BrandWordmark(fontSize: 10.5),
                   const Spacer(),
-                  StreamBuilder<int>(
-                    stream: NotificationService()
-                        .watchUnreadCount(user?.uid ?? ''),
-                    builder: (context, snapshot) {
-                      final unread = snapshot.data ?? 0;
-                      return InkWell(
-                        onTap: () => context.push('/notifications'),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              const Icon(Icons.notifications_none_rounded,
-                                  size: 19, color: AppColors.inkMuted),
-                              if (unread > 0)
-                                Positioned(
-                                  right: -4,
-                                  top: -3,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.error,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      unread > 9 ? '9+' : '$unread',
-                                      style: const TextStyle(
-                                        fontSize: 7.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                  const NotificationBell(
+                    iconSize: 19,
+                    color: AppColors.inkMuted,
                   ),
                   const SizedBox(width: 2),
                   InkWell(
@@ -785,36 +701,8 @@ class _DriverScreenState extends State<DriverScreen> {
               const SizedBox(height: 20),
               _LocationCard(
                 location: location,
-                isLive: _isLive,
-                onBroadcast: () async {
-                  final driver = user;
-                  await location.getCurrentLocation();
-                  if (driver == null || !location.hasLocation || !_isLive) {
-                    return;
-                  }
-                  try {
-                    await _routeService.pushPosition(
-                        driver.uid, location.latitude!, location.longitude!);
-                    final sent = await DriverBroadcastService().notifyNearby(
-                      driverId: driver.uid,
-                      driverName: driver.displayName ?? 'Your collector',
-                      latitude: location.latitude!,
-                      longitude: location.longitude!,
-                      plan: _plan,
-                    );
-                    _toast(
-                      sent == 0
-                          ? 'Location broadcast to residents'
-                          : 'Broadcast sent · $sent residents notified',
-                    );
-                  } catch (e) {
-                    _fail('broadcast your location', e);
-                  }
-                },
                 onFix: _fixLocation,
               ),
-              const SizedBox(height: 16),
-              const LocationControls(),
               const SizedBox(height: 16),
               const _TipCard(),
             ],
@@ -1662,14 +1550,10 @@ class _CheckRow extends StatelessWidget {
 class _LocationCard extends StatelessWidget {
   const _LocationCard({
     required this.location,
-    required this.isLive,
-    required this.onBroadcast,
     required this.onFix,
   });
 
   final LocationProvider location;
-  final bool isLive;
-  final VoidCallback onBroadcast;
   final VoidCallback onFix;
 
   @override
@@ -1741,35 +1625,29 @@ class _LocationCard extends StatelessWidget {
               style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
             ),
           ],
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: denied ? onFix : (isLive ? onBroadcast : null),
-              icon: Icon(
-                denied
-                    ? (kIsWeb ? Icons.refresh_rounded : Icons.settings_rounded)
-                    : Icons.send_rounded,
-                size: 15,
-              ),
-              label: Text(
-                denied
-                    ? (kIsWeb ? 'Try again' : 'Open app settings')
-                    : isLive
-                        ? 'Broadcast now'
-                        : 'Activate a route to broadcast',
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.forest,
-                side: const BorderSide(color: AppColors.sage),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          if (denied) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onFix,
+                icon: const Icon(
+                  kIsWeb ? Icons.refresh_rounded : Icons.settings_rounded,
+                  size: 15,
                 ),
-                textStyle:
-                    const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                label: const Text(kIsWeb ? 'Try again' : 'Open app settings'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.forest,
+                  side: const BorderSide(color: AppColors.sage),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

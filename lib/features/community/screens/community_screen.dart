@@ -23,6 +23,7 @@ import '../../events/services/event_service.dart';
 import '../../user/widgets/profile_sheet.dart';
 import '../models/community_post.dart';
 import '../services/community_post_service.dart';
+import '../../notifications/widgets/notification_bell.dart';
 
 enum CommunitySection { announcements, events, posts }
 
@@ -72,9 +73,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 children: [
                   const BrandWordmark(fontSize: 10.5),
                   const Spacer(),
-                  _HeaderAction(
-                    icon: Icons.notifications_none_rounded,
-                    onTap: () => context.push('/notifications'),
+                  const NotificationBell(
+                    iconSize: 19,
+                    color: AppColors.inkMuted,
                   ),
                   const SizedBox(width: 4),
                   _HeaderAction(
