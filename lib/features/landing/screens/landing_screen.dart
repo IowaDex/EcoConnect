@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -58,26 +60,46 @@ class _LandingScreenState extends State<LandingScreen>
       backgroundColor: _pageBg,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // On a very short window the fixed bands would collide, so fall back
-          // to a scrolling page with a capped illustration.
-          final tight = constraints.maxHeight < 600;
-          final art = tight
-              ? SizedBox(
-                  height: 200,
-                  width: double.infinity,
-                  child: _Illustration(drift: _drift),
-                )
-              : Expanded(child: _Illustration(drift: _drift));
-
-          final page = Column(
-            children: [
-              _Header(intro: _intro),
-              art,
-              _EntryPanel(intro: _intro),
-            ],
+          // The artwork is much taller than it is wide, so its visible crop is
+          // driven by the band's height. Tying that height to the width keeps
+          // the skyline just under the copy on every screen instead of leaving
+          // a dead band of empty sky — and unlike zooming, the truck keeps its
+          // size and stays inside the frame.
+          final available = constraints.maxHeight - 470;
+          final band = math.min(
+            constraints.maxWidth * 0.70,
+            math.max(180.0, available),
           );
 
-          return tight ? SingleChildScrollView(child: page) : page;
+          // On a very short window the fixed bands would collide, so fall back
+          // to a scrolling page with a capped illustration.
+          if (constraints.maxHeight < 620) {
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  _Header(intro: _intro),
+                  SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: _Illustration(drift: _drift),
+                  ),
+                  _EntryPanel(intro: _intro),
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              _Header(intro: _intro),
+              SizedBox(
+                height: band,
+                width: double.infinity,
+                child: _Illustration(drift: _drift),
+              ),
+              Expanded(child: _EntryPanel(intro: _intro)),
+            ],
+          );
         },
       ),
     );
@@ -204,82 +226,71 @@ class _Illustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // The artwork is much taller than it is wide, so BoxFit.cover is
-        // width-driven: the rendered height is always width / 0.563. Solve for
-        // the zoom that puts the skyline just under the top edge instead of
-        // leaving a dead band of empty sky between the copy and the city.
-        final zoom = (constraints.maxHeight / (constraints.maxWidth * 0.817))
-            .clamp(1.0, 1.45);
-
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            ClipRect(
-              child: AnimatedBuilder(
-                animation: drift,
-                builder: (context, child) => Transform.scale(
-                  // Scales about the bottom edge, so the road and truck stay
-                  // put while the skyline breathes.
-                  scale: zoom + drift.value * 0.02,
-                  alignment: Alignment.bottomCenter,
-                  child: child,
-                ),
-                child: Image.asset(
-                  'assets/images/splash_city.png',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.bottomCenter,
-                  filterQuality: FilterQuality.medium,
-                ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRect(
+          child: AnimatedBuilder(
+            animation: drift,
+            builder: (context, child) => Transform.scale(
+              // A gentle Ken Burns drift. Scales about the bottom edge so the
+              // road and truck stay put while the skyline breathes.
+              scale: 1.01 + drift.value * 0.03,
+              alignment: Alignment.bottomCenter,
+              child: child,
+            ),
+            child: Image.asset(
+              'assets/images/splash_city.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.bottomCenter,
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+        ),
+        // Softens the join with the header — the top of the crop is sky, so
+        // a page-coloured wash blends the two bands without a visible edge.
+        const Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          height: 46,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFE9F4E1),
+                  Color(0x99E9F4E1),
+                  Color(0x00E9F4E1),
+                ],
+                stops: [0, 0.42, 1],
               ),
             ),
-            // Softens the join with the header — the top of the crop is sky, so
-            // a page-coloured wash blends the two bands without a visible edge.
-            const Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              height: 46,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFE9F4E1),
-                      Color(0x99E9F4E1),
-                      Color(0x00E9F4E1),
-                    ],
-                    stops: [0, 0.42, 1],
-                  ),
-                ),
+          ),
+        ),
+        // Melts the foreground grass into the green panel below.
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 46,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x003E8E41),
+                  Color(0xB33E8E41),
+                  Color(0xFF3E8E41),
+                ],
+                stops: [0, 0.6, 1],
               ),
             ),
-            // Melts the foreground grass into the green panel below.
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 46,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x003E8E41),
-                      Color(0xB33E8E41),
-                      Color(0xFF3E8E41),
-                    ],
-                    stops: [0, 0.6, 1],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -302,6 +313,7 @@ class _EntryPanel extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _Reveal(
