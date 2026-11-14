@@ -105,6 +105,11 @@ class VerificationService {
   }
 
   /// Marks a regular resident account verified (or rejected) without an ID.
+  ///
+  /// Verifying a resident is also the barangay's registration approval: the
+  /// account moves to `approved` and the resident is asked to accept or
+  /// decline. Accounts already answered (accepted / declined) keep their
+  /// answer, so a later re-verification does not reopen the decision.
   Future<void> setUserVerification({
     required String userId,
     required VerificationStatus status,
@@ -112,19 +117,40 @@ class VerificationService {
     required String reviewerName,
     String? reason,
   }) async {
+    final doc = await _db.collection('users').doc(userId).get();
+    final current = doc.data()?['registrationStatus'] as String? ?? 'accepted';
+    final openDecision = current == 'pending';
+    final approved = status == VerificationStatus.verified;
+
     await _db.collection('users').doc(userId).update({
       'verificationStatus': status.name,
       'verifiedBy': reviewerId,
       'verificationDate': FieldValue.serverTimestamp(),
       'rejectionReason': status == VerificationStatus.rejected ? reason : null,
+      if (approved && openDecision) ...{
+        'registrationStatus': 'approved',
+        'registrationApprovedAt': FieldValue.serverTimestamp(),
+      },
+      // A rejected registration stays open for correction and resubmission.
+      if (!approved && current == 'approved')
+        'registrationStatus': 'pending',
     });
+
+    if (approved && openDecision) {
+      await _notifications.push(
+        userId: userId,
+        title: 'Barangay approved your registration',
+        body:
+            'Open your dashboard to accept or decline the approval. Your answer is recorded with the date and time.',
+        type: AppNotificationType.account,
+      );
+      return;
+    }
 
     await _notifications.push(
       userId: userId,
-      title: status == VerificationStatus.verified
-          ? 'Account verified'
-          : 'Verification rejected',
-      body: status == VerificationStatus.verified
+      title: approved ? 'Account verified' : 'Verification rejected',
+      body: approved
           ? 'Barangay staff verified your account.'
           : (reason?.trim().isNotEmpty == true
               ? reason!.trim()

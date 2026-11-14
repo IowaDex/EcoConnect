@@ -36,7 +36,7 @@ class DriverTicketsScreen extends StatelessWidget {
           },
         ),
         title: const Text(
-          'Mga trip ticket',
+          'Trip tickets',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -89,7 +89,7 @@ class DriverTicketsScreen extends StatelessWidget {
                     ],
                     if (others.isNotEmpty) ...[
                       const Text(
-                        'Iba pang ticket',
+                        'Other tickets',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -129,7 +129,7 @@ class _EmptyInbox extends StatelessWidget {
                 size: 42, color: AppColors.sage),
             SizedBox(height: 12),
             Text(
-              'Wala pang trip ticket',
+              'No trip tickets yet',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -138,9 +138,8 @@ class _EmptyInbox extends StatelessWidget {
             ),
             SizedBox(height: 6),
             Text(
-              'Iswim ang gumagawa ng ticket. Pag may bago, may notification '
-              'agad dito at hindi ka makakabyahe hangga\'t hindi mo ito '
-              'tinatanggap.',
+              'Iswim creates the ticket. When a new one arrives, a notification '
+              'appears here and you cannot start the trip until you accept it.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 10,

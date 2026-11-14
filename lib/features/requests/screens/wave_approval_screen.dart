@@ -64,8 +64,8 @@ class WaveApprovalScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(28),
                 child: Text(
                   forCityHall
-                      ? 'Wala pang request na ipinasa ng barangay.'
-                      : 'Wala pang request na pwedeng ipasa sa City Hall.',
+                      ? 'No requests have been passed by the barangay yet.'
+                      : 'No requests are ready to pass to City Hall.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 10.5,
@@ -118,7 +118,7 @@ class _RequestCard extends StatelessWidget {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
-          content: Text('Naipasa sa City Hall para sa approval'),
+          content: Text('Passed to City Hall for approval'),
           backgroundColor: AppColors.forest,
         ),
       );
@@ -199,7 +199,7 @@ class _RequestCard extends StatelessWidget {
                   side: const BorderSide(color: AppColors.primary),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
-                child: const Text('Ipassa sa City Hall (Wave 2)'),
+                child: const Text('Pass to City Hall (Wave 2)'),
               ),
             )
           else

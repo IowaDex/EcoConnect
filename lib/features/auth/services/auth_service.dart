@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
 import '../models/account_type.dart';
 import '../../driver/models/truck_crew_role.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 import 'session_service.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/image_payload.dart';
@@ -64,6 +66,9 @@ class AuthService {
         orElse: () => UserRole.user,
       ),
       accountStatus: data['accountStatus'] as String? ?? 'active',
+      // Profiles created before the registration decision existed count as
+      // accepted, so nobody is asked to re-approve an old account.
+      registrationStatus: data['registrationStatus'] as String? ?? 'accepted',
       age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
       phone: data['phone'] as String?,
       photoUrl: data['photoUrl'] as String?,
@@ -131,6 +136,9 @@ class AuthService {
       'emailVerified': false,
       // Drivers and barangay staff need approval before they can sign in.
       'accountStatus': role == UserRole.user ? 'active' : 'pending',
+      // Residents can use the app while the barangay reviews their
+      // registration; the decision only changes the registration state.
+      if (role == UserRole.user) 'registrationStatus': 'pending',
       'accountType': accountType.name,
       // Government personnel stay unverified until staff review their ID.
       'verificationStatus': isGovernment
@@ -156,6 +164,18 @@ class AuthService {
         'status': VerificationStatus.pending.name,
         'submittedAt': FieldValue.serverTimestamp(),
       });
+    }
+
+    // The barangay desk reviews new residents, so it is told a registration
+    // is waiting. Written while the new account is still signed in, because
+    // the notification rules require an active session.
+    if (role == UserRole.user) {
+      await NotificationService().notifyStaff(
+        title: 'New resident registration',
+        body: '$name registered and is waiting for review.',
+        type: AppNotificationType.account,
+        data: {'uid': uid},
+      );
     }
 
     // Do not keep them logged in until email is verified
@@ -308,6 +328,41 @@ class AuthService {
       'accountStatus': 'active',
       'approvedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// The resident answers the barangay's registration approval.
+  ///
+  /// Only an `approved` registration can be answered; the rules enforce the
+  /// same transition server-side. Accepting keeps the account as-is, declining
+  /// records the withdrawal and alerts the barangay desk.
+  Future<void> answerRegistration({
+    required String uid,
+    required bool accepted,
+  }) async {
+    final doc = await _firestore.collection('users').doc(uid).get();
+    final data = doc.data();
+    if (data == null) throw StateError('This account no longer exists.');
+    if (data['registrationStatus'] != 'approved') {
+      throw StateError('There is no approval waiting for your answer.');
+    }
+
+    await _firestore.collection('users').doc(uid).update({
+      'registrationStatus': accepted ? 'accepted' : 'declined',
+      'registrationDecidedAt': FieldValue.serverTimestamp(),
+    });
+
+    final name = (data['name'] as String?)?.trim();
+    await NotificationService().notifyStaff(
+      title: accepted
+          ? 'Resident accepted registration'
+          : 'Resident declined registration',
+      body: accepted
+          ? '${name ?? 'A resident'} accepted the barangay approval.'
+          : '${name ?? 'A resident'} declined the barangay approval. '
+              'The registration is withdrawn.',
+      type: AppNotificationType.account,
+      data: {'uid': uid},
+    );
   }
 
   /// Active driver accounts, used when staff assign a collection request.

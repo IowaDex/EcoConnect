@@ -16,10 +16,10 @@ extension DelayStageX on DelayStage {
       };
 
   String get label => switch (this) {
-        DelayStage.dsqc => 'Nasa DSQC',
-        DelayStage.districtOfficer => 'Naipasa sa District Officer',
-        DelayStage.barangay => 'Nasa Barangay',
-        DelayStage.closed => 'Sarado',
+        DelayStage.dsqc => 'At DSQC',
+        DelayStage.districtOfficer => 'Forwarded to District Officer',
+        DelayStage.barangay => 'At Barangay',
+        DelayStage.closed => 'Closed',
       };
 
   static DelayStage fromName(String? name) => DelayStage.values.firstWhere(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/widgets/motion.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
@@ -135,13 +136,13 @@ class _TicketFeed extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
-                _Stat(label: 'Total', value: '${tickets.length}'),
+                _Stat(label: 'Total', value: tickets.length),
                 const SizedBox(width: 8),
-                _Stat(label: 'Waiting driver', value: '$waiting'),
+                _Stat(label: 'Waiting driver', value: waiting),
                 const SizedBox(width: 8),
-                _Stat(label: 'Running', value: '$running'),
+                _Stat(label: 'Running', value: running),
                 const SizedBox(width: 8),
-                _Stat(label: 'Pirma mo', value: '$toSign', highlight: true),
+                _Stat(label: 'Your signature', value: toSign, highlight: true),
               ],
             ),
             const SizedBox(height: 14),
@@ -157,7 +158,7 @@ class _TicketFeed extends StatelessWidget {
                 _quickAction(
                   context,
                   Icons.mail_outline_rounded,
-                  'Memo sa City Hall',
+                  'Memo to City Hall',
                   '/memos/new',
                 ),
                 const SizedBox(width: 8),
@@ -169,13 +170,33 @@ class _TicketFeed extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _quickAction(
+                  context,
+                  Icons.menu_book_outlined,
+                  'Manuals',
+                  '/manuals',
+                ),
+                const SizedBox(width: 8),
+                _quickAction(
+                  context,
+                  Icons.mark_email_unread_outlined,
+                  'Manual requests',
+                  '/manual-requests',
+                ),
+                const SizedBox(width: 8),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
             const SizedBox(height: 16),
             if (tickets.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
                 child: Text(
-                  'Wala pang ticket. Pindutin ang "Trip ticket" para gumawa — '
-                  'pipili ka ng truck at automatic na kasama ang driver niya.',
+                  'No tickets yet. Tap "Trip ticket" to create one — pick a '
+                  'truck and its driver is included automatically.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 10.5,
@@ -206,30 +227,32 @@ Widget _quickAction(
   String route,
 ) {
   return Expanded(
-    child: GestureDetector(
-      onTap: () => context.push(route),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.sage),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 15, color: AppColors.forest),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 8.5,
-                height: 1.25,
-                fontWeight: FontWeight.w600,
-                color: AppColors.forest,
+    child: HoverLift(
+      child: GestureDetector(
+        onTap: () => context.push(route),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 15, color: AppColors.forest),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.forest,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),
@@ -258,8 +281,8 @@ class _FleetList extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Bawat truck may permanenteng driver. Pindutin ang plate para sa '
-              'lahat ng trip ticket niya.',
+              'Every truck has a permanent driver. Tap a plate to see all of '
+              'the trip tickets for that truck.',
               style: TextStyle(
                 fontSize: 10.5,
                 height: 1.5,
@@ -273,7 +296,7 @@ class _FleetList extends StatelessWidget {
                 onPressed: () => context.push('/fleet'),
                 icon: const Icon(Icons.tune_rounded, size: 15),
                 label: const Text(
-                  'I-manage ang fleet (dagdag / edit ng truck)',
+                  'Manage fleet (add / edit trucks)',
                   style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -369,7 +392,7 @@ class _Stat extends StatelessWidget {
   });
 
   final String label;
-  final String value;
+  final num value;
   final bool highlight;
 
   @override
@@ -386,7 +409,7 @@ class _Stat extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
+            CountUpText(
               value,
               style: TextStyle(
                 fontSize: 16,

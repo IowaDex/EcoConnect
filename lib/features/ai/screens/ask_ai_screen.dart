@@ -124,7 +124,7 @@ class _AskAiScreenState extends State<AskAiScreen> {
           'recycling points?';
     }
     if (q.contains('thank')) {
-      return 'You\'re welcome. Salamat for keeping the barangay clean!';
+      return 'You\'re welcome. Thank you for keeping the barangay clean!';
     }
 
     return 'I can help with collection schedules, reporting a missed pickup, '

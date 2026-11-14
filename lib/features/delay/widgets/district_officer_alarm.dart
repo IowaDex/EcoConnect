@@ -152,14 +152,14 @@ class _DistrictOfficerAlarmState extends State<_DistrictOfficerAlarm> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: const Text('Ipadala ang copy sa Barangay'),
+                child: const Text('Send a copy to the Barangay'),
               ),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _busy ? null : () => Navigator.of(context).pop(),
               child: const Text(
-                'Isara muna',
+                'Close for now',
                 style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
             ),

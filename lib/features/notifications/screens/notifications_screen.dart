@@ -22,7 +22,12 @@ class NotificationsScreen extends StatelessWidget {
       return const Scaffold(body: LoadingView(label: 'Loading notifications'));
     }
     final service = NotificationService();
-    final isStaff = user.role == UserRole.admin;
+    final deskChannel = switch (user.role) {
+      UserRole.admin => NotificationService.staffChannel,
+      UserRole.cityHall => NotificationService.cityHallChannel,
+      UserRole.iswim => NotificationService.iswimChannel,
+      _ => null,
+    };
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -45,9 +50,12 @@ class NotificationsScreen extends StatelessWidget {
                 IconButton(
                   onPressed: () async {
                     try {
-                      await (isStaff
-                          ? service.markAllReadForStaff(user.uid)
-                          : service.markAllRead(user.uid));
+                      await (deskChannel == null
+                          ? service.markAllRead(user.uid)
+                          : service.markAllReadForDesk(
+                              user.uid,
+                              deskChannel,
+                            ));
                       if (context.mounted) {
                         AppFeedback.success(context, 'All notifications read');
                       }
@@ -64,9 +72,9 @@ class NotificationsScreen extends StatelessWidget {
             ),
             Expanded(
               child: StreamBuilder<List<AppNotification>>(
-                stream: isStaff
-                    ? service.watchForStaff(user.uid)
-                    : service.watch(user.uid),
+                stream: deskChannel == null
+                    ? service.watch(user.uid)
+                    : service.watchForDesk(user.uid, deskChannel),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const LoadingView(label: 'Loading notifications');
@@ -98,7 +106,7 @@ class NotificationsScreen extends StatelessWidget {
                         for (final item in today)
                           _NotificationTile(
                             notification: item,
-                            onTap: () => _open(context, item, isStaff),
+                            onTap: () => _open(context, item, user.role),
                             onDelete: () => _delete(context, item),
                           ),
                       ],
@@ -109,7 +117,7 @@ class NotificationsScreen extends StatelessWidget {
                         for (final item in earlier)
                           _NotificationTile(
                             notification: item,
-                            onTap: () => _open(context, item, isStaff),
+                            onTap: () => _open(context, item, user.role),
                             onDelete: () => _delete(context, item),
                           ),
                       ],
@@ -146,7 +154,7 @@ class NotificationsScreen extends StatelessWidget {
   Future<void> _open(
     BuildContext context,
     AppNotification item,
-    bool isStaff,
+    UserRole role,
   ) async {
     try {
       if (!item.read) await NotificationService().markRead(item.id);
@@ -154,6 +162,33 @@ class NotificationsScreen extends StatelessWidget {
       // Navigation matters more than the read receipt.
     }
     if (!context.mounted) return;
+
+    // Desk roles have their own destinations; residents and drivers keep the
+    // original routes.
+    if (role == UserRole.cityHall || role == UserRole.iswim) {
+      final cityHall = role == UserRole.cityHall;
+      switch (item.type) {
+        case AppNotificationType.request:
+          context.push(cityHall ? '/cityhall-requests' : '/manuals');
+        case AppNotificationType.waste:
+          context.push(cityHall ? '/cityhall' : '/iswim');
+        case AppNotificationType.verification:
+        case AppNotificationType.account:
+          context.push(cityHall ? '/accounts' : '/iswim');
+        case AppNotificationType.route:
+          context.push(cityHall ? '/cityhall' : '/iswim');
+        case AppNotificationType.announcement:
+          context.push('/announcements');
+        case AppNotificationType.event:
+          context.push('/events');
+        case AppNotificationType.points:
+        case AppNotificationType.system:
+          context.push(cityHall ? '/cityhall' : '/iswim');
+      }
+      return;
+    }
+
+    final isStaff = role == UserRole.admin;
     switch (item.type) {
       case AppNotificationType.request:
         context.push(isStaff ? '/staff-requests' : '/my-requests');

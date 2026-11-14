@@ -67,16 +67,73 @@ class NotificationService {
   /// and drivers must not be able to read the user directory.
   static const staffChannel = 'staff';
 
+  /// City Hall / DSQC desk channel. Complaints and manual submissions are
+  /// addressed here because a resident cannot read the user directory to find
+  /// individual City Hall accounts.
+  static const cityHallChannel = 'cityHall';
+
+  /// Iswim desk channel, used for manual requests from City Hall.
+  static const iswimChannel = 'iswim';
+
   /// Writes an alert to the shared barangay staff channel.
   Future<void> notifyStaff({
     required String title,
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
+  }) =>
+      _notifyChannel(
+        channel: staffChannel,
+        title: title,
+        body: body,
+        type: type,
+        data: data,
+        label: 'Staff',
+      );
+
+  /// Writes an alert to the City Hall / DSQC desk.
+  Future<void> notifyCityHall({
+    required String title,
+    required String body,
+    AppNotificationType type = AppNotificationType.system,
+    Map<String, dynamic> data = const {},
+  }) =>
+      _notifyChannel(
+        channel: cityHallChannel,
+        title: title,
+        body: body,
+        type: type,
+        data: data,
+        label: 'City Hall',
+      );
+
+  /// Writes an alert to the Iswim desk.
+  Future<void> notifyIswim({
+    required String title,
+    required String body,
+    AppNotificationType type = AppNotificationType.system,
+    Map<String, dynamic> data = const {},
+  }) =>
+      _notifyChannel(
+        channel: iswimChannel,
+        title: title,
+        body: body,
+        type: type,
+        data: data,
+        label: 'Iswim',
+      );
+
+  Future<void> _notifyChannel({
+    required String channel,
+    required String title,
+    required String body,
+    required AppNotificationType type,
+    required Map<String, dynamic> data,
+    required String label,
   }) async {
     try {
       await _col.add({
-        'userId': staffChannel,
+        'userId': channel,
         'title': title,
         'body': body,
         'type': type.name,
@@ -85,7 +142,7 @@ class NotificationService {
         'data': data,
       });
     } catch (error) {
-      AppLogger.error('Staff notification write failed', error);
+      AppLogger.error('$label notification write failed', error);
     }
   }
 
@@ -158,9 +215,35 @@ class NotificationService {
       .map((items) => items.where((n) => !n.read).length);
 
   /// Marks both personal and shared staff alerts as read.
-  Future<void> markAllReadForStaff(String userId) async {
+  Future<void> markAllReadForStaff(String userId) =>
+      markAllReadForDesk(userId, staffChannel);
+
+  /// Personal alerts plus one shared desk channel (City Hall or Iswim).
+  Stream<List<AppNotification>> watchForDesk(String userId, String channel) {
+    return _col
+        .where('userId', whereIn: [userId, channel])
+        .snapshots()
+        .map((snap) {
+      final items = snap.docs
+          .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.createdAt ?? DateTime(2000);
+          final bDate = b.createdAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
+      return items;
+    });
+  }
+
+  Stream<int> watchUnreadCountForDesk(String userId, String channel) =>
+      watchForDesk(userId, channel)
+          .map((items) => items.where((n) => !n.read).length);
+
+  /// Marks personal and shared desk alerts as read.
+  Future<void> markAllReadForDesk(String userId, String channel) async {
     final all = await _col
-        .where('userId', whereIn: [userId, staffChannel])
+        .where('userId', whereIn: [userId, channel])
         .get();
     final unread = all.docs.where((doc) => doc.data()['read'] != true).toList();
     if (unread.isEmpty) return;

@@ -15,20 +15,24 @@ enum TicketStatus {
   completed,
   missed,
   cancelled,
+  revisionRequired,
+  rejected,
 }
 
 extension TicketStatusX on TicketStatus {
   String get label => switch (this) {
-        TicketStatus.issued => 'Waiting for driver',
-        TicketStatus.accepted => 'Accepted by driver',
+        TicketStatus.issued => 'Issued by Iswim',
+        TicketStatus.accepted => 'Received by driver',
         TicketStatus.declined => 'Declined by driver',
-        TicketStatus.running => 'Trip running',
-        TicketStatus.submitted => 'For barangay signature',
-        TicketStatus.barangaySigned => 'For Iswim signature',
-        TicketStatus.iswimSigned => 'For City Hall signature',
+        TicketStatus.running => 'In progress',
+        TicketStatus.submitted => 'Awaiting barangay verification',
+        TicketStatus.barangaySigned => 'Barangay approved',
+        TicketStatus.iswimSigned => 'Iswim verified',
         TicketStatus.completed => 'Completed',
         TicketStatus.missed => 'Missed',
         TicketStatus.cancelled => 'Cancelled',
+        TicketStatus.revisionRequired => 'Requires revision',
+        TicketStatus.rejected => 'Rejected',
       };
 
   /// Who the ticket is sitting with right now.
@@ -37,12 +41,14 @@ extension TicketStatusX on TicketStatus {
         TicketStatus.submitted => TicketStatusSigner.barangay,
         TicketStatus.barangaySigned => TicketStatusSigner.iswim,
         TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
+        TicketStatus.revisionRequired => TicketStatusSigner.driver,
         _ => null,
       };
 
   bool get isOpen => this != TicketStatus.completed &&
       this != TicketStatus.cancelled &&
-      this != TicketStatus.missed;
+      this != TicketStatus.missed &&
+      this != TicketStatus.rejected;
 
   bool get isSigned => this == TicketStatus.completed;
 
@@ -124,6 +130,54 @@ class TicketSignature {
   }
 }
 
+/// One immutable entry in the ticket's audit trail.
+///
+/// Every transition records who did it, when, the previous status, the new
+/// status and an optional remark. A rejected or returned ticket therefore
+/// keeps its reason instead of overwriting the record.
+class TicketHistoryEntry {
+  const TicketHistoryEntry({
+    required this.status,
+    required this.byUid,
+    required this.byName,
+    this.previousStatus,
+    this.note = '',
+    this.at,
+  });
+
+  final TicketStatus status;
+  final TicketStatus? previousStatus;
+  final String byUid;
+  final String byName;
+  final String note;
+  final DateTime? at;
+
+  Map<String, dynamic> toMap() => {
+        'status': status.name,
+        if (previousStatus != null) 'previousStatus': previousStatus!.name,
+        'byUid': byUid,
+        'byName': byName,
+        'note': note,
+        // FieldValue is rejected inside an array, so the entry carries a
+        // client timestamp while the document keeps server timestamps.
+        'at': Timestamp.now(),
+      };
+
+  static TicketHistoryEntry? fromMap(dynamic raw) {
+    if (raw is! Map) return null;
+    return TicketHistoryEntry(
+      status: TicketStatusX.fromName(raw['status'] as String?),
+      previousStatus: raw['previousStatus'] == null
+          ? null
+          : TicketStatusX.fromName(raw['previousStatus'] as String?),
+      byUid: raw['byUid'] as String? ?? '',
+      byName: raw['byName'] as String? ?? '',
+      note: raw['note'] as String? ?? '',
+      at: _date(raw['at']),
+    );
+  }
+}
+
 /// A trip ticket: the paper the barangay used to hand out, now digital.
 ///
 /// Iswim issues it against one truck and its permanent driver. The driver
@@ -153,7 +207,10 @@ class TripTicket {
     this.submittedAt,
     this.completedAt,
     this.declineReason,
+    this.revisionReason,
+    this.rejectionReason,
     this.signatures = const {},
+    this.history = const [],
   });
 
   final String id;
@@ -187,26 +244,27 @@ class TripTicket {
   final DateTime? submittedAt;
   final DateTime? completedAt;
   final String? declineReason;
+  final String? revisionReason;
+  final String? rejectionReason;
 
   final Map<TicketStatusSigner, TicketSignature> signatures;
+  final List<TicketHistoryEntry> history;
 
   bool get needsDriver => status == TicketStatus.issued;
+  bool get needsRevision => status == TicketStatus.revisionRequired;
   bool get canStartTrip =>
       status == TicketStatus.accepted || status == TicketStatus.running;
 
   TicketSignature? signatureFor(TicketStatusSigner signer) => signatures[signer];
 
-  /// The next signature the chain expects, or null when the chain is done.
-  TicketStatusSigner? get awaitingSignature {
-    for (final signer in const [
-      TicketStatusSigner.barangay,
-      TicketStatusSigner.iswim,
-      TicketStatusSigner.cityHall,
-    ]) {
-      if (!(signatures[signer]?.isPresent ?? false)) return signer;
-    }
-    return null;
-  }
+  /// The next signature the chain expects, or null when the chain is not at a
+  /// signing step.
+  TicketStatusSigner? get awaitingSignature => switch (status) {
+        TicketStatus.submitted => TicketStatusSigner.barangay,
+        TicketStatus.barangaySigned => TicketStatusSigner.iswim,
+        TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
+        _ => null,
+      };
 
   String get waveLabel => 'Wave $wave';
 
@@ -231,6 +289,14 @@ class TripTicket {
         'createdBy': createdBy,
         'createdAt': FieldValue.serverTimestamp(),
         'signatures': <String, dynamic>{},
+        'history': [
+          TicketHistoryEntry(
+            status: TicketStatus.issued,
+            byUid: createdBy,
+            byName: 'Iswim',
+            note: 'Trip ticket issued',
+          ).toMap(),
+        ],
       };
 
   static TripTicket? fromDoc(String id, Map<String, dynamic> data) {
@@ -245,6 +311,14 @@ class TripTicket {
         if (parsed != null) signatures[signer] = parsed;
       }
     }
+
+    final rawHistory = data['history'];
+    final history = rawHistory is List
+        ? rawHistory
+            .map(TicketHistoryEntry.fromMap)
+            .whereType<TicketHistoryEntry>()
+            .toList(growable: false)
+        : const <TicketHistoryEntry>[];
 
     return TripTicket(
       id: id,
@@ -269,7 +343,10 @@ class TripTicket {
       submittedAt: _date(data['submittedAt']),
       completedAt: _date(data['completedAt']),
       declineReason: data['declineReason'] as String?,
+      revisionReason: data['revisionReason'] as String?,
+      rejectionReason: data['rejectionReason'] as String?,
       signatures: signatures,
+      history: history,
     );
   }
 }

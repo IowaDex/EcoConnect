@@ -124,41 +124,59 @@ class _AskAiSlot extends StatelessWidget {
   }
 }
 
-class _AskAiButton extends StatelessWidget {
+class _AskAiButton extends StatefulWidget {
   const _AskAiButton({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
+  State<_AskAiButton> createState() => _AskAiButtonState();
+}
+
+class _AskAiButtonState extends State<_AskAiButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        width: 48,
-        decoration: BoxDecoration(
-          color: AppColors.forest,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.creamBright, width: 3),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.forest.withValues(alpha: 0.30),
-              blurRadius: 16,
-              offset: const Offset(0, 7),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _hovered ? 1.08 : 1,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 48,
+            width: 48,
+            decoration: BoxDecoration(
+              color: AppColors.forest,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.creamBright, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.forest.withValues(alpha: _hovered ? 0.42 : 0.30),
+                  blurRadius: _hovered ? 22 : 16,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: const Icon(
-          Icons.forum_rounded,
-          size: 20,
-          color: AppColors.creamBright,
+            child: const Icon(
+              Icons.forum_rounded,
+              size: 20,
+              color: AppColors.creamBright,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   const _NavItem({
     required this.icon,
     required this.label,
@@ -172,36 +190,61 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final color = selected ? AppColors.forest : AppColors.inkMuted;
+  State<_NavItem> createState() => _NavItemState();
+}
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.symmetric(horizontal: 5),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.mint : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 19, color: color),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 8.5,
-                height: 1,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: color,
+class _NavItemState extends State<_NavItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.selected || _hovered
+        ? AppColors.forest
+        : AppColors.inkMuted;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(20),
+        hoverColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? AppColors.mint
+                : (_hovered
+                    ? AppColors.mint.withValues(alpha: 0.45)
+                    : Colors.transparent),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedScale(
+                scale: widget.selected ? 1.12 : 1,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutBack,
+                child: Icon(widget.icon, size: 19, color: color),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 8.5,
+                  height: 1,
+                  fontWeight:
+                      widget.selected ? FontWeight.w700 : FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

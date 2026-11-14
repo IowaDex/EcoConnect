@@ -53,6 +53,11 @@ class AppUser {
   /// driver / staff accounts.
   final String accountStatus;
 
+  /// Resident registration lifecycle after barangay review:
+  /// `pending` -> `approved` -> `accepted` / `declined`. Accounts created
+  /// before this workflow existed default to `accepted`.
+  final String registrationStatus;
+
   /// Resident vs. government personnel. Government accounts unlock the
   /// special collection request feature once verified.
   final AccountType accountType;
@@ -86,6 +91,7 @@ class AppUser {
     this.city,
     this.province,
     this.accountStatus = 'active',
+    this.registrationStatus = 'accepted',
     this.accountType = AccountType.resident,
     this.verificationStatus = VerificationStatus.unverified,
     this.rejectionReason,
@@ -94,6 +100,18 @@ class AppUser {
   });
 
   bool get isPendingApproval => accountStatus == 'pending';
+
+  /// The barangay approved this resident and is waiting for them to accept.
+  bool get needsRegistrationDecision =>
+      role == UserRole.user && registrationStatus == 'approved';
+
+  /// The resident refused the barangay's approval.
+  bool get registrationDeclined =>
+      role == UserRole.user && registrationStatus == 'declined';
+
+  /// Barangay staff have not finished reviewing this resident yet.
+  bool get registrationPending =>
+      role == UserRole.user && registrationStatus == 'pending';
 
   bool get isGovernment => accountType == AccountType.government;
 
@@ -118,6 +136,7 @@ class AppUser {
     String? city,
     String? province,
     String? accountStatus,
+    String? registrationStatus,
     AccountType? accountType,
     VerificationStatus? verificationStatus,
     String? rejectionReason,
@@ -138,6 +157,7 @@ class AppUser {
       city: city ?? this.city,
       province: province ?? this.province,
       accountStatus: accountStatus ?? this.accountStatus,
+      registrationStatus: registrationStatus ?? this.registrationStatus,
       accountType: accountType ?? this.accountType,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       rejectionReason: rejectionReason ?? this.rejectionReason,

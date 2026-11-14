@@ -181,7 +181,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           onPressed: () => context.canPop() ? context.pop() : context.go('/iswim'),
         ),
         title: const Text(
-          'Bagong trip ticket',
+          'New trip ticket',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -195,7 +195,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
           children: [
             const Text(
-              'Truck at driver',
+              'Truck and driver',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
@@ -223,7 +223,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   ),
               ],
               onChanged: (value) => setState(() => _truck = value),
-              validator: (value) => value == null ? 'Pumili ng truck' : null,
+              validator: (value) => value == null ? 'Select a truck' : null,
             ),
             if (truck != null) ...[
               const SizedBox(height: 8),
@@ -242,8 +242,8 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     Expanded(
                       child: Text(
                         driver == null
-                            ? '${truck.driverName} · wala pang login account'
-                            : '${driver.name} · naka-link na account',
+                            ? '${truck.driverName} · no login account yet'
+                            : '${driver.name} · linked account',
                         style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
@@ -260,12 +260,12 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
               controller: _route,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Ruta / mga street',
+                labelText: 'Route / streets',
                 hintText: 'Hal. Sampaguita St, Mabini St, Rosal St',
                 isDense: true,
               ),
               validator: (value) =>
-                  (value ?? '').trim().isEmpty ? 'Ilagay ang ruta' : null,
+                  (value ?? '').trim().isEmpty ? 'Enter the route' : null,
             ),
             const SizedBox(height: 12),
             Row(
@@ -284,7 +284,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   child: TextFormField(
                     controller: _windowEnd,
                     decoration: const InputDecoration(
-                      labelText: 'Tapos',
+                      labelText: 'End',
                       isDense: true,
                     ),
                   ),
@@ -317,7 +317,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 if (_wave == 2)
                   const Flexible(
                     child: Text(
-                      'Pwede kahit ongoing ang Wave 1',
+                      'Allowed even while Wave 1 is ongoing',
                       style: TextStyle(fontSize: 8.5, color: AppColors.moss),
                     ),
                   ),
@@ -353,14 +353,14 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Ipadala sa driver'),
+                    : const Text('Send to driver'),
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Automatic na makakatanggap ang driver ng notification. Hindi '
-              'siya makakabyahe hangga\'t hindi niya tinatanggap ito. Kopya '
-              'agad kay City Hall.',
+              'The driver is notified automatically. They cannot '
+              'start the trip until they accept it. City Hall receives '
+              'a copy immediately.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 9,

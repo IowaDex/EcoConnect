@@ -564,6 +564,28 @@ class _DocumentPreview extends StatelessWidget {
   }
 }
 
+enum _ResidentAction {
+  approveRegistration,
+  rejectRegistration,
+  verify,
+  reject,
+  reset,
+}
+
+String _registrationLabel(String status) => switch (status) {
+      'pending' => 'Registration pending',
+      'approved' => 'Awaiting resident',
+      'declined' => 'Resident declined',
+      _ => 'Registration accepted',
+    };
+
+Color _registrationColor(String status) => switch (status) {
+      'pending' => AppColors.warning,
+      'approved' => const Color(0xFF1565C0),
+      'declined' => AppColors.error,
+      _ => AppColors.primary,
+    };
+
 class _ResidentsTab extends StatefulWidget {
   const _ResidentsTab();
 
@@ -596,6 +618,8 @@ class _ResidentsTabState extends State<_ResidentsTab> {
   ) async {
     final staff = context.read<AuthProvider>().currentUser;
     if (staff == null) return;
+    final openRegistration =
+        ((user['registrationStatus'] as String?) ?? 'accepted') == 'pending';
     String? reason;
     if (status == VerificationStatus.rejected) {
       final controller = TextEditingController();
@@ -637,7 +661,12 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         reason: reason,
       );
       if (!mounted) return;
-      AppFeedback.success(context, 'Verification updated');
+      AppFeedback.success(
+        context,
+        status == VerificationStatus.verified && openRegistration
+            ? 'Registration approved — the resident will accept or decline'
+            : 'Verification updated',
+      );
       _reload();
     } catch (e) {
       if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
@@ -675,6 +704,8 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             final accountType = AccountTypeX.fromName(
               user['accountType'] as String?,
             );
+            final registration =
+                (user['registrationStatus'] as String?) ?? 'accepted';
             return EcoCard(
               child: Row(
                 children: [
@@ -713,32 +744,64 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        StatusBadge(
-                          label: status.label,
-                          color: status.color,
-                          icon: status.icon,
-                          compact: true,
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            StatusBadge(
+                              label: status.label,
+                              color: status.color,
+                              icon: status.icon,
+                              compact: true,
+                            ),
+                            StatusBadge(
+                              label: _registrationLabel(registration),
+                              color: _registrationColor(registration),
+                              compact: true,
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  PopupMenuButton<VerificationStatus>(
+                  PopupMenuButton<_ResidentAction>(
                     icon: const Icon(Icons.more_vert_rounded,
                         size: 18, color: AppColors.inkMuted),
-                    onSelected: (value) => _set(user, value),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: VerificationStatus.verified,
-                        child: Text('Mark verified'),
-                      ),
-                      PopupMenuItem(
-                        value: VerificationStatus.rejected,
-                        child: Text('Reject'),
-                      ),
-                      PopupMenuItem(
-                        value: VerificationStatus.unverified,
-                        child: Text('Reset to unverified'),
-                      ),
+                    onSelected: (value) => switch (value) {
+                      _ResidentAction.approveRegistration =>
+                        _set(user, VerificationStatus.verified),
+                      _ResidentAction.rejectRegistration =>
+                        _set(user, VerificationStatus.rejected),
+                      _ResidentAction.verify =>
+                        _set(user, VerificationStatus.verified),
+                      _ResidentAction.reject => _set(user, VerificationStatus.rejected),
+                      _ResidentAction.reset =>
+                        _set(user, VerificationStatus.unverified),
+                    },
+                    itemBuilder: (_) => [
+                      if (registration == 'pending') ...[
+                        const PopupMenuItem(
+                          value: _ResidentAction.approveRegistration,
+                          child: Text('Approve registration'),
+                        ),
+                        const PopupMenuItem(
+                          value: _ResidentAction.rejectRegistration,
+                          child: Text('Reject registration'),
+                        ),
+                      ] else ...[
+                        const PopupMenuItem(
+                          value: _ResidentAction.verify,
+                          child: Text('Mark verified'),
+                        ),
+                        const PopupMenuItem(
+                          value: _ResidentAction.reject,
+                          child: Text('Reject'),
+                        ),
+                        const PopupMenuItem(
+                          value: _ResidentAction.reset,
+                          child: Text('Reset to unverified'),
+                        ),
+                      ],
                     ],
                   ),
                 ],

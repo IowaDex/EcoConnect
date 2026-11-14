@@ -164,6 +164,7 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
       isScrollControlled: true,
       builder: (_) => _WasteDetail(
         submission: submission,
+        staffId: staff.uid,
         staffName: staff.displayName ?? 'Barangay staff',
       ),
     );
@@ -290,9 +291,14 @@ class _WasteCard extends StatelessWidget {
 }
 
 class _WasteDetail extends StatefulWidget {
-  const _WasteDetail({required this.submission, required this.staffName});
+  const _WasteDetail({
+    required this.submission,
+    required this.staffId,
+    required this.staffName,
+  });
 
   final WasteSubmission submission;
+  final String staffId;
   final String staffName;
 
   @override
@@ -306,6 +312,7 @@ class _WasteDetailState extends State<_WasteDetail> {
 
   Future<void> _validate(WasteStatus status) async {
     final controller = TextEditingController();
+    final pointsController = TextEditingController(text: '10');
     final isReject = status == WasteStatus.rejected;
     final ok = await showDialog<bool>(
       context: context,
@@ -318,10 +325,21 @@ class _WasteDetailState extends State<_WasteDetail> {
             Text(
               isReject
                   ? 'Explain what needs to be fixed. The resident sees this message.'
-                  : 'Add an optional note for the resident.',
+                  : 'Approve the waste and decide how many points to credit. '
+                      'Enter 0 to approve without points.',
               style: const TextStyle(fontSize: 11.5, color: AppColors.inkMuted),
             ),
             const SizedBox(height: 12),
+            if (!isReject)
+              TextField(
+                controller: pointsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Points to credit',
+                  helperText: 'Credited only once per submission',
+                ),
+              ),
+            if (!isReject) const SizedBox(height: 10),
             TextField(
               controller: controller,
               minLines: 3,
@@ -350,13 +368,21 @@ class _WasteDetailState extends State<_WasteDetail> {
     );
     if (ok != true || !mounted) return;
 
+    final points = isReject ? 0 : (int.tryParse(pointsController.text.trim()) ?? 0);
+    if (!isReject && points < 0) {
+      AppFeedback.error(context, 'Points cannot be negative.');
+      return;
+    }
+
     setState(() => _busy = true);
     try {
-      await _service.validate(
+      final awarded = await _service.validate(
         submission: _submission,
         status: status,
+        actorId: widget.staffId,
         actorName: widget.staffName,
         remarks: controller.text.trim(),
+        points: points,
       );
       if (!mounted) return;
       setState(() => _submission = WasteSubmission(
@@ -373,10 +399,16 @@ class _WasteDetailState extends State<_WasteDetail> {
             remarks: controller.text.trim(),
             validatedBy: widget.staffName,
             validatedAt: DateTime.now(),
+            pointsAwarded: awarded,
             createdAt: _submission.createdAt,
             updatedAt: DateTime.now(),
           ));
-      AppFeedback.success(context, 'Submission ${status.label.toLowerCase()}');
+      AppFeedback.success(
+        context,
+        awarded > 0
+            ? 'Approved · $awarded points credited'
+            : 'Submission ${status.label.toLowerCase()}',
+      );
     } catch (e) {
       if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
     } finally {
