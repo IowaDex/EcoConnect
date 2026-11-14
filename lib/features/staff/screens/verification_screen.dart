@@ -17,8 +17,9 @@ import '../../auth/providers/auth_provider.dart';
 import '../../verification/services/verification_service.dart';
 import '../../notifications/widgets/notification_bell.dart';
 
-/// User validation desk: pending driver/staff accounts, government ID
-/// submissions and the resident directory.
+/// Resident validation desk: the barangay checks residents only. Drivers,
+/// guides and staff are created by City Hall, and there are no separate
+/// government-ID submissions any more.
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});
 
