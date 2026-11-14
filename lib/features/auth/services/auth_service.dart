@@ -191,7 +191,19 @@ class AuthService {
     final ref = _firestore.collection('users').doc(uid);
     final data = (await ref.get()).data();
     if (data == null || data['emailVerified'] == true) return;
-    await ref.update({'emailVerified': true});
+    // The rules accept this only when the sign-in token says the email is
+    // confirmed. Firestore can pick up a just-refreshed token a moment late,
+    // so a refusal is retried with a fresh token before giving up.
+    for (var attempt = 1;; attempt++) {
+      try {
+        await ref.update({'emailVerified': true});
+        break;
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied' || attempt >= 4) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 700 * attempt));
+        await _auth.currentUser?.getIdToken(true);
+      }
+    }
     await NotificationService().notifyStaff(
       title: 'New resident registration',
       body: '${name ?? data['name'] ?? 'A resident'} confirmed their email '

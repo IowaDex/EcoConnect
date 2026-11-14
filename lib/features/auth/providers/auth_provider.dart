@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -127,8 +128,16 @@ class AuthProvider extends ChangeNotifier {
     _clearError();
     try {
       return await _authService.confirmEmailVerified();
-    } catch (_) {
-      _setError('Something went wrong. Please try again.');
+    } catch (e) {
+      AppLogger.error('Confirming the email failed', e);
+      // Say what failed, so a rules or network problem is visible.
+      // FirebaseAuthException is a FirebaseException too.
+      final code = e is FirebaseException ? e.code : e.runtimeType.toString();
+      _setError(code == 'permission-denied'
+          ? 'The server refused to record your confirmation '
+              '(permission-denied). Ask the admin to deploy the latest '
+              'Firestore rules, then try again.'
+          : 'Could not confirm your email ($code). Please try again.');
       return false;
     } finally {
       _setLoading(false);
