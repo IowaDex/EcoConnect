@@ -108,24 +108,20 @@ class AuthService {
     return _getAppUser(user);
   }
 
-  // Sign up with email and password and role
+  // Resident sign-up. Drivers and guides never register themselves: City Hall
+  // provisions those logins, so the role is fixed here.
   Future<void> signUp({
     required String email,
     required String password,
     required String name,
-    required UserRole role,
     Map<String, dynamic>? profile,
     AccountType accountType = AccountType.resident,
     UploadPayload? verificationDocument,
-    TruckCrewRole crewRole = TruckCrewRole.driver,
   }) async {
     // Only residents sign themselves up (crews and staff are provisioned by
     // City Hall), and every resident uploads an ID for the barangay to check.
     // Checked before the login exists, so a missing ID never leaves an
     // orphaned account behind.
-    if (role != UserRole.user) {
-      throw Exception('Only residents can sign up in the app.');
-    }
     if (verificationDocument == null) {
       throw Exception('Please upload your ID to continue.');
     }
@@ -143,7 +139,7 @@ class AuthService {
     await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
-      'role': role.name,
+      'role': UserRole.user.name,
       'createdAt': FieldValue.serverTimestamp(),
       'emailVerified': false,
       'accountStatus': 'pending',
@@ -269,7 +265,11 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountPending);
       }
 
-      if (appUser.accountStatus == 'declined') {
+      // The barangay checked the ID and the address and said no — usually
+      // because the applicant is not from Batasan Hills. Records written
+      // before the registration decision existed say 'rejected'.
+      if (appUser.accountStatus == 'declined' ||
+          appUser.accountStatus == 'rejected') {
         await _auth.signOut();
         throw AuthException(
           AuthErrorType.accountDeclined,
@@ -365,33 +365,20 @@ class AuthService {
     await _firestore.collection('users').doc(uid).update(data);
   }
 
-  // Accounts waiting for barangay staff approval
-  Future<List<Map<String, dynamic>>> getPendingAccounts() async {
-    final snapshot = await _firestore
-        .collection('users')
-        .where('accountStatus', isEqualTo: 'pending')
-        .get();
-    return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
-  }
-
-  Stream<List<Map<String, dynamic>>> watchPendingAccounts() {
-    return _firestore
-        .collection('users')
-        .where('accountStatus', isEqualTo: 'pending')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => {'uid': doc.id, ...doc.data()})
-              .toList(growable: false),
-        );
-  }
-
-  // Approve a driver / staff account
-  Future<void> approveAccount(String uid) async {
-    await _firestore.collection('users').doc(uid).update({
-      'accountStatus': 'active',
-      'approvedAt': FieldValue.serverTimestamp(),
-    });
+  // Residents who signed up and are waiting for the barangay's decision.
+  // Filtered on the client: two equality filters would need a composite index,
+  // and the residents list is small.
+  Future<List<Map<String, dynamic>>> getPendingRegistrations() async {
+    final snapshot = await _firestore.collection('users').get();
+    return snapshot.docs
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .where((u) =>
+            (u['role'] ?? 'user') == 'user' &&
+            (u['registrationStatus'] ?? 'accepted') == 'pending' &&
+            // A rejected application is no longer waiting on the desk; it only
+            // comes back if the resident resubmits.
+            (u['verificationStatus'] ?? 'unverified') != 'rejected')
+        .toList();
   }
 
   /// The resident answers the barangay's registration approval.

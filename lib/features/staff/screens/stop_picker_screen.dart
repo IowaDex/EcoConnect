@@ -10,7 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/primary_button.dart';
 
-/// Lets staff lay out the collection route by tapping the map. Each tap adds
+/// Lets Iswim lay out the collection route by tapping the map. Each tap adds
 /// an ordered stop that both the driver and the residents will see.
 class StopPickerScreen extends StatefulWidget {
   const StopPickerScreen({
@@ -56,7 +56,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
           15,
         );
       }
-      // Jump straight to the zone staff typed, so the map already shows the
+      // Jump straight to the zone Iswim typed, so the map already shows the
       // right barangay before the first pin is dropped.
       if (first == null) _locateZone(silent: true);
     });

@@ -231,7 +231,9 @@ class NotificationsScreen extends StatelessWidget {
       case AppNotificationType.verification:
         context.push(isStaff ? '/verification' : '/user');
       case AppNotificationType.route:
-        context.push(isStaff ? '/live-routes' : '/driver');
+        // The barangay no longer dispatches or watches routes; Iswim and City
+        // Hall do. A stale notification just lands on their desk.
+        context.push(isStaff ? '/admin-dashboard' : '/driver');
       case AppNotificationType.announcement:
         context.push('/announcements');
       case AppNotificationType.event:
@@ -240,8 +242,9 @@ class NotificationsScreen extends StatelessWidget {
         // Residents see the balance and history in their wallet.
         if (!isStaff) context.push('/wallet');
       case AppNotificationType.account:
-        // "New resident registration" and other account notices.
-        if (isStaff) context.push('/pending-accounts');
+        // "New resident registration" and other account notices land on the
+        // residents desk, which is where the barangay reviews them.
+        if (isStaff) context.push('/verification');
       case AppNotificationType.system:
       case AppNotificationType.complaint:
         break;

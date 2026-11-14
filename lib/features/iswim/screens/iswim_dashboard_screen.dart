@@ -185,6 +185,13 @@ class _TicketFeedState extends State<_TicketFeed> {
               children: [
                 _quickAction(
                   context,
+                  Icons.route_rounded,
+                  'Assign route',
+                  '/routes',
+                ),
+                const SizedBox(width: 8),
+                _quickAction(
+                  context,
                   Icons.menu_book_outlined,
                   'Manuals',
                   '/manuals',

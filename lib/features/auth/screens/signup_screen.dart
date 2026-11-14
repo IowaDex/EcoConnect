@@ -167,7 +167,6 @@ class _SignupScreenState extends State<SignupScreen> {
       name: _name.text.trim(),
       email: _email.text.trim(),
       password: _password.text,
-      role: UserRole.user,
       accountType: AccountType.resident,
       verificationDocument: _idDocument,
       profile: {

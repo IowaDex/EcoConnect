@@ -420,7 +420,9 @@ class _ParticipantCountState extends State<_ParticipantCount> {
   // refreshed when this device joins or leaves, not streamed live per card.
   void _refresh() {
     if (!mounted) return;
-    setState(() => _count = EventService().participantCount(widget.eventId));
+    setState(() {
+      _count = EventService().participantCount(widget.eventId);
+    });
   }
 
   @override

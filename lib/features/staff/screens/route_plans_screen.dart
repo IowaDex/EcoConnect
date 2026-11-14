@@ -11,8 +11,11 @@ import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/primary_button.dart';
 
-/// Staff dispatch board: assign one collection run per driver per day.
+/// Iswim's dispatch board: assign one collection run per driver per day.
 /// Drivers can only activate a route that exists here (or start an ad-hoc run).
+///
+/// The barangay used to own this board. It moved to Iswim, which already
+/// issues the trip tickets, so the run and the paper trail come from one desk.
 class RoutePlansScreen extends StatefulWidget {
   const RoutePlansScreen({super.key});
 
@@ -235,6 +238,23 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       );
   }
 
+  /// Iswim opens this board from its own console, so "back" belongs there.
+  /// The barangay desk keeps a read-only live map instead of this screen.
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    final role = context.read<AuthProvider>().currentUser?.role;
+    context.go(
+      switch (role) {
+        UserRole.iswim => '/iswim',
+        UserRole.cityHall => '/cityhall',
+        _ => '/admin-dashboard',
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -248,7 +268,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
               Row(
                 children: [
                   InkWell(
-                    onTap: () => context.go('/admin-dashboard'),
+                    onTap: _goBack,
                     borderRadius: BorderRadius.circular(20),
                     child: const Padding(
                       padding: EdgeInsets.all(6),
@@ -282,8 +302,8 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Assign one collection run per driver. Drivers can only '
-                'activate what you schedule here.',
+                'Iswim assigns one collection run per driver. A driver can only '
+                'activate the run you schedule here.',
                 style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 18),
@@ -420,6 +440,11 @@ class _AssignCard extends StatelessWidget {
               color: AppColors.forest,
             ),
           ),
+          const SizedBox(height: 2),
+          const Text(
+            'The driver sees this the moment you assign it.',
+            style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          ),
           const SizedBox(height: 12),
           if (loading)
             const Padding(
@@ -434,8 +459,8 @@ class _AssignCard extends StatelessWidget {
             )
           else if (drivers.isEmpty)
             const Text(
-              'No approved driver accounts yet. Approve a driver from '
-              'Pending accounts first.',
+              'No approved driver accounts yet. Create a driver from '
+              'Accounts first.',
               style: TextStyle(
                 fontSize: 10.5,
                 height: 1.4,

@@ -373,7 +373,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
             ),
             const SizedBox(height: 16),
             if (routes.isEmpty)
-              _EmptySheet(onAssign: () => context.go('/routes'))
+              const _EmptySheet()
             else ...[
               Row(
                 children: [
@@ -788,9 +788,7 @@ class _DriverCard extends StatelessWidget {
 }
 
 class _EmptySheet extends StatelessWidget {
-  const _EmptySheet({required this.onAssign});
-
-  final VoidCallback onAssign;
+  const _EmptySheet();
 
   @override
   Widget build(BuildContext context) {
@@ -822,7 +820,7 @@ class _EmptySheet extends StatelessWidget {
         const SizedBox(height: 6),
         const Text(
           'Live positions show up here as soon as a driver starts a run. '
-          "Dotted lines are today's planned routes.",
+          "Dotted lines are today's planned routes — Iswim assigns those.",
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 10.5,
@@ -831,23 +829,6 @@ class _EmptySheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          height: 46,
-          child: FilledButton(
-            onPressed: onAssign,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.forest,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              "Assign today's runs",
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
       ],
     );
   }

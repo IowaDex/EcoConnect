@@ -34,6 +34,9 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
   RequestStatus? _status;
   String _barangay = '';
   int _days = 0;
+  // Special collections (government offices, schools, big hauls) are the ones
+  // the barangay must vet; the toggle pulls just those to the top of the list.
+  bool _specialOnly = false;
 
   @override
   void dispose() {
@@ -78,6 +81,9 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
             _StatusFilterBar(
               selected: _status,
               onChanged: (value) => setState(() => _status = value),
+              specialOnly: _specialOnly,
+              onSpecialChanged: (value) =>
+                  setState(() => _specialOnly = value),
             ),
             const SizedBox(height: 8),
             Expanded(
@@ -153,6 +159,7 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
         : DateTime.now().subtract(Duration(days: _days));
     return all.where((request) {
       if (_status != null && request.status != _status) return false;
+      if (_specialOnly && !request.isSpecial) return false;
       if (_barangay.isNotEmpty &&
           (request.requesterBarangay ?? '').trim() != _barangay) {
         return false;
@@ -190,10 +197,17 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
 }
 
 class _StatusFilterBar extends StatelessWidget {
-  const _StatusFilterBar({required this.selected, required this.onChanged});
+  const _StatusFilterBar({
+    required this.selected,
+    required this.onChanged,
+    required this.specialOnly,
+    required this.onSpecialChanged,
+  });
 
   final RequestStatus? selected;
   final ValueChanged<RequestStatus?> onChanged;
+  final bool specialOnly;
+  final ValueChanged<bool> onSpecialChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -206,15 +220,33 @@ class _StatusFilterBar extends StatelessWidget {
           _chip('All', selected == null, () => onChanged(null)),
           for (final status in RequestStatus.values)
             _chip(status.label, selected == status, () => onChanged(status)),
+          _chip(
+            'Special only',
+            specialOnly,
+            () => onSpecialChanged(!specialOnly),
+            icon: Icons.star_outline_rounded,
+          ),
         ],
       ),
     );
   }
 
-  Widget _chip(String label, bool active, VoidCallback onTap) {
+  Widget _chip(
+    String label,
+    bool active,
+    VoidCallback onTap, {
+    IconData? icon,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(right: 7),
       child: ChoiceChip(
+        avatar: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 13,
+                color: active ? Colors.white : AppColors.darkGreen,
+              ),
         label: Text(label),
         selected: active,
         onSelected: (_) => onTap(),

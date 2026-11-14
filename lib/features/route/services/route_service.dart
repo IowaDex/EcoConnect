@@ -24,7 +24,7 @@ class RouteActivationException implements Exception {
 
 /// Driver collection runs.
 ///
-/// - routePlans/{planId} — staff assignment (zone, day, shift window).
+/// - routePlans/{planId} — Iswim's assignment (zone, day, shift window).
 /// - routes/{driverId} — the driver's live presence for residents.
 class RouteService {
   static final RouteService _instance = RouteService._internal();
@@ -314,7 +314,7 @@ class RouteService {
     });
   }
 
-  /// Staff (or a driver starting an unassigned run) creates a plan.
+  /// Iswim (or a driver starting an unassigned run) creates a plan.
   Future<RoutePlan> createPlan({
     required String driverId,
     required String driverName,
@@ -382,7 +382,7 @@ class RouteService {
       if (!planSnap.exists) {
         throw const RouteActivationException(
           'plan-missing',
-          'This assignment was removed by barangay staff.',
+          'This assignment was removed by Iswim.',
         );
       }
 
@@ -407,7 +407,7 @@ class RouteService {
         case RoutePlanStatus.cancelled:
           throw const RouteActivationException(
             'plan-cancelled',
-            'Barangay staff cancelled this assignment.',
+            'Iswim cancelled this assignment.',
           );
         case RoutePlanStatus.scheduled:
           break;

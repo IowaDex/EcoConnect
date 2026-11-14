@@ -337,7 +337,15 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/cityhall');
+              // The inbox is opened from three different consoles.
+              final role = context.read<AuthProvider>().currentUser?.role;
+              context.go(
+                switch (role) {
+                  UserRole.iswim => '/iswim',
+                  UserRole.admin => '/admin-dashboard',
+                  _ => '/cityhall',
+                },
+              );
             }
           },
         ),
