@@ -16,7 +16,11 @@ import '../widgets/complaint_detail_sheet.dart';
 /// DSQC / City Hall complaint desk. Complaints arrive here directly from
 /// residents; the barangay does not receive a copy in this workflow.
 class ComplaintDeskScreen extends StatefulWidget {
-  const ComplaintDeskScreen({super.key});
+  const ComplaintDeskScreen({super.key, this.initialComplaintId});
+
+  /// Opened from a complaint notification: show this complaint's details as
+  /// soon as the list has loaded.
+  final String? initialComplaintId;
 
   @override
   State<ComplaintDeskScreen> createState() => _ComplaintDeskScreenState();
@@ -25,6 +29,19 @@ class ComplaintDeskScreen extends StatefulWidget {
 class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
   bool _openOnly = true;
   String _query = '';
+  bool _openedInitial = false;
+
+  /// Opens the notified complaint once, after the first snapshot arrives.
+  void _openInitial(List<Complaint> all, String byName) {
+    final id = widget.initialComplaintId;
+    if (_openedInitial || id == null) return;
+    _openedInitial = true;
+    final match = all.where((c) => c.id == id);
+    if (match.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _open(context, match.first, byName);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +81,7 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
             );
           }
           final all = snapshot.data ?? const <Complaint>[];
+          _openInitial(all, byName);
           final open = all.where((c) => c.status.isOpen).length;
           final items = all.where((complaint) {
             if (_openOnly && !complaint.status.isOpen) return false;

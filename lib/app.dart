@@ -435,7 +435,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/my-complaints',
-          builder: (_, __) => const MyComplaintsScreen(),
+          builder: (_, state) => MyComplaintsScreen(
+            initialComplaintId: state.uri.queryParameters['id'],
+          ),
         ),
         GoRoute(
           path: '/complaints/new',
@@ -443,7 +445,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/complaints',
-          builder: (_, __) => const ComplaintDeskScreen(),
+          builder: (_, state) => ComplaintDeskScreen(
+            initialComplaintId: state.uri.queryParameters['id'],
+          ),
         ),
         GoRoute(
           path: '/cityhall-requests',

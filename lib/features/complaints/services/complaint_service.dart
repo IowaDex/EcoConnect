@@ -77,7 +77,7 @@ class ComplaintService {
     await _notifications.notifyCityHall(
       title: 'New complaint · $reference',
       body: '$residentName: ${title.trim()}',
-      type: AppNotificationType.request,
+      type: AppNotificationType.complaint,
       data: {'complaintId': ref.id, 'kind': 'complaintFiled'},
     );
 
@@ -112,7 +112,7 @@ class ComplaintService {
       body: message.trim().isEmpty
           ? 'Your complaint is now ${status.label.toLowerCase()}.'
           : message.trim(),
-      type: AppNotificationType.request,
+      type: AppNotificationType.complaint,
       data: {
         'complaintId': complaint.id,
         'kind': 'complaintResponse',
