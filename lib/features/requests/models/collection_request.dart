@@ -6,15 +6,22 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
 
 /// Regular resident request vs. the government-personnel-only request type.
-enum RequestKind { resident, special }
+/// `uncollected` is a resident's "the truck missed us" report: the barangay
+/// passes it to City Hall as a wave 2 collection.
+enum RequestKind { resident, special, uncollected }
 
 extension RequestKindX on RequestKind {
-  String get label => this == RequestKind.special
-      ? 'Special collection'
-      : 'Residential collection';
+  String get label => switch (this) {
+        RequestKind.special => 'Special collection',
+        RequestKind.uncollected => 'Uncollected garbage (Wave 2)',
+        RequestKind.resident => 'Residential collection',
+      };
 
-  static RequestKind fromName(String? name) =>
-      name == 'special' ? RequestKind.special : RequestKind.resident;
+  static RequestKind fromName(String? name) => switch (name) {
+        'special' => RequestKind.special,
+        'uncollected' => RequestKind.uncollected,
+        _ => RequestKind.resident,
+      };
 }
 
 enum RequestStatus {

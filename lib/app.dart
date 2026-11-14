@@ -37,6 +37,7 @@ import 'features/announcements/screens/announcements_screen.dart';
 import 'features/events/screens/events_screen.dart';
 import 'features/waste/screens/waste_upload_screen.dart';
 import 'features/waste/screens/waste_history_screen.dart';
+import 'features/requests/models/collection_request.dart';
 import 'features/requests/screens/request_form_screen.dart';
 import 'features/requests/screens/my_requests_screen.dart';
 import 'features/notifications/screens/notifications_screen.dart';
@@ -313,6 +314,8 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (context, __) => DelayListScreen(
             canForward: context.read<AuthProvider>().currentUser?.role ==
                 UserRole.cityHall,
+            canAnnounce: context.read<AuthProvider>().currentUser?.role ==
+                UserRole.admin,
           ),
         ),
         GoRoute(
@@ -433,7 +436,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/request-collection',
-          builder: (_, __) => const RequestFormScreen(),
+          builder: (_, state) => RequestFormScreen(
+            initialKind: RequestKindX.fromName(state.uri.queryParameters['kind']),
+          ),
         ),
         GoRoute(
           path: '/my-requests',

@@ -209,6 +209,10 @@ class NotificationsScreen extends StatelessWidget {
     }
 
     final isStaff = role == UserRole.admin;
+    if (isStaff && item.data['delayId'] != null) {
+      context.push('/delays');
+      return;
+    }
     switch (item.type) {
       case AppNotificationType.request:
         context.push(isStaff ? '/staff-requests' : '/my-requests');

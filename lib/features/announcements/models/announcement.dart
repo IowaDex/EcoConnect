@@ -11,6 +11,7 @@ enum AnnouncementCategory {
   awareness,
   emergency,
   general,
+  delay,
 }
 
 extension AnnouncementCategoryX on AnnouncementCategory {
@@ -21,6 +22,7 @@ extension AnnouncementCategoryX on AnnouncementCategory {
         AnnouncementCategory.awareness => 'Environmental awareness',
         AnnouncementCategory.emergency => 'Emergency',
         AnnouncementCategory.general => 'General information',
+        AnnouncementCategory.delay => 'Collection delay',
       };
 
   String get shortLabel => switch (this) {
@@ -30,6 +32,7 @@ extension AnnouncementCategoryX on AnnouncementCategory {
         AnnouncementCategory.awareness => 'Awareness',
         AnnouncementCategory.emergency => 'Emergency',
         AnnouncementCategory.general => 'General',
+        AnnouncementCategory.delay => 'Delay',
       };
 
   IconData get icon => switch (this) {
@@ -39,6 +42,7 @@ extension AnnouncementCategoryX on AnnouncementCategory {
         AnnouncementCategory.awareness => Icons.eco_rounded,
         AnnouncementCategory.emergency => Icons.warning_amber_rounded,
         AnnouncementCategory.general => Icons.info_outline_rounded,
+        AnnouncementCategory.delay => Icons.schedule_rounded,
       };
 
   Color get color => switch (this) {
@@ -48,6 +52,7 @@ extension AnnouncementCategoryX on AnnouncementCategory {
         AnnouncementCategory.awareness => const Color(0xFF558B2F),
         AnnouncementCategory.emergency => AppColors.error,
         AnnouncementCategory.general => const Color(0xFF37474F),
+        AnnouncementCategory.delay => const Color(0xFFEF6C00),
       };
 
   static AnnouncementCategory fromName(String? name) =>

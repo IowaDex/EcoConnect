@@ -25,7 +25,10 @@ import '../services/collection_request_service.dart';
 /// checked by the barangay at sign-up. Firestore enforces the same rule (only
 /// approved residents, never crews).
 class RequestFormScreen extends StatefulWidget {
-  const RequestFormScreen({super.key});
+  const RequestFormScreen({super.key, this.initialKind = RequestKind.resident});
+
+  /// Opened as an uncollected-garbage (wave 2) report from the resident home.
+  final RequestKind initialKind;
 
   @override
   State<RequestFormScreen> createState() => _RequestFormScreenState();
@@ -42,7 +45,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
 
   final List<UploadPayload> _images = [];
   WasteCategory _category = WasteCategory.recyclable;
-  RequestKind _kind = RequestKind.resident;
+  late RequestKind _kind = widget.initialKind;
   DateTime _preferred = DateTime.now().add(const Duration(days: 2));
   bool _saving = false;
 
@@ -129,9 +132,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
           ),
           title: const Text('Request submitted'),
           content: Text(
-            _kind == RequestKind.special
-                ? 'Barangay staff will review your special collection request and assign a schedule.'
-                : 'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+            switch (_kind) {
+              RequestKind.special =>
+                'Barangay staff will review your special collection request and assign a schedule.',
+              RequestKind.uncollected =>
+                'Barangay Batasan Hills will check your report and ask City Hall for a second (wave 2) collection.',
+              RequestKind.resident =>
+                'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+            },
           ),
           actions: [
             FilledButton(
@@ -185,6 +193,15 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                         _KindSelector(
                           kind: _kind,
                           onChanged: (value) => setState(() => _kind = value),
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      if (_kind == RequestKind.uncollected) ...[
+                        const EcoBanner(
+                          message:
+                              'Report garbage the truck missed on its regular run. Add a photo and the exact street or landmark. The barangay asks City Hall for a wave 2 pickup.',
+                          icon: Icons.report_gmailerrorred_outlined,
+                          color: Color(0xFFEF6C00),
                         ),
                         const SizedBox(height: 14),
                       ],
@@ -492,8 +509,15 @@ class _KindSelector extends StatelessWidget {
             context,
             kind: RequestKind.special,
             label: 'Special',
-            icon: Icons.badge_outlined,
-            subtitle: 'Government',
+            icon: Icons.inventory_2_outlined,
+            subtitle: 'Big load',
+          ),
+          _option(
+            context,
+            kind: RequestKind.uncollected,
+            label: 'Missed',
+            icon: Icons.report_gmailerrorred_outlined,
+            subtitle: 'Wave 2',
           ),
         ],
       ),

@@ -113,6 +113,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
                         onTickets: () => context.go('/ticket-signatures'),
+                        onDelays: () => context.go('/delays'),
                         onWave2: () => context.go('/wave2/pass'),
                       );
                     },
@@ -556,6 +557,7 @@ class _QuickActions extends StatelessWidget {
     required this.onRecycling,
     required this.onUsers,
     required this.onTickets,
+    required this.onDelays,
     required this.onWave2,
   });
 
@@ -572,6 +574,7 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onUsers;
   final VoidCallback onParticipation;
   final VoidCallback onTickets;
+  final VoidCallback onDelays;
   final VoidCallback onWave2;
 
   @override
@@ -642,6 +645,12 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.person_add_alt_1_rounded,
         label: 'Users',
         onTap: onUsers,
+      ),
+      // Delays City Hall sends down, to announce to residents.
+      _QuickTile(
+        icon: Icons.schedule_rounded,
+        label: 'Delays',
+        onTap: onDelays,
       ),
     ];
 

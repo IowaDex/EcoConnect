@@ -483,7 +483,7 @@ service cloud.firestore {
       allow create: if isActive()
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.kind in ['resident', 'special']
+        && request.resource.data.kind in ['resident', 'special', 'uncollected']
         // Every approved resident may ask for a special pickup: their ID was
         // checked by the barangay at sign-up (isActive above).
         && (request.resource.data.kind == 'resident'

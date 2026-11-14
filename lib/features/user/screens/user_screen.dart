@@ -681,6 +681,12 @@ class _ResidentQuickActions extends StatelessWidget {
       color: Color(0xFF00695C),
     ),
     (
+      label: 'Report uncollected',
+      icon: Icons.report_gmailerrorred_outlined,
+      route: '/request-collection?kind=uncollected',
+      color: Color(0xFFEF6C00),
+    ),
+    (
       label: 'My requests',
       icon: Icons.fact_check_outlined,
       route: '/my-requests',

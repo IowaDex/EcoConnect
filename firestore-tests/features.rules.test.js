@@ -101,6 +101,9 @@ test('every approved resident may send a special request; crews may not', async 
   await assertSucceeds(setDoc(doc(as('alice'), 'collectionRequests/b'), request('alice', special)));
   await assertSucceeds(setDoc(doc(as('gina'), 'collectionRequests/d'), request('gina', special)));
   await assertFails(setDoc(doc(as('dan'), 'collectionRequests/e'), request('dan', special)));
+  // Residents report garbage the truck missed (wave 2); unknown kinds fail.
+  await assertSucceeds(setDoc(doc(as('bob'), 'collectionRequests/g'), request('bob', {kind: 'uncollected'})));
+  await assertFails(setDoc(doc(as('bob'), 'collectionRequests/h'), request('bob', {kind: 'vip'})));
   // A resident still waiting for the barangay cannot send anything.
   await seed((db) => setDoc(doc(db, 'users/pat'), {name: 'Pat', role: 'user', accountStatus: 'pending'}));
   await assertFails(setDoc(doc(as('pat'), 'collectionRequests/f'), request('pat', special)));
