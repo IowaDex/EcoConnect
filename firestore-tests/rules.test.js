@@ -596,6 +596,51 @@ test('City Hall works complaints; the barangay and admin do not', async () => {
   await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {status: 'resolved'}));
 });
 
+test('a resident replies in their own open complaint thread, and nothing more', async () => {
+  const reply = (overrides = {}) => ({
+    message: 'It happened again today.',
+    byName: 'Alice',
+    byRole: 'resident',
+    at: Timestamp.now(),
+    ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('alice'), 'complaints/c1'), complaint()));
+
+  // Their own reply, appended while the complaint is open.
+  await assertSucceeds(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply()),
+    updatedAt: serverTimestamp(),
+  }));
+  // Never posing as City Hall, never with extra fields or an empty message.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({byRole: 'cityHall', message: 'Resolved'})),
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: '', at: Timestamp.now()})),
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'x', status: 'resolved'})),
+  }));
+  // A reply cannot carry a status change, and nobody else can reply.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'And close it'})),
+    status: 'resolved',
+  }));
+  await assertFails(updateDoc(doc(as('dan'), 'complaints/c1'), {
+    responses: arrayUnion(reply({byName: 'Dan', message: 'Me too'})),
+  }));
+  // Earlier messages cannot be rewritten.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: [reply({message: 'Edited history'})],
+  }));
+
+  // Once City Hall closes it, the thread is read-only for the resident.
+  await assertSucceeds(updateDoc(doc(as('carl'), 'complaints/c1'), {status: 'resolved'}));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'Not fixed'})),
+  }));
+});
+
 // --- Points ledger ----------------------------------------------------------
 
 test('points ledger rows are written by staff and read by their owner', async () => {

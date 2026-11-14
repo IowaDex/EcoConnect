@@ -83,14 +83,16 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
           final all = snapshot.data ?? const <Complaint>[];
           _openInitial(all, byName);
           final open = all.where((c) => c.status.isOpen).length;
-          final items = all.where((complaint) {
-            if (_openOnly && !complaint.status.isOpen) return false;
-            if (_query.trim().isEmpty) return true;
-            final query = _query.toLowerCase();
-            return complaint.title.toLowerCase().contains(query) ||
-                complaint.referenceNo.toLowerCase().contains(query) ||
-                complaint.residentName.toLowerCase().contains(query);
-          }).toList(growable: false);
+          final items = all
+              .where((complaint) {
+                if (_openOnly && !complaint.status.isOpen) return false;
+                if (_query.trim().isEmpty) return true;
+                final query = _query.toLowerCase();
+                return complaint.title.toLowerCase().contains(query) ||
+                    complaint.referenceNo.toLowerCase().contains(query) ||
+                    complaint.residentName.toLowerCase().contains(query);
+              })
+              .toList(growable: false);
 
           return Column(
             children: [
@@ -250,8 +252,7 @@ class _DeskCard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(complaint.category.icon,
-                  size: 12, color: AppColors.primary),
+              Icon(complaint.category.icon, size: 12, color: AppColors.primary),
               const SizedBox(width: 4),
               Text(
                 complaint.category.label,

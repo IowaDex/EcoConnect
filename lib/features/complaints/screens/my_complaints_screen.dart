@@ -68,7 +68,8 @@ class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/user'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/user'),
         ),
         title: const Text(
           'My complaints',
@@ -197,8 +198,11 @@ class _ComplaintCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.support_agent_rounded,
-                      size: 13, color: AppColors.primary),
+                  const Icon(
+                    Icons.support_agent_rounded,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(

@@ -695,8 +695,40 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() <= 4000
         && uploadListOk(request.resource.data, 'images');
-      allow update: if isCityHall();
+      // City Hall works the complaint. The resident may only add one reply of
+      // their own to the thread while it is still open.
+      allow update: if isCityHall()
+        || (isActive()
+            && resource.data.residentId == request.auth.uid
+            && resource.data.status in ['pending', 'underReview']
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['responses', 'updatedAt'])
+            && appendsOnlyResidentReply());
       allow delete: if isCityHall();
+    }
+
+    function appendsOnlyResidentReply() {
+      let before = resource.data.get('responses', []);
+      let after = request.resource.data.get('responses', []);
+      // Checked in this order so a list that did not grow by one is refused
+      // before the new entry is read.
+      return after is list
+        && after.size() == before.size() + 1
+        // An empty slice raises an index error, so a first reply skips it.
+        && (before.size() == 0 || after[0:before.size()] == before)
+        && isResidentReply(after[before.size()]);
+    }
+
+    function isResidentReply(added) {
+      return added is map
+        && added.keys().hasOnly(['message', 'byName', 'byRole', 'at'])
+        && added.byRole == 'resident'
+        && added.message is string
+        && added.message.size() > 0
+        && added.message.size() <= 2000
+        && added.byName is string
+        && added.byName.size() <= 80
+        && added.at is timestamp;
     }
 
     // Immutable points ledger. Staff credit through the waste validation

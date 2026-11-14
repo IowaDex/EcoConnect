@@ -31,6 +31,15 @@ class ComplaintService {
       .snapshots()
       .map(_parse);
 
+  /// One complaint, live, so an open thread shows new replies from either side.
+  Stream<Complaint?> watchOne(String id) => _col
+      .doc(id)
+      .snapshots()
+      .map(
+        (doc) =>
+            doc.data() == null ? null : Complaint.fromDoc(doc.id, doc.data()!),
+      );
+
   static List<Complaint> _parse(QuerySnapshot<Map<String, dynamic>> snap) {
     final items = snap.docs
         .map((doc) => Complaint.fromDoc(doc.id, doc.data()))
@@ -121,25 +130,53 @@ class ComplaintService {
     );
   }
 
+  /// The resident's side of the conversation. Only their own reply is added
+  /// (never a status change); the rules allow it while the complaint is open.
+  Future<void> residentReply({
+    required Complaint complaint,
+    required String message,
+    required String byName,
+  }) async {
+    final text = message.trim();
+    if (text.isEmpty) throw ArgumentError('Write a message first.');
+    final reply = ComplaintResponse(
+      message: text,
+      byName: byName,
+      byRole: 'resident',
+    );
+
+    await _col.doc(complaint.id).update({
+      'responses': FieldValue.arrayUnion([reply.toMap()]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await _notifications.notifyCityHall(
+      title: 'Resident reply · ${complaint.referenceNo}',
+      body: '$byName: $text',
+      type: AppNotificationType.complaint,
+      data: {'complaintId': complaint.id, 'kind': 'complaintReply'},
+    );
+  }
+
   Future<void> updateStatus({
     required Complaint complaint,
     required ComplaintStatus status,
     required String byName,
-  }) =>
-      respond(
-        complaint: complaint,
-        message: '',
-        status: status,
-        byName: byName,
-      );
+  }) => respond(
+    complaint: complaint,
+    message: '',
+    status: status,
+    byName: byName,
+  );
 
   /// `CMP-2026-123456` — readable, unique enough for a single barangay, and
   /// generated without a counter the resident is not allowed to write.
   String _reference() {
     final now = DateTime.now();
-    final suffix = (now.millisecondsSinceEpoch % 1000000)
-        .toString()
-        .padLeft(6, '0');
+    final suffix = (now.millisecondsSinceEpoch % 1000000).toString().padLeft(
+      6,
+      '0',
+    );
     return 'CMP-${now.year}-$suffix';
   }
 }
