@@ -51,8 +51,11 @@ import 'features/tickets/screens/truck_history_screen.dart';
 import 'features/tickets/models/trip_ticket.dart';
 import 'features/iswim/screens/iswim_dashboard_screen.dart';
 import 'features/cityhall/screens/cityhall_dashboard_screen.dart';
+import 'features/cityhall/screens/signature_queue_screen.dart';
 import 'features/delay/screens/delay_screens.dart';
 import 'features/memos/screens/memo_screens.dart';
+import 'features/memos/screens/memo_detail_screen.dart';
+import 'features/memos/services/memo_service.dart';
 import 'features/memos/screens/email_log_screen.dart';
 import 'features/requests/screens/wave_approval_screen.dart';
 import 'features/fleet/screens/fleet_screen.dart';
@@ -120,6 +123,7 @@ const _iswimRoutes = {
   '/delays',
   '/delays/new',
   '/memos',
+  '/memo',
   '/manuals',
   '/manual-requests',
   ..._sharedRoutes,
@@ -133,6 +137,7 @@ const _cityHallRoutes = {
   '/accounts',
   '/delays',
   '/memos',
+  '/memo',
   '/email-log',
   '/wave2',
   '/incidents',
@@ -161,6 +166,7 @@ const _staffRoutes = {
   '/ticket-signatures',
   '/delays',
   '/memos',
+  '/memo',
   '/wave2',
   '/wave2/pass',
   ..._ticketRoutes,
@@ -283,6 +289,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/tickets/:id',
           builder: (_, state) => TicketDetailScreen(
             ticketId: state.pathParameters['id'] ?? '',
+            autoSign: state.uri.queryParameters['sign'] == '1',
           ),
         ),
         GoRoute(
@@ -300,6 +307,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/cityhall',
           builder: (_, __) => const CityHallDashboardScreen(),
         ),
+        GoRoute(
+          path: '/cityhall/signatures',
+          builder: (_, __) => const SignatureQueueScreen(),
+        ),
         GoRoute(path: '/fleet', builder: (_, __) => const FleetScreen()),
         GoRoute(path: '/accounts', builder: (_, __) => const AccountsScreen()),
         GoRoute(
@@ -313,7 +324,25 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/delays/new',
           builder: (_, __) => const FileDelayScreen(),
         ),
-        GoRoute(path: '/memos/new', builder: (_, __) => const MemoComposeScreen()),
+        GoRoute(
+          path: '/memos/new',
+          builder: (_, state) => MemoComposeScreen(
+            initialChannel: state.uri.queryParameters['channel'],
+            initialKind: MemoKindX.fromName(state.uri.queryParameters['kind']),
+          ),
+        ),
+        GoRoute(
+          path: '/memo/:id/edit',
+          builder: (_, state) =>
+              MemoComposeScreen(memoId: state.pathParameters['id']),
+        ),
+        GoRoute(
+          path: '/memo/:id',
+          builder: (_, state) => MemoDetailScreen(
+            memoId: state.pathParameters['id']!,
+            autoSign: state.uri.queryParameters['sign'] == '1',
+          ),
+        ),
         GoRoute(
           path: '/memos/:channel',
           builder: (_, state) {

@@ -163,6 +163,15 @@ class NotificationsScreen extends StatelessWidget {
     }
     if (!context.mounted) return;
 
+    // A memo alert carries the document id, so the recipient lands on the
+    // memo itself instead of the dashboard root. This applies to every desk:
+    // City Hall, Iswim and the barangay all read memos.
+    final memoId = item.data['memoId'];
+    if (item.data['kind'] == 'memo' && memoId is String && memoId.isNotEmpty) {
+      context.push('/memo/$memoId');
+      return;
+    }
+
     // Desk roles have their own destinations; residents and drivers keep the
     // original routes.
     if (role == UserRole.cityHall || role == UserRole.iswim) {

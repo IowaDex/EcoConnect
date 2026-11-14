@@ -14,6 +14,7 @@ import '../../notifications/widgets/notification_bell.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
 import '../../tickets/widgets/ticket_card.dart';
+import '../../tickets/widgets/ticket_flow_filter.dart';
 
 /// Iswim's console: issues the tickets, signs them, and keeps the per-truck
 /// history the barangay and City Hall both read.
@@ -96,10 +97,18 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
   }
 }
 
-class _TicketFeed extends StatelessWidget {
+class _TicketFeed extends StatefulWidget {
   const _TicketFeed({required this.userName});
 
   final String userName;
+
+  @override
+  State<_TicketFeed> createState() => _TicketFeedState();
+}
+
+class _TicketFeedState extends State<_TicketFeed> {
+  /// `null` means All.
+  TicketFlowStage? _stage;
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +120,7 @@ class _TicketFeed extends StatelessWidget {
         final running = tickets.where((t) => t.canStartTrip).length;
         final toSign =
             tickets.where((t) => t.status == TicketStatus.barangaySigned).length;
+        final visible = ticketsInStage(tickets, _stage);
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(22, 14, 22, 96),
@@ -126,7 +136,7 @@ class _TicketFeed extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              userName,
+              widget.userName,
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -187,10 +197,45 @@ class _TicketFeed extends StatelessWidget {
                   '/manual-requests',
                 ),
                 const SizedBox(width: 8),
-                const Expanded(child: SizedBox()),
+                _quickAction(
+                  context,
+                  Icons.inbox_outlined,
+                  'Memos',
+                  '/memos/iswim',
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Text(
+                  'Tickets',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.forest,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _stage == null
+                      ? '${tickets.length} total'
+                      : '${visible.length} of ${tickets.length}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TicketFlowFilterBar(
+              selected: _stage,
+              counts: ticketStageCounts(tickets),
+              total: tickets.length,
+              onChanged: (stage) => setState(() => _stage = stage),
+            ),
+            const SizedBox(height: 12),
             if (tickets.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
@@ -205,8 +250,10 @@ class _TicketFeed extends StatelessWidget {
                   ),
                 ),
               )
+            else if (visible.isEmpty)
+              _stageEmpty(_stage!)
             else
-              for (final ticket in tickets) ...[
+              for (final ticket in visible) ...[
                 TicketCard(
                   ticket: ticket,
                   onTap: () => context.push('/tickets/${ticket.id}'),
@@ -216,6 +263,64 @@ class _TicketFeed extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  /// Shown when the active stage has no tickets. The chips keep their counts,
+  /// so the desk can see at a glance where the work actually is.
+  Widget _stageEmpty(TicketFlowStage stage) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 42,
+            width: 42,
+            decoration: const BoxDecoration(
+              color: AppColors.mint,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(stage.icon, size: 20, color: AppColors.forest),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No tickets in ${stage.label.toLowerCase()}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.forest,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            stage.description,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 9.5,
+              height: 1.6,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _stage = null),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Show all tickets',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

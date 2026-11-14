@@ -66,4 +66,22 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/fleet'), '/driver');
   });
+
+  test('memo and signature screens stay inside the government desks', () {
+    // Every desk keeps its own inbox, detail and compose screens.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/memos/cityHall'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/memo/m1'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/memo/m1/edit'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/memos/new'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/memos/iswim'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/memos/new'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/memos/barangay'), isNull);
+    // The signature queue is City Hall's, not the other desks'.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/cityhall/signatures'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/cityhall/signatures'), '/iswim');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/cityhall/signatures'), '/admin-dashboard');
+    // Residents and drivers never enter the memo channel.
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/memos/cityHall'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/memo/m1'), '/driver');
+  });
 }

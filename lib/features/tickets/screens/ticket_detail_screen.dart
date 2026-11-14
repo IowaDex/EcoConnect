@@ -14,9 +14,18 @@ import '../widgets/signature_sheet.dart';
 /// One trip ticket, end to end: what was issued, what the driver did, and the
 /// three signatures that close it.
 class TicketDetailScreen extends StatefulWidget {
-  const TicketDetailScreen({super.key, required this.ticketId});
+  const TicketDetailScreen({
+    super.key,
+    required this.ticketId,
+    this.autoSign = false,
+  });
 
   final String ticketId;
+
+  /// Opens the signature sheet as soon as the ticket loads, when the signed-in
+  /// desk is the one the ticket is waiting for. Used by the City Hall desk's
+  /// "Sign" button on a card.
+  final bool autoSign;
 
   @override
   State<TicketDetailScreen> createState() => _TicketDetailScreenState();
@@ -25,6 +34,7 @@ class TicketDetailScreen extends StatefulWidget {
 class _TicketDetailScreenState extends State<TicketDetailScreen> {
   final _service = TicketService();
   bool _busy = false;
+  bool _autoSignHandled = false;
 
   String _format(DateTime? time) {
     if (time == null) return '—';
@@ -265,6 +275,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             _ => null,
           };
           final canSign = mySigner != null && expected == mySigner;
+
+          // Arriving from a desk card's "Sign" button: open the sheet once,
+          // after the first frame so the page is already mounted.
+          if (widget.autoSign && canSign && !_autoSignHandled) {
+            _autoSignHandled = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _sign(ticket, mySigner);
+            });
+          }
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
