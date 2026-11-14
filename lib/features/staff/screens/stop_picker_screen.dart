@@ -245,6 +245,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                       ),
                       children: [
                         BatasanHills.tiles(),
+                        BatasanHills.boundaryLayer(),
                         if (mapped.length > 1)
                           PolylineLayer(
                             polylines: [

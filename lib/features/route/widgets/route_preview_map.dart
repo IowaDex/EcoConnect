@@ -61,6 +61,7 @@ class RoutePreviewMap extends StatelessWidget {
           ),
           children: [
             BatasanHills.tiles(tileProvider: tileProvider),
+            BatasanHills.boundaryLayer(),
             if (points.length > 1)
               PolylineLayer(
                 polylines: [

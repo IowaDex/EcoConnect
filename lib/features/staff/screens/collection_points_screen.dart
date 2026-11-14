@@ -106,6 +106,7 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                           ),
                           children: [
                             BatasanHills.tiles(),
+                            BatasanHills.boundaryLayer(),
                             PolylineLayer(
                               polylines: _routes(points),
                             ),
@@ -804,6 +805,7 @@ class _PointEditorState extends State<_PointEditor> {
                             ),
                             children: [
                               BatasanHills.tiles(),
+                              BatasanHills.boundaryLayer(),
                               MarkerLayer(
                                 markers: [
                                   Marker(

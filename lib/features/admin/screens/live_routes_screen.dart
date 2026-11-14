@@ -233,6 +233,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
       options: BatasanHills.options(zoom: BatasanHills.minZoom),
       children: [
         BatasanHills.tiles(),
+        BatasanHills.boundaryLayer(),
         if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
         if (markers.isNotEmpty) MarkerLayer(markers: markers),
         const OsmAttribution(),

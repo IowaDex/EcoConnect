@@ -221,6 +221,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                     ),
                     children: [
                       BatasanHills.tiles(tileProvider: widget.tileProvider),
+                      BatasanHills.boundaryLayer(),
                       if (road.length > 1)
                         PolylineLayer(
                           polylines: [

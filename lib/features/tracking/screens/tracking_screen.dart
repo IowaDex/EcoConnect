@@ -113,6 +113,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   options: BatasanHills.options(center: truckPoint ?? resident),
                   children: [
                     BatasanHills.tiles(),
+                    BatasanHills.boundaryLayer(),
                     // The planned path, so residents know the streets the
                     // truck will take before it arrives.
                     if (stopPoints.length > 1)
