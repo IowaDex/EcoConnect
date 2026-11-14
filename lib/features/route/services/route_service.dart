@@ -365,6 +365,11 @@ class RouteService {
     double? latitude,
     double? longitude,
     bool overrideWindow = false,
+    String? truckPlate,
+    int? truckWheelers,
+    String? crewRole,
+    double? geofenceLat,
+    double? geofenceLng,
   }) async {
     final routeRef = _routes.doc(driverId);
     final planRef = _plans.doc(planId);
@@ -455,6 +460,16 @@ class RouteService {
           'lastKnownLat': latitude,
           'lastKnownLng': longitude,
           'locationUpdatedAt': FieldValue.serverTimestamp(),
+          // Which vehicle is running, and the point the 100 m radius is
+          // measured from. Staff read these on the live routes board.
+          if (truckPlate != null) 'truckPlate': truckPlate,
+          if (truckWheelers != null) 'truckWheelers': truckWheelers,
+          if (crewRole != null) 'crewRole': crewRole,
+          'geofenceLat': geofenceLat ?? latitude,
+          'geofenceLng': geofenceLng ?? longitude,
+          'geofenceRadius': 100,
+          'geofenceState': 'ok',
+          'connectionState': 'ok',
           'updatedAt': FieldValue.serverTimestamp(),
           'lastSeenAt': FieldValue.serverTimestamp(),
         },

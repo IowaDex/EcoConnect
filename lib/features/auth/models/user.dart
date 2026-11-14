@@ -1,6 +1,34 @@
+import '../../driver/models/truck_crew_role.dart';
 import 'account_type.dart';
 
-enum UserRole { user, driver, admin }
+/// Who an account belongs to.
+///
+/// [admin] is the barangay (mini admin), [cityHall] is the DSQC super admin,
+/// and [iswim] is the collection partner that owns the trucks and drivers.
+enum UserRole { user, driver, admin, iswim, cityHall }
+
+extension UserRoleX on UserRole {
+  /// Name shown on badges and the staff console.
+  String get label => switch (this) {
+        UserRole.user => 'Resident',
+        UserRole.driver => 'Driver',
+        UserRole.admin => 'Barangay admin',
+        UserRole.iswim => 'Iswim',
+        UserRole.cityHall => 'City Hall · DSQC',
+      };
+
+  /// True for every role that signs a trip ticket.
+  bool get isSigner => switch (this) {
+        UserRole.admin || UserRole.iswim || UserRole.cityHall => true,
+        _ => false,
+      };
+
+  /// City Hall is the super admin: it provisions the accounts Iswim needs.
+  bool get isSuperAdmin => this == UserRole.cityHall;
+
+  /// Barangay staff screens (mini admin).
+  bool get isBarangayAdmin => this == UserRole.admin;
+}
 
 class AppUser {
   final String uid;
@@ -35,6 +63,15 @@ class AppUser {
   /// Why a verification was rejected, shown to the account owner.
   final String? rejectionReason;
 
+  /// Driver or guide. Both share the driver role and the same dashboard; the
+  /// guide is the crew member holding the device when the driver has no phone.
+  final TruckCrewRole crewRole;
+
+  /// Truck the barangay/Iswim assigned to this driver. A truck always has a
+  /// driver and a driver always has a truck, so this is never empty for a
+  /// driver account.
+  final String? assignedTruckId;
+
   AppUser({
     required this.uid,
     this.email,
@@ -52,6 +89,8 @@ class AppUser {
     this.accountType = AccountType.resident,
     this.verificationStatus = VerificationStatus.unverified,
     this.rejectionReason,
+    this.crewRole = TruckCrewRole.driver,
+    this.assignedTruckId,
   });
 
   bool get isPendingApproval => accountStatus == 'pending';
@@ -82,6 +121,8 @@ class AppUser {
     AccountType? accountType,
     VerificationStatus? verificationStatus,
     String? rejectionReason,
+    TruckCrewRole? crewRole,
+    String? assignedTruckId,
   }) {
     return AppUser(
       uid: uid,
@@ -100,6 +141,8 @@ class AppUser {
       accountType: accountType ?? this.accountType,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       rejectionReason: rejectionReason ?? this.rejectionReason,
+      crewRole: crewRole ?? this.crewRole,
+      assignedTruckId: assignedTruckId ?? this.assignedTruckId,
     );
   }
 

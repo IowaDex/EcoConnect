@@ -633,11 +633,24 @@ class _DriverCard extends StatelessWidget {
     final zone =
         (route.zone ?? '').trim().isEmpty ? 'Unassigned zone' : route.zone!;
     final status = route.isStale ? 'Signal lost' : route.status.label;
-    final attention = route.status == RouteStatus.paused
-        ? 'Route paused'
-        : route.locationState.needsAttention
-            ? route.locationState.label
-            : null;
+    // Trip guard first: a crew that switched the phone off, or drove out of
+    // the zone, is the thing staff must act on.
+    final attention = route.connectionAlert
+        ? 'Device offline · wifi/data off'
+        : route.outsideRadius
+            ? (route.geofenceMeters == null
+                ? 'Outside the 100 m radius'
+                : 'Outside radius · ${route.geofenceMeters} m from centre')
+            : route.status == RouteStatus.paused
+                ? 'Route paused'
+                : route.locationState.needsAttention
+                    ? route.locationState.label
+                    : null;
+    final truckLine = route.truckPlate == null
+        ? null
+        : '${route.truckPlate}'
+            '${route.truckWheelers == null ? '' : ' · ${route.truckWheelers}-wheeler'}'
+            '${route.crewRole == 'guide' ? ' · guide on device' : ''}';
     final stops = plan?.stops ?? const <RouteStop>[];
     final next = stops.isEmpty ? null : stops.first.name;
     final eta = route.etaMinutes;
@@ -708,6 +721,28 @@ class _DriverCard extends StatelessWidget {
                       color: AppColors.inkMuted,
                     ),
                   ),
+                  if (truckLine != null) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(Icons.local_shipping_rounded,
+                            size: 11, color: AppColors.moss),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            truckLine,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (attention != null) ...[
                     const SizedBox(height: 5),
                     Row(
