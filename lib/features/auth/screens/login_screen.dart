@@ -44,6 +44,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success) {
       context.go('/dashboard');
+    } else if (authProvider.loginErrorType == AuthErrorType.needsEmailCode) {
+      // Signed up but never typed the emailed code: finish it now.
+      context.go('/verify-email');
     } else if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
       _showUnverifiedDialog(_emailController.text.trim());
     } else if (authProvider.error != null) {

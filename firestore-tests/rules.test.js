@@ -299,14 +299,29 @@ test('ending a run lets the driver clear the published position', async () => {
 
 test('signup cannot choose the admin role', async () => {
   await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin', accountStatus: 'active'}));
-  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'active'}));
+  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'pending'}));
 });
 
-test('signup cannot skip approval, self-credit points or upload a huge photo', async () => {
+test('signup is residents only, waits for the barangay and cannot self-verify', async () => {
+  // Residents start pending; nobody signs themselves up active or as a driver.
+  await assertFails(setDoc(doc(as('u0'), 'users/u0'), {name: 'U', role: 'user', accountStatus: 'active'}));
   await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active'}));
-  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'active', points: 999}));
-  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'active', photoUrl: 'x'.repeat(150000)}));
-  await assertSucceeds(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'pending', points: 999}));
+  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'pending', photoUrl: 'x'.repeat(150000)}));
+  // The email code is checked by the server, never claimed by the client.
+  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailOtpVerified: true}));
+  await assertSucceeds(setDoc(doc(as('u4'), 'users/u4'), {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending', verificationStatus: 'pending',
+  }));
+  await assertFails(updateDoc(doc(as('u4'), 'users/u4'), {emailOtpVerified: true}));
+  await assertFails(updateDoc(doc(as('u4'), 'users/u4'), {accountStatus: 'active'}));
+});
+
+test('sign-up email codes are server-only', async () => {
+  await assertFails(getDoc(doc(as('u4'), 'signupOtps/u4')));
+  await assertFails(setDoc(doc(as('u4'), 'signupOtps/u4'), {codeHash: 'x'}));
+  await assertFails(getDoc(doc(as('root'), 'signupOtps/u4')));
 });
 
 test('users cannot approve themselves, edit points or set a huge photo', async () => {

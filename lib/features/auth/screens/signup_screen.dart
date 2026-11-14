@@ -13,6 +13,8 @@ import '../utils/validators.dart';
 import '../widgets/app_text_field.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/image_picker_field.dart';
+import '../../../core/utils/image_payload.dart';
 import '../widgets/psgc_field.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -43,6 +45,9 @@ class _SignupScreenState extends State<SignupScreen> {
   PsgcOption? _provinceOption;
   PsgcOption? _cityOption;
   PsgcOption? _barangayOption;
+
+  /// The resident's valid ID, checked by the barangay before they can sign in.
+  UploadPayload? _idDocument;
 
   @override
   void dispose() {
@@ -81,6 +86,11 @@ class _SignupScreenState extends State<SignupScreen> {
 
   void _toProfile() {
     if (!_credentialsKey.currentState!.validate()) return;
+    _next();
+  }
+
+  void _toId() {
+    if (!_profileKey.currentState!.validate()) return;
     _next();
   }
 
@@ -146,7 +156,10 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_profileKey.currentState!.validate()) return;
+    if (_idDocument == null) {
+      _toast('Please upload a valid ID first');
+      return;
+    }
     FocusScope.of(context).unfocus();
 
     final auth = context.read<AuthProvider>();
@@ -156,6 +169,7 @@ class _SignupScreenState extends State<SignupScreen> {
       password: _password.text,
       role: UserRole.user,
       accountType: AccountType.resident,
+      verificationDocument: _idDocument,
       profile: {
         'age': int.tryParse(_age.text.trim()),
         'phone': Phone.toE164(_phone.text),
@@ -169,24 +183,8 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!mounted) return;
 
     if (success) {
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Check your inbox'),
-          content: Text(
-            'We sent a verification link to ${_email.text.trim()}. '
-            'Verify your email within 10 minutes, then log in.',
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Got it'),
-            ),
-          ],
-        ),
-      );
-      if (mounted) context.go('/login');
+      // Still signed in: the next step emails a code and checks it.
+      context.go('/verify-email');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -242,7 +240,8 @@ class _SignupScreenState extends State<SignupScreen> {
                     duration: const Duration(milliseconds: 260),
                     child: switch (_step) {
                       0 => _credentialsStep(auth),
-                      _ => _profileStep(auth),
+                      1 => _profileStep(auth),
+                      _ => _idStep(auth),
                     },
                   ),
                 ),
@@ -390,6 +389,51 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  Widget _idStep(AuthProvider auth) {
+    return Column(
+      key: const ValueKey('id'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Upload your\nvalid ID',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            height: 1.15,
+            color: AppColors.forest,
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Barangay Batasan Hills checks your ID before your account is '
+          'activated. Take or choose a clear photo of a government-issued ID '
+          'that shows your name and address.',
+          style: TextStyle(fontSize: 12, height: 1.45, color: AppColors.inkMuted),
+        ),
+        const SizedBox(height: 18),
+        ImagePickerField(
+          key: const ValueKey('id-upload'),
+          label: 'Valid ID',
+          helper: 'Photo · only you and barangay staff can see it',
+          value: _idDocument,
+          onChanged: (value) => setState(() => _idDocument = value),
+        ),
+        const SizedBox(height: 22),
+        PrimaryButton(
+          label: 'Create account',
+          loading: auth.isLoading,
+          onPressed: _submit,
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Next, we email you a 6-digit code to confirm your address.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
+        ),
+      ],
+    );
+  }
+
   Widget _profileStep(AuthProvider auth) {
     return Form(
       key: _profileKey,
@@ -490,9 +534,8 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           const SizedBox(height: 26),
           PrimaryButton(
-            label: 'Create account',
-            loading: auth.isLoading,
-            onPressed: _submit,
+            label: 'Next',
+            onPressed: _toId,
           ),
           const SizedBox(height: 12),
           Wrap(

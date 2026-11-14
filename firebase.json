@@ -11,6 +11,21 @@
     "firestore": {
       "port": 8080
     },
-    "singleProjectMode": true
-  }
+    "singleProjectMode": true,
+    "functions": {
+      "port": 5001
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.test.js",
+        "*.log"
+      ]
+    }
+  ]
 }

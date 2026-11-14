@@ -70,12 +70,14 @@ test('nobody can self-verify, change account type or clear a rejection', async (
 });
 
 test('signup can ask for government review but not skip it', async () => {
-  const base = {name: 'E', role: 'user', accountStatus: 'active'};
+  const base = {name: 'E', role: 'user', accountStatus: 'pending'};
   const gov = {...base, accountType: 'government'};
   await assertFails(setDoc(doc(as('e1'), 'users/e1'), {...gov, verificationStatus: 'verified'}));
   await assertFails(setDoc(doc(as('e2'), 'users/e2'), {...base, accountType: 'admin'}));
   await assertFails(setDoc(doc(as('e3'), 'users/e3'), {...base, accountType: 'resident', verificationStatus: 'verified'}));
   await assertSucceeds(setDoc(doc(as('e4'), 'users/e4'), {...gov, verificationStatus: 'pending'}));
+  // Every resident's ID now waits for the barangay too.
+  await assertSucceeds(setDoc(doc(as('e5'), 'users/e5'), {...base, accountType: 'resident', verificationStatus: 'pending'}));
 });
 
 // -------------------------------------------------------- collectionRequests
@@ -240,7 +242,9 @@ test('a government ID is submitted by its owner, as pending, within the size cap
   await assertSucceeds(create('ugo', 'a', verification('ugo')));
   await assertFails(create('alice', 'b', verification('ugo')));
   await assertFails(create('ugo', 'c', verification('ugo', {status: 'verified'})));
-  await assertFails(create('ugo', 'd', verification('ugo', {accountType: 'resident'})));
+  // Residents upload an ID at sign-up as well; other account types do not.
+  await assertSucceeds(create('ugo', 'd', verification('ugo', {accountType: 'resident'})));
+  await assertFails(create('ugo', 'g', verification('ugo', {accountType: 'admin'})));
   await assertFails(create('ugo', 'e', verification('ugo', {document: {dataUrl: text(900000)}})));
   await assertFails(create('ugo', 'f', verification('ugo', {document: 'scan.pdf'})));
 });

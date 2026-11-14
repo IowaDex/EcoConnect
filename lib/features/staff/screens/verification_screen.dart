@@ -276,7 +276,11 @@ class _GovernmentIdsTabState extends State<_GovernmentIdsTab> {
         if (snapshot.hasError) {
           return ErrorView(message: AppFeedback.describe(snapshot.error!));
         }
-        var items = snapshot.data ?? const <VerificationRequest>[];
+        // Resident sign-up IDs are decided on the Residents tab, where approving
+        // also activates the account; this tab is for government personnel.
+        var items = (snapshot.data ?? const <VerificationRequest>[])
+            .where((r) => r.accountType == AccountType.government)
+            .toList(growable: false);
         if (!_showReviewed) {
           items = items
               .where((r) => r.status == VerificationStatus.pending)
@@ -565,6 +569,7 @@ class _DocumentPreview extends StatelessWidget {
 }
 
 enum _ResidentAction {
+  viewId,
   approveRegistration,
   rejectRegistration,
   verify,
@@ -576,6 +581,7 @@ String _registrationLabel(String status) => switch (status) {
       'pending' => 'Registration pending',
       'approved' => 'Awaiting resident',
       'declined' => 'Resident declined',
+      'rejected' => 'Registration rejected',
       _ => 'Registration accepted',
     };
 
@@ -583,6 +589,7 @@ Color _registrationColor(String status) => switch (status) {
       'pending' => AppColors.warning,
       'approved' => const Color(0xFF1565C0),
       'declined' => AppColors.error,
+      'rejected' => AppColors.error,
       _ => AppColors.primary,
     };
 
@@ -610,6 +617,28 @@ class _ResidentsTabState extends State<_ResidentsTab> {
 
   void _reload() {
     setState(() => _future = _load());
+  }
+
+  /// Shows the ID the resident uploaded at sign-up.
+  Future<void> _viewId(Map<String, dynamic> user) async {
+    final request = await _service.fetchForUser(user['uid'] as String);
+    if (!mounted) return;
+    final document = request?.document;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ID · ${(user['name'] as String?) ?? 'Resident'}'),
+        content: document == null
+            ? const Text('This resident has not uploaded an ID.')
+            : _DocumentPreview(document: document),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _set(
@@ -664,7 +693,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
       AppFeedback.success(
         context,
         status == VerificationStatus.verified && openRegistration
-            ? 'Registration approved — the resident will accept or decline'
+            ? 'Registration approved — the resident can now sign in'
             : 'Verification updated',
       );
       _reload();
@@ -706,6 +735,10 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             );
             final registration =
                 (user['registrationStatus'] as String?) ?? 'accepted';
+            // A new sign-up must type its emailed code before the barangay
+            // can approve it.
+            final awaitingEmail = user['accountStatus'] == 'pending' &&
+                user['emailOtpVerified'] != true;
             return EcoCard(
               child: Row(
                 children: [
@@ -759,6 +792,12 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                               color: _registrationColor(registration),
                               compact: true,
                             ),
+                            if (awaitingEmail)
+                              const StatusBadge(
+                                label: 'Email not verified',
+                                color: AppColors.warning,
+                                compact: true,
+                              ),
                           ],
                         ),
                       ],
@@ -768,6 +807,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                     icon: const Icon(Icons.more_vert_rounded,
                         size: 18, color: AppColors.inkMuted),
                     onSelected: (value) => switch (value) {
+                      _ResidentAction.viewId => _viewId(user),
                       _ResidentAction.approveRegistration =>
                         _set(user, VerificationStatus.verified),
                       _ResidentAction.rejectRegistration =>
@@ -779,7 +819,11 @@ class _ResidentsTabState extends State<_ResidentsTab> {
                         _set(user, VerificationStatus.unverified),
                     },
                     itemBuilder: (_) => [
-                      if (registration == 'pending') ...[
+                      const PopupMenuItem(
+                        value: _ResidentAction.viewId,
+                        child: Text('View ID'),
+                      ),
+                      if (registration == 'pending' && !awaitingEmail) ...[
                         const PopupMenuItem(
                           value: _ResidentAction.approveRegistration,
                           child: Text('Approve registration'),

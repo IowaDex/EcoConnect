@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/offline_gate.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
+import 'features/auth/screens/verify_email_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/landing/screens/landing_screen.dart';
@@ -72,6 +73,8 @@ const _publicRoutes = {
   '/login',
   '/signup',
   '/forgot-password',
+  // A pending sign-up types its emailed code here; it is not yet a session.
+  '/verify-email',
 };
 
 const _sharedRoutes = {
@@ -268,6 +271,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(
           path: '/forgot-password',
           builder: (_, __) => const ForgotPasswordScreen(),
+        ),
+        GoRoute(
+          path: '/verify-email',
+          builder: (_, __) => const VerifyEmailScreen(),
         ),
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
         GoRoute(

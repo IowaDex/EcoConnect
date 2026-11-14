@@ -22,6 +22,8 @@ void main() {
     expect(authRedirect(initialized: true, role: null, location: '/welcome'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/signup'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/forgot-password'), isNull);
+    // A pending sign-up types its emailed code before it is a session.
+    expect(authRedirect(initialized: true, role: null, location: '/verify-email'), isNull);
   });
 
   test('a signed-in user never sees the landing page', () {

@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
+import 'package:cloud_functions/cloud_functions.dart'
+    show FirebaseFunctionsException;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -100,6 +102,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// The email of a sign-up waiting for its emailed code, if any.
+  String? get pendingSignupEmail => _authService.pendingSignupEmail;
+
+  /// Emails a sign-up code. Returns the address, or null on failure ([error]).
+  Future<String?> requestEmailCode() async {
+    _clearError();
+    try {
+      return await _authService.requestEmailCode();
+    } catch (e) {
+      _setError(_functionMessage(e));
+      return null;
+    }
+  }
+
+  /// Checks the emailed code. True when the registration went to the barangay.
+  Future<bool> verifyEmailCode(String code) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      await _authService.verifyEmailCode(code);
+      return true;
+    } catch (e) {
+      _setError(_functionMessage(e));
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> cancelPendingSignup() => _authService.cancelPendingSignup();
+
+  /// Cloud Function errors carry a message written for the resident.
+  String _functionMessage(Object e) {
+    if (e is FirebaseFunctionsException) {
+      return e.message ?? 'Something went wrong. Please try again.';
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
   Future<bool> login({
     required String email,
     required String password,
@@ -133,6 +174,15 @@ class AuthProvider extends ChangeNotifier {
           );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
+        case AuthErrorType.needsEmailCode:
+          _setError('Enter the code we emailed you to finish signing up.');
+        case AuthErrorType.accountDeclined:
+          final reason = e.reason?.trim();
+          _setError(
+            'Barangay Batasan Hills did not approve your registration'
+            '${reason == null || reason.isEmpty ? '.' : ': $reason'} '
+            'Please contact the barangay staff.',
+          );
       }
       AppLogger.error('Login rejected', e.type);
       return false;

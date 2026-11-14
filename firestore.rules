@@ -145,19 +145,20 @@ service cloud.firestore {
       //     written by the desk and arrives already active;
       //  3. the barangay desk makes its own crews — but it cannot mint another
       //     super admin or an Iswim account.
+      // Self sign-up is residents only. They start pending: the email code
+      // (checked server-side, which alone sets emailOtpVerified) and the
+      // barangay's ID check both come before they may sign in.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
-        && ((request.resource.data.role == 'user'
-              && request.resource.data.accountStatus == 'active')
-            || (request.resource.data.role == 'driver'
-              && request.resource.data.accountStatus == 'pending'))
+        && request.resource.data.role == 'user'
+        && request.resource.data.accountStatus == 'pending'
+        && (!('registrationStatus' in request.resource.data)
+            || request.resource.data.registrationStatus == 'pending')
         && (!('accountType' in request.resource.data)
             || request.resource.data.accountType in ['resident', 'government'])
         && (!('verificationStatus' in request.resource.data)
-            || request.resource.data.verificationStatus
-                 == (request.resource.data.get('accountType', 'resident') == 'government'
-                      ? 'pending'
-                      : 'unverified'))
+            || request.resource.data.verificationStatus == 'pending')
+        && !('emailOtpVerified' in request.resource.data)
         && !('points' in request.resource.data)
         && photoOk(request.resource.data))
         || (isCityHall()
@@ -179,7 +180,8 @@ service cloud.firestore {
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
                          'accountType', 'verificationStatus', 'verifiedBy',
                          'verificationDate', 'rejectionReason', 'approvedAt',
-                         'registrationApprovedAt'])
+                         'registrationApprovedAt', 'emailOtpVerified',
+                         'emailOtpVerifiedAt'])
           && residentAnswer()
           && photoOk(request.resource.data))
         || isAdmin() || isCityHall();
@@ -518,11 +520,18 @@ service cloud.firestore {
     }
 
     // Government ID submissions. Readable only by the applicant and staff.
+    // Sign-up email codes. Written and checked only by the Cloud Functions
+    // (Admin SDK); no client may read or write them.
+    match /signupOtps/{userId} {
+      allow read, write: if false;
+    }
+
     match /verificationRequests/{requestId} {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSelf(request.resource.data.userId)
         && request.resource.data.status == 'pending'
-        && request.resource.data.accountType == 'government'
+        // Every resident uploads an ID at sign-up; government accounts too.
+        && request.resource.data.accountType in ['resident', 'government']
         && request.resource.data.document is map
         && request.resource.data.document.dataUrl is string
         && request.resource.data.document.dataUrl.size() < 900000;

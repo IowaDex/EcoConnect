@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/user.dart';
 import '../models/account_type.dart';
 import '../../driver/models/truck_crew_role.dart';
@@ -18,11 +19,17 @@ enum AuthErrorType {
   accountRemoved,
   accountPending,
   accountSuspended,
+  /// A resident signed up but never entered the emailed code. The session is
+  /// kept so the code screen can finish it.
+  needsEmailCode,
+  /// The barangay rejected the registration; [AuthException.reason] says why.
+  accountDeclined,
 }
 
 class AuthException implements Exception {
   final AuthErrorType type;
-  const AuthException(this.type);
+  final String? reason;
+  const AuthException(this.type, {this.reason});
 }
 
 class AuthService {
@@ -105,83 +112,81 @@ class AuthService {
     UploadPayload? verificationDocument,
     TruckCrewRole crewRole = TruckCrewRole.driver,
   }) async {
-    // Government personnel must supply an ID before the account is created;
-    // otherwise the Firestore rules would reject the follow-up write and
-    // leave an orphaned login.
-    if (accountType == AccountType.government && verificationDocument == null) {
-      throw Exception('Please upload your government ID to continue.');
+    // Only residents sign themselves up (crews and staff are provisioned by
+    // City Hall), and every resident uploads an ID for the barangay to check.
+    // Checked before the login exists, so a missing ID never leaves an
+    // orphaned account behind.
+    if (role != UserRole.user) {
+      throw Exception('Only residents can sign up in the app.');
+    }
+    if (verificationDocument == null) {
+      throw Exception('Please upload your ID to continue.');
     }
 
-    // Create Firebase user
     final credential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
     );
-
-    // Update display name
     await credential.user?.updateDisplayName(name);
-
-    // Send Firebase Authentication's built-in verification email
-    await credential.user?.sendEmailVerification();
-
     final uid = credential.user!.uid;
-    final isGovernment = accountType == AccountType.government;
 
-    // Store user data in Firestore
+    // Pending until two things happen: the resident types the emailed code
+    // (checked by the server, which then tells the barangay) and the barangay
+    // approves their ID. Only then can they sign in.
     await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
       'role': role.name,
       'createdAt': FieldValue.serverTimestamp(),
       'emailVerified': false,
-      // Drivers and barangay staff need approval before they can sign in.
-      'accountStatus': role == UserRole.user ? 'active' : 'pending',
-      // Residents can use the app while the barangay reviews their
-      // registration; the decision only changes the registration state.
-      if (role == UserRole.user) 'registrationStatus': 'pending',
+      'accountStatus': 'pending',
+      'registrationStatus': 'pending',
       'accountType': accountType.name,
-      // Government personnel stay unverified until staff review their ID.
-      'verificationStatus': isGovernment
-          ? VerificationStatus.pending.name
-          : VerificationStatus.unverified.name,
-      // Driver vs. guide. Both keep role 'driver': the crew role only changes
-      // the labels and who the barangay is told is holding the device.
-      if (role == UserRole.driver) 'crewRole': crewRole.wireName,
+      'verificationStatus': VerificationStatus.pending.name,
       if (profile != null) ...profile,
     });
 
     // The ID lives in its own collection so only the owner and barangay staff
     // can read it. Written while the new account is still signed in.
-    if (isGovernment) {
-      await _firestore.collection('verificationRequests').doc(uid).set({
-        'userId': uid,
-        'name': name,
-        'email': email,
-        'phone': profile?['phone'],
-        'barangay': profile?['barangay'],
-        'accountType': AccountType.government.name,
-        'document': verificationDocument?.toMap(),
-        'status': VerificationStatus.pending.name,
-        'submittedAt': FieldValue.serverTimestamp(),
-      });
-    }
+    await _firestore.collection('verificationRequests').doc(uid).set({
+      'userId': uid,
+      'name': name,
+      'email': email,
+      'phone': profile?['phone'],
+      'barangay': profile?['barangay'],
+      'accountType': accountType.name,
+      'document': verificationDocument.toMap(),
+      'status': VerificationStatus.pending.name,
+      'submittedAt': FieldValue.serverTimestamp(),
+    });
 
-    // The barangay desk reviews new residents, so it is told a registration
-    // is waiting. Written while the new account is still signed in, because
-    // the notification rules require an active session.
-    if (role == UserRole.user) {
-      await NotificationService().notifyStaff(
-        title: 'New resident registration',
-        body: '$name registered and is waiting for review.',
-        type: AppNotificationType.account,
-        data: {'uid': uid},
-      );
-    }
-
-    // Do not keep them logged in until email is verified
-    await _auth.signOut();
-    AppLogger.info('Account created; verification email requested');
+    // The session is kept: the email-code screen needs it next.
+    AppLogger.info('Resident signed up; waiting for the email code');
   }
+
+  /// Emails a 6-digit sign-up code to the signed-in, still-pending resident.
+  /// Returns the address it went to.
+  Future<String> requestEmailCode() async {
+    final result = await FirebaseFunctions.instance
+        .httpsCallable('requestSignupOtp')
+        .call<Map<String, dynamic>>();
+    return (result.data['sentTo'] as String?) ?? '';
+  }
+
+  /// Checks the typed code. On success the barangay is notified and the
+  /// session ends: the resident signs in once the barangay approves.
+  Future<void> verifyEmailCode(String code) async {
+    await FirebaseFunctions.instance
+        .httpsCallable('verifySignupOtp')
+        .call<Map<String, dynamic>>({'code': code.trim()});
+    await _auth.signOut();
+  }
+
+  /// The email address of the half-finished sign-up, if one is signed in.
+  String? get pendingSignupEmail => _auth.currentUser?.email;
+
+  /// Leaves the email-code step without finishing it.
+  Future<void> cancelPendingSignup() => _auth.signOut();
 
   // Login with email and password
   Future<AppUser> login({
@@ -208,9 +213,30 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountRemoved);
       }
 
+      // A resident who left before typing the emailed code finishes it now:
+      // the session stays so the code screen can call the server.
+      if (appUser.role == UserRole.user && appUser.isPendingApproval) {
+        final raw = (await _firestore
+                .collection('users')
+                .doc(appUser.uid)
+                .get())
+            .data();
+        if (raw?['emailOtpVerified'] != true) {
+          throw const AuthException(AuthErrorType.needsEmailCode);
+        }
+      }
+
       if (appUser.isPendingApproval) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.accountPending);
+      }
+
+      if (appUser.accountStatus == 'declined') {
+        await _auth.signOut();
+        throw AuthException(
+          AuthErrorType.accountDeclined,
+          reason: appUser.rejectionReason,
+        );
       }
 
       // A frozen login keeps its data but loses access: City Hall suspends a
