@@ -16,8 +16,43 @@ import '../widgets/complaint_detail_sheet.dart';
 /// The resident's own complaints. A resident can never read another
 /// resident's thread: the query is scoped to their uid and the rules repeat
 /// the same check server-side.
-class MyComplaintsScreen extends StatelessWidget {
-  const MyComplaintsScreen({super.key});
+class MyComplaintsScreen extends StatefulWidget {
+  const MyComplaintsScreen({super.key, this.initialComplaintId});
+
+  /// Opened from a complaint notification: show this complaint's details as
+  /// soon as the list has loaded.
+  final String? initialComplaintId;
+
+  @override
+  State<MyComplaintsScreen> createState() => _MyComplaintsScreenState();
+}
+
+class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
+  bool _openedInitial = false;
+
+  void _showDetails(BuildContext context, Complaint complaint, String byName) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ComplaintDetailSheet(
+        complaint: complaint,
+        canRespond: false,
+        byName: byName,
+      ),
+    );
+  }
+
+  /// Opens the notified complaint once, after the first snapshot arrives.
+  void _openInitial(List<Complaint> items, String byName) {
+    final id = widget.initialComplaintId;
+    if (_openedInitial || id == null) return;
+    _openedInitial = true;
+    final match = items.where((c) => c.id == id);
+    if (match.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showDetails(context, match.first, byName);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +68,8 @@ class MyComplaintsScreen extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/user'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/user'),
         ),
         title: const Text(
           'My complaints',
@@ -75,6 +111,8 @@ class MyComplaintsScreen extends StatelessWidget {
             );
           }
           final items = snapshot.data ?? const <Complaint>[];
+          final byName = user.displayName ?? 'Resident';
+          _openInitial(items, byName);
           if (items.isEmpty) {
             return EmptyState(
               icon: Icons.report_outlined,
@@ -92,15 +130,7 @@ class MyComplaintsScreen extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, i) => _ComplaintCard(
               complaint: items[i],
-              onTap: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => ComplaintDetailSheet(
-                  complaint: items[i],
-                  canRespond: false,
-                  byName: user.displayName ?? 'Resident',
-                ),
-              ),
+              onTap: () => _showDetails(context, items[i], byName),
             ),
           );
         },
@@ -168,8 +198,11 @@ class _ComplaintCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.support_agent_rounded,
-                      size: 13, color: AppColors.primary),
+                  const Icon(
+                    Icons.support_agent_rounded,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(

@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/offline_gate.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
+import 'features/auth/screens/verify_email_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/landing/screens/landing_screen.dart';
@@ -22,7 +23,6 @@ import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/alerts/screens/alerts_screen.dart';
 import 'features/community/screens/community_screen.dart';
 import 'features/community/screens/post_detail_screen.dart';
-import 'features/incident/screens/report_incident_screen.dart';
 import 'features/staff/screens/drop_off_station_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
 import 'features/staff/screens/pending_accounts_screen.dart';
@@ -36,6 +36,7 @@ import 'features/announcements/screens/announcements_screen.dart';
 import 'features/events/screens/events_screen.dart';
 import 'features/waste/screens/waste_upload_screen.dart';
 import 'features/waste/screens/waste_history_screen.dart';
+import 'features/requests/models/collection_request.dart';
 import 'features/requests/screens/request_form_screen.dart';
 import 'features/requests/screens/my_requests_screen.dart';
 import 'features/notifications/screens/notifications_screen.dart';
@@ -68,6 +69,7 @@ import 'features/complaints/screens/complaint_form_screen.dart';
 import 'features/complaints/screens/my_complaints_screen.dart';
 import 'features/complaints/screens/complaint_desk_screen.dart';
 import 'features/cityhall/screens/cityhall_requests_screen.dart';
+import 'features/audit/screens/audit_log_screen.dart';
 
 const _publicRoutes = {
   '/splash',
@@ -75,6 +77,8 @@ const _publicRoutes = {
   '/login',
   '/signup',
   '/forgot-password',
+  // A pending sign-up types its emailed code here; it is not yet a session.
+  '/verify-email',
 };
 
 const _sharedRoutes = {
@@ -87,6 +91,7 @@ const _sharedRoutes = {
 const _residentRoutes = {
   '/user',
   '/tracking',
+  // Keep old links working, but send them to the resident complaints inbox.
   '/report-incident',
   '/wallet',
   '/community',
@@ -145,15 +150,17 @@ const _cityHallRoutes = {
   '/cityhall-requests',
   '/manuals',
   '/manual-requests',
+  '/audit-log',
   ..._sharedRoutes,
 };
+
+const _auditorRoutes = {'/audit-log'};
 
 const _staffRoutes = {
   '/admin-dashboard',
   '/admin',
   '/incidents',
   '/pending-accounts',
-  '/accounts',
   '/routes',
   '/dropoff',
   '/tracking',
@@ -169,6 +176,7 @@ const _staffRoutes = {
   '/memo',
   '/wave2',
   '/wave2/pass',
+  '/audit-log',
   ..._ticketRoutes,
   ..._sharedRoutes,
 };
@@ -182,6 +190,7 @@ String _homeFor(UserRole role) => switch (role) {
       UserRole.iswim => '/iswim',
       UserRole.cityHall => '/cityhall',
       UserRole.user => '/user',
+      UserRole.auditor => '/audit-log',
     };
 
 Set<String> _allowedFor(UserRole role) => switch (role) {
@@ -190,6 +199,7 @@ Set<String> _allowedFor(UserRole role) => switch (role) {
       UserRole.iswim => _iswimRoutes,
       UserRole.cityHall => _cityHallRoutes,
       UserRole.user => _residentRoutes,
+      UserRole.auditor => _auditorRoutes,
     };
 
 /// Detail screens live under a collection path (`/community-post/{id}`), so a
@@ -275,6 +285,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/forgot-password',
           builder: (_, __) => const ForgotPasswordScreen(),
         ),
+        GoRoute(
+          path: '/verify-email',
+          builder: (_, __) => const VerifyEmailScreen(),
+        ),
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
         GoRoute(
           path: '/driver-trucks',
@@ -318,6 +332,8 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (context, __) => DelayListScreen(
             canForward: context.read<AuthProvider>().currentUser?.role ==
                 UserRole.cityHall,
+            canAnnounce: context.read<AuthProvider>().currentUser?.role ==
+                UserRole.admin,
           ),
         ),
         GoRoute(
@@ -390,6 +406,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (_, __) => const AdminDashboardScreen(),
         ),
         GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
+        GoRoute(
+          path: '/audit-log',
+          builder: (_, __) => const AuditLogScreen(),
+        ),
         GoRoute(path: '/tracking', builder: (_, __) => const TrackingScreen()),
         GoRoute(
           path: '/live-routes',
@@ -397,7 +417,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/report-incident',
-          builder: (_, __) => const ReportIncidentScreen(),
+          redirect: (_, __) => '/my-complaints',
         ),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
         GoRoute(path: '/community', builder: (_, __) => const CommunityScreen()),
@@ -456,7 +476,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/request-collection',
-          builder: (_, __) => const RequestFormScreen(),
+          builder: (_, state) => RequestFormScreen(
+            initialKind: RequestKindX.fromName(state.uri.queryParameters['kind']),
+          ),
         ),
         GoRoute(
           path: '/my-requests',
@@ -464,7 +486,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/my-complaints',
-          builder: (_, __) => const MyComplaintsScreen(),
+          builder: (_, state) => MyComplaintsScreen(
+            initialComplaintId: state.uri.queryParameters['id'],
+          ),
         ),
         GoRoute(
           path: '/complaints/new',
@@ -472,7 +496,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/complaints',
-          builder: (_, __) => const ComplaintDeskScreen(),
+          builder: (_, state) => ComplaintDeskScreen(
+            initialComplaintId: state.uri.queryParameters['id'],
+          ),
         ),
         GoRoute(
           path: '/cityhall-requests',

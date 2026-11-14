@@ -85,9 +85,9 @@ class _AskAiScreenState extends State<AskAiScreen> {
         q.contains('incident') ||
         q.contains('dumping') ||
         q.contains('full bin')) {
-      return 'Tap Report an incident on the home screen. Describe what you '
-          'saw, attach the exact spot, and your barangay reviews every '
-          'report.';
+      return 'For a missed pickup, use Report uncollected to request a Wave 2 '
+          'collection. For dumping or an overflowing bin, submit a complaint '
+          'from the Complaints section.';
     }
     if (q.contains('point') ||
         q.contains('wallet') ||

@@ -30,6 +30,13 @@ class VerificationService {
     });
   }
 
+  /// The ID a resident uploaded at sign-up (stored under their uid), if any.
+  Future<VerificationRequest?> fetchForUser(String userId) async {
+    final doc = await _col.doc(userId).get();
+    final data = doc.data();
+    return data == null ? null : VerificationRequest.fromDoc(doc.id, data);
+  }
+
   Stream<VerificationRequest?> watchMine(String userId) {
     return _col
         .where('userId', isEqualTo: userId)
@@ -122,26 +129,46 @@ class VerificationService {
     final openDecision = current == 'pending';
     final approved = status == VerificationStatus.verified;
 
-    await _db.collection('users').doc(userId).update({
+    // A new sign-up cannot sign in until this decision: approving it activates
+    // the account, rejecting it blocks sign-in and shows the reason at login.
+    final rejected = status == VerificationStatus.rejected;
+    final batch = _db.batch();
+    batch.update(_db.collection('users').doc(userId), {
       'verificationStatus': status.name,
       'verifiedBy': reviewerId,
       'verificationDate': FieldValue.serverTimestamp(),
-      'rejectionReason': status == VerificationStatus.rejected ? reason : null,
+      'rejectionReason': rejected ? reason : null,
       if (approved && openDecision) ...{
         'registrationStatus': 'approved',
         'registrationApprovedAt': FieldValue.serverTimestamp(),
+        'accountStatus': 'active',
+      },
+      if (rejected && openDecision) ...{
+        'registrationStatus': 'rejected',
+        'accountStatus': 'declined',
       },
       // A rejected registration stays open for correction and resubmission.
       if (!approved && current == 'approved')
         'registrationStatus': 'pending',
     });
+    // The uploaded ID gets the same decision.
+    final idRef = _col.doc(userId);
+    if ((await idRef.get()).exists && (approved || rejected)) {
+      batch.update(idRef, {
+        'status': status.name,
+        'reviewedBy': reviewerName,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'rejectionReason': rejected ? reason : null,
+      });
+    }
+    await batch.commit();
 
     if (approved && openDecision) {
       await _notifications.push(
         userId: userId,
         title: 'Barangay approved your registration',
         body:
-            'Open your dashboard to accept or decline the approval. Your answer is recorded with the date and time.',
+            'Your ID was checked and your account is active. Sign in, then accept or decline the approval on your dashboard.',
         type: AppNotificationType.account,
       );
       return;

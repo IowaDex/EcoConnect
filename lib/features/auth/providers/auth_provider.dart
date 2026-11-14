@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -100,6 +101,51 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// The email of a sign-up waiting for its emailed code, if any.
+  String? get pendingSignupEmail => _authService.pendingSignupEmail;
+
+  /// Sends the confirmation link again. False on failure ([error]).
+  Future<bool> resendVerificationLink() async {
+    _clearError();
+    try {
+      await _authService.resendVerificationLink();
+      return true;
+    } on FirebaseAuthException catch (e) {
+      _setError(e.code == 'too-many-requests'
+          ? 'Too many emails sent. Please wait a few minutes.'
+          : 'Could not send the email. Please try again.');
+      return false;
+    } catch (_) {
+      _setError('Could not send the email. Please try again.');
+      return false;
+    }
+  }
+
+  /// True once the resident clicked the link: the registration then goes to
+  /// the barangay and the session ends.
+  Future<bool> confirmEmailVerified() async {
+    _setLoading(true);
+    _clearError();
+    try {
+      return await _authService.confirmEmailVerified();
+    } catch (e) {
+      AppLogger.error('Confirming the email failed', e);
+      // Say what failed, so a rules or network problem is visible.
+      // FirebaseAuthException is a FirebaseException too.
+      final code = e is FirebaseException ? e.code : e.runtimeType.toString();
+      _setError(code == 'permission-denied'
+          ? 'The server refused to record your confirmation '
+              '(permission-denied). Ask the admin to deploy the latest '
+              'Firestore rules, then try again.'
+          : 'Could not confirm your email ($code). Please try again.');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> cancelPendingSignup() => _authService.cancelPendingSignup();
+
   Future<bool> login({
     required String email,
     required String password,
@@ -133,6 +179,15 @@ class AuthProvider extends ChangeNotifier {
           );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
+        case AuthErrorType.needsEmailVerification:
+          _setError('Confirm your email to finish signing up.');
+        case AuthErrorType.accountDeclined:
+          final reason = e.reason?.trim();
+          _setError(
+            'Barangay Batasan Hills did not approve your registration'
+            '${reason == null || reason.isEmpty ? '.' : ': $reason'} '
+            'Please contact the barangay staff.',
+          );
       }
       AppLogger.error('Login rejected', e.type);
       return false;
@@ -154,6 +209,9 @@ class AuthProvider extends ChangeNotifier {
   // Staff-facing account lists, so screens never talk to AuthService directly.
   Future<List<Map<String, dynamic>>> getPendingAccounts() =>
       _authService.getPendingAccounts();
+
+  Stream<List<Map<String, dynamic>>> watchPendingAccounts() =>
+      _authService.watchPendingAccounts();
 
   Future<void> approveAccount(String uid) => _authService.approveAccount(uid);
 

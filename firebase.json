@@ -1,6 +1,9 @@
 {
   "project": "ecoconnect",
   "plugin": "firebase_flutter",
+  "functions": {
+    "source": "functions"
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
@@ -10,6 +13,9 @@
     },
     "firestore": {
       "port": 8080
+    },
+    "functions": {
+      "port": 5001
     },
     "singleProjectMode": true
   }

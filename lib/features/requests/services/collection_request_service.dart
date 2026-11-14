@@ -95,9 +95,12 @@ class CollectionRequestService {
     });
 
     await _notifications.notifyStaff(
-      title: kind == RequestKind.special
-          ? 'New special collection request'
-          : 'New collection request',
+      title: switch (kind) {
+        RequestKind.special => 'New special collection request',
+        RequestKind.uncollected =>
+          'Uncollected garbage reported (Wave 2)',
+        RequestKind.resident => 'New collection request',
+      },
       body: '$requesterName submitted "${title.trim()}".',
       type: AppNotificationType.request,
       data: {'requestId': ref.id},

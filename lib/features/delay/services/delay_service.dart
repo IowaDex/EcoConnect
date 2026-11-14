@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../announcements/models/announcement.dart';
+import '../../announcements/services/announcement_service.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
 import '../models/delay_report.dart';
@@ -101,6 +103,37 @@ class DelayService {
       type: AppNotificationType.route,
       data: {'delayId': report.id, 'kind': 'delayBarangay'},
     );
+  }
+
+  /// The barangay tells residents: a published "Collection delay"
+  /// announcement (which notifies every resident), then the report is closed.
+  Future<void> announceToResidents(
+    DelayReport report, {
+    required String authorId,
+    required String authorName,
+  }) async {
+    final minutes = report.minutesLate;
+    final late = minutes >= 60
+        ? '${minutes ~/ 60} hr${minutes % 60 == 0 ? '' : ' ${minutes % 60} min'}'
+        : '$minutes min';
+    final notes = report.notes.trim();
+    final announcementId = await AnnouncementService().save(
+      title: 'Garbage collection delayed (truck ${report.plateNumber})',
+      body: 'Today\'s collection by truck ${report.plateNumber} is running '
+          'about $late late: ${report.reason}.'
+          '${notes.isEmpty ? '' : ' $notes'}'
+          ' Please keep your garbage ready; the truck will still come.',
+      category: AnnouncementCategory.delay,
+      status: AnnouncementStatus.published,
+      authorId: authorId,
+      authorName: authorName,
+    );
+    await _col.doc(report.id).update({
+      'announcementId': announcementId,
+      'announcedAt': FieldValue.serverTimestamp(),
+      'stage': DelayStage.closed.wireName,
+      'closedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> close(DelayReport report) async {

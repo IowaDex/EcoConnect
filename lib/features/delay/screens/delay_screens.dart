@@ -239,7 +239,14 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
 /// The delay list. DSQC can push to the district officer, the barangay can
 /// close its copy.
 class DelayListScreen extends StatelessWidget {
-  const DelayListScreen({super.key, required this.canForward});
+  const DelayListScreen({
+    super.key,
+    required this.canForward,
+    this.canAnnounce = false,
+  });
+
+  /// Barangay staff announce delays City Hall sent down to residents.
+  final bool canAnnounce;
 
   /// True on the DSQC device: shows the "push to district officer" action.
   final bool canForward;
@@ -286,7 +293,11 @@ class DelayListScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 6, 20, 26),
             children: [
               for (final report in reports) ...[
-                _DelayCard(report: report, canForward: canForward),
+                _DelayCard(
+                  report: report,
+                  canForward: canForward,
+                  canAnnounce: canAnnounce,
+                ),
                 const SizedBox(height: 9),
               ],
             ],
@@ -298,10 +309,58 @@ class DelayListScreen extends StatelessWidget {
 }
 
 class _DelayCard extends StatelessWidget {
-  const _DelayCard({required this.report, required this.canForward});
+  const _DelayCard({
+    required this.report,
+    required this.canForward,
+    this.canAnnounce = false,
+  });
 
   final DelayReport report;
   final bool canForward;
+  final bool canAnnounce;
+
+  Future<void> _announce(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Announce this delay?'),
+        content: Text(
+          'Every resident gets a notification and sees it under '
+          'Announcements: truck ${report.plateNumber} is about '
+          '${report.minutesLate} min late (${report.reason}).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Announce'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final user = context.read<AuthProvider>().currentUser;
+    if (user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await DelayService().announceToResidents(
+        report,
+        authorId: user.uid,
+        authorName: user.displayName ?? 'Barangay Batasan Hills',
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Delay announced to residents')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Could not announce the delay: $e'),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -392,6 +451,37 @@ class _DelayCard extends StatelessWidget {
                   textStyle: const TextStyle(fontSize: 11),
                 ),
                 child: const Text('Send a copy to the Barangay'),
+              ),
+            ),
+          ],
+          if (canAnnounce &&
+              stage == DelayStage.barangay &&
+              report.announcementId == null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 38,
+              child: FilledButton.icon(
+                onPressed: () => _announce(context),
+                icon: const Icon(Icons.campaign_outlined, size: 16),
+                label: const Text('Announce to residents'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.forest,
+                  textStyle: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (report.announcementId != null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Announced to residents',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
               ),
             ),
           ],

@@ -22,6 +22,8 @@ void main() {
     expect(authRedirect(initialized: true, role: null, location: '/welcome'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/signup'), isNull);
     expect(authRedirect(initialized: true, role: null, location: '/forgot-password'), isNull);
+    // A pending sign-up types its emailed code before it is a session.
+    expect(authRedirect(initialized: true, role: null, location: '/verify-email'), isNull);
   });
 
   test('a signed-in user never sees the landing page', () {
@@ -60,8 +62,8 @@ void main() {
     // Iswim owns the fleet but never creates accounts.
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/fleet'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), '/iswim');
-    // The barangay desk may make its own crews, but not Iswim's.
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), isNull);
+    // The barangay creates no accounts: drivers and staff come from City Hall.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), '/admin-dashboard');
     // A crew member can never reach either desk.
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/fleet'), '/driver');
@@ -83,5 +85,14 @@ void main() {
     // Residents and drivers never enter the memo channel.
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/memos/cityHall'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/memo/m1'), '/driver');
+  });
+
+  test('auditors are limited to the audit log', () {
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/splash'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/audit-log'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/accounts'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/admin-dashboard'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/audit-log'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/audit-log'), isNull);
   });
 }

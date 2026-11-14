@@ -49,9 +49,15 @@ class DelayReport {
     this.forwardedAt,
     this.barangayAt,
     this.closedAt,
+    this.announcementId,
+    this.announcedAt,
   });
 
   final String id;
+
+  /// Set once the barangay announced the delay to residents.
+  final String? announcementId;
+  final DateTime? announcedAt;
 
   /// `DR-2026-0001`.
   final String code;
@@ -103,6 +109,8 @@ class DelayReport {
       forwardedAt: _asDate(data['forwardedAt']),
       barangayAt: _asDate(data['barangayAt']),
       closedAt: _asDate(data['closedAt']),
+      announcementId: data['announcementId'] as String?,
+      announcedAt: _asDate(data['announcedAt']),
     );
   }
 }

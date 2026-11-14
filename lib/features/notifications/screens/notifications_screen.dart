@@ -44,6 +44,7 @@ class NotificationsScreen extends StatelessWidget {
                   UserRole.user => '/user',
                   UserRole.iswim => '/iswim',
                   UserRole.cityHall => '/cityhall',
+                  UserRole.auditor => '/audit-log',
                 },
               ),
               actions: [
@@ -172,6 +173,25 @@ class NotificationsScreen extends StatelessWidget {
       return;
     }
 
+    // Complaints go to City Hall's complaint desk (opened on that complaint)
+    // and to the resident's own list. Older complaint notifications were
+    // saved as `request`, so the complaint id is what identifies them.
+    final complaintId = item.data['complaintId'] as String?;
+    if (item.type == AppNotificationType.complaint || complaintId != null) {
+      if (role == UserRole.cityHall) {
+        context.push(
+          complaintId == null ? '/complaints' : '/complaints?id=$complaintId',
+        );
+      } else if (role == UserRole.user) {
+        context.push(
+          complaintId == null
+              ? '/my-complaints'
+              : '/my-complaints?id=$complaintId',
+        );
+      }
+      return;
+    }
+
     // Desk roles have their own destinations; residents and drivers keep the
     // original routes.
     if (role == UserRole.cityHall || role == UserRole.iswim) {
@@ -192,12 +212,17 @@ class NotificationsScreen extends StatelessWidget {
           context.push('/events');
         case AppNotificationType.points:
         case AppNotificationType.system:
+        case AppNotificationType.complaint:
           context.push(cityHall ? '/cityhall' : '/iswim');
       }
       return;
     }
 
     final isStaff = role == UserRole.admin;
+    if (isStaff && item.data['delayId'] != null) {
+      context.push('/delays');
+      return;
+    }
     switch (item.type) {
       case AppNotificationType.request:
         context.push(isStaff ? '/staff-requests' : '/my-requests');
@@ -215,7 +240,10 @@ class NotificationsScreen extends StatelessWidget {
         // Residents see the balance and history in their wallet.
         if (!isStaff) context.push('/wallet');
       case AppNotificationType.account:
+        // "New resident registration" and other account notices.
+        if (isStaff) context.push('/pending-accounts');
       case AppNotificationType.system:
+      case AppNotificationType.complaint:
         break;
     }
   }

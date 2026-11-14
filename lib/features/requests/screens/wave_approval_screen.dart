@@ -51,12 +51,16 @@ class WaveApprovalScreen extends StatelessWidget {
           final all = snapshot.data ?? const <CollectionRequest>[];
           final list = forCityHall
               ? all.where((r) => r.cityHallStatus == 'pending').toList()
-              : all
+              : (all
                   .where((r) =>
                       r.cityHallStatus == 'none' &&
                       r.status != RequestStatus.completed &&
                       r.status != RequestStatus.rejected)
-                  .toList();
+                  .toList()
+                // Residents' uncollected-garbage reports are wave 2 by
+                // nature, so they lead the list.
+                ..sort((a, b) => (b.kind == RequestKind.uncollected ? 1 : 0)
+                    .compareTo(a.kind == RequestKind.uncollected ? 1 : 0)));
 
           if (list.isEmpty) {
             return Center(

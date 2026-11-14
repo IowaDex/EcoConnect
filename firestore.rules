@@ -40,6 +40,13 @@ service cloud.firestore {
       return signedIn() && profile(request.auth.uid).role == 'cityHall';
     }
 
+    function isAuditViewer() {
+      return signedIn()
+        && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role == 'auditor'
+        && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
+    }
+
     // Everyone who touches a trip ticket.
     function isTicketStakeholder() {
       return isAdmin() || isIswim() || isCityHall();
@@ -63,14 +70,8 @@ service cloud.firestore {
     // before approval existed have no field and count as active.
     function isActive() {
       return signedIn() && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role != 'auditor'
         && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
-    }
-
-    // Government-only features are gated here, not just in the UI.
-    function isVerifiedGovernment() {
-      return isActive()
-        && profile(request.auth.uid).get('accountType', 'resident') == 'government'
-        && profile(request.auth.uid).get('verificationStatus', 'unverified') == 'verified';
     }
 
     // Avatars are stored inline in the profile, so cap their size.
@@ -82,6 +83,18 @@ service cloud.firestore {
     // The resident answers the barangay's registration approval. Either the
     // fields are untouched, or the write is exactly the one allowed transition
     // (approved -> accepted / declined) stamped with the server time.
+    // A resident still waiting for the barangay, whose email Firebase has
+    // confirmed, may send the one "new registration" notice to barangay staff.
+    function pendingRegistrationNotice() {
+      return signedIn()
+        && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role == 'user'
+        && profile(request.auth.uid).get('accountStatus', 'active') == 'pending'
+        && request.auth.token.get('email_verified', false) == true
+        && request.resource.data.userId == 'staff'
+        && request.resource.data.get('type', '') == 'account';
+    }
+
     function residentAnswer() {
       return !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['registrationStatus', 'registrationDecidedAt'])
@@ -124,16 +137,16 @@ service cloud.firestore {
       return after is list
         && (after == before
             || (after.size() == before.size() + 1
-                && after[0:before.size()] == before
+                // An empty slice raises an index error, so a post's first
+                // reply skips the history check.
+                && (before.size() == 0 || after[0:before.size()] == before)
                 && after[before.size()].keys()
                      .hasOnly(['id', 'authorId', 'authorName', 'body', 'createdAt'])
                 && after[before.size()].authorId == uid
                 && after[before.size()].authorName is string
                 && after[before.size()].authorName.size() <= 80
-                // The sign-in token carries the Auth display name once it has
-                // refreshed; a brand-new token has none, so only pin when set.
                 && after[before.size()].authorName
-                     == request.auth.token.get('name', after[before.size()].authorName)
+                     == profile(uid).get('name', after[before.size()].authorName)
                 && after[before.size()].body is string
                 && after[before.size()].body.size() <= 1000));
     }
@@ -146,41 +159,35 @@ service cloud.firestore {
       // Iswim needs the driver directory to issue tickets; City Hall needs it
       // to provision the accounts Iswim asks for.
       allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
-      // Three ways a profile is born:
-      //  1. self sign-up — residents go active, drivers wait for approval, and
-      //     nobody self-credits points or self-verifies a government account;
-      //  2. City Hall provisions a government login. The crew never signs
-      //     itself up: the login is made on a secondary app, so the profile is
-      //     written by the desk and arrives already active;
-      //  3. the barangay desk makes its own crews — but it cannot mint another
-      //     super admin or an Iswim account.
+      // Two ways a profile is born:
+      //  1. self sign-up — residents only, pending until the barangay checks
+      //     their ID;
+      //  2. City Hall provisions every crew, staff and Iswim login. The login
+      //     is made on a secondary app, so the profile is written by City Hall
+      //     and arrives already active. The barangay creates no accounts.
+      // Self sign-up is residents only. They start pending: confirming their
+      // email (the Firebase link) and the barangay's ID check both come before
+      // they may sign in.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
-        && ((request.resource.data.role == 'user'
-              && request.resource.data.accountStatus == 'active')
-            || (request.resource.data.role == 'driver'
-              && request.resource.data.accountStatus == 'pending'))
+        && request.resource.data.role == 'user'
+        && request.resource.data.accountStatus == 'pending'
+        && (!('registrationStatus' in request.resource.data)
+            || request.resource.data.registrationStatus == 'pending')
         && (!('accountType' in request.resource.data)
             || request.resource.data.accountType in ['resident', 'government'])
         && (!('verificationStatus' in request.resource.data)
-            || request.resource.data.verificationStatus
-                 == (request.resource.data.get('accountType', 'resident') == 'government'
-                      ? 'pending'
-                      : 'unverified'))
+            || request.resource.data.verificationStatus == 'pending')
+        && request.resource.data.get('emailVerified', false) == false
         && !('points' in request.resource.data)
         && photoOk(request.resource.data))
         || (isCityHall()
           && !isRemoved(userId)
-          && request.resource.data.role in ['iswim', 'driver', 'admin', 'cityHall']
+          && request.resource.data.role in
+               ['iswim', 'driver', 'admin', 'cityHall', 'auditor']
           && request.resource.data.accountStatus == 'active'
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
-          && !('points' in request.resource.data)
-          && photoOk(request.resource.data))
-        || (isAdmin()
-          && !isRemoved(userId)
-          && request.resource.data.role in ['driver', 'admin']
-          && request.resource.data.accountStatus == 'active'
           && !('points' in request.resource.data)
           && photoOk(request.resource.data));
       allow update: if (isSelf(userId)
@@ -194,6 +201,11 @@ service cloud.firestore {
                          // Set by the barangay desk when it approves the
                          // registration; the resident only answers it.
                          'registrationApprovedAt'])
+          // "Email confirmed" is only true when Firebase says so.
+          && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['emailVerified'])
+              || request.resource.data.emailVerified
+                   == request.auth.token.get('email_verified', false))
           && residentAnswer()
           && photoOk(request.resource.data))
         || isAdmin() || isCityHall();
@@ -216,7 +228,7 @@ service cloud.firestore {
     match /sessions/{userId} {
       allow read: if isSelf(userId);
       allow create, update: if isSelf(userId)
-        && isActive()
+        && (isActive() || isAuditViewer())
         && !isRemoved(userId)
         && request.resource.data.keys().hasOnly(['sessionId', 'startedAt', 'platform', 'authTime'])
         && request.resource.data.authTime == request.auth.token.get('auth_time', -1)
@@ -266,7 +278,8 @@ service cloud.firestore {
     // a driver, and every signed-in member may read the roster: a driver needs
     // his own truck, a resident needs the plate on the map.
     match /trucks/{truckId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create, update: if (isIswim() || isCityHall())
         && request.resource.data.plateNumber is string
         && request.resource.data.plateNumber.size() > 0
@@ -298,6 +311,7 @@ service cloud.firestore {
       // show the same stops the driver sees. Finished and scheduled plans stay
       // private to the driver and staff.
       allow read: if signedIn()
+        && !isAuditViewer()
         && (isAdmin()
             || resource.data.driverId == request.auth.uid
             || resource.data.status == 'active');
@@ -318,7 +332,7 @@ service cloud.firestore {
     // Live driver locations: any signed-in user can watch, only the driver
     // (or an admin) can publish. Drivers cannot rewrite identity fields.
     match /routes/{driverId} {
-      allow read: if signedIn();
+      allow read: if signedIn() && !isAuditViewer();
       allow create: if (isSelf(driverId) && isActive()) || isAdmin();
       allow update: if (isSelf(driverId)
           && isActive()
@@ -355,19 +369,18 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Incident reports: residents create and read their own, staff see all.
+    // Keep historical incident reports available to staff; new resident
+    // reports now go through complaints or collection requests.
     match /incidents/{incidentId} {
-      // Residents see their own report; the barangay sees a copy; City Hall is
-      // the desk that actually works them.
-      allow read: if signedIn()
-        && (isAdmin() || isCityHall() || resource.data.residentId == request.auth.uid);
-      allow create: if isSelf(request.resource.data.residentId);
+      allow read: if isAdmin() || isCityHall();
+      allow create: if false;
       allow update, delete: if isAdmin();
     }
 
     // Barangay announcements. Residents read published posts, staff manage all.
     match /announcements/{announcementId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer()
         && (isAdmin() || resource.data.status == 'published');
       allow create, update: if isAdmin()
         && request.resource.data.title is string
@@ -415,6 +428,7 @@ service cloud.firestore {
     // Community events.
     match /events/{eventId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer()
         && (isAdmin() || resource.data.status == 'published');
       allow create, update: if isAdmin()
         && request.resource.data.title is string
@@ -462,7 +476,8 @@ service cloud.firestore {
       // their own single place, in the same write as their sign-up row; staff
       // can repair the counters.
       match /streets/{bucket} {
-        allow read: if signedIn() && hasProfile(request.auth.uid);
+        allow read: if signedIn() && hasProfile(request.auth.uid)
+          && !isAuditViewer();
         allow create: if isActive()
           && !isRemoved(request.auth.uid)
           && request.resource.data.keys().hasOnly(['label', 'count'])
@@ -488,7 +503,7 @@ service cloud.firestore {
     // Collection requests. Special requests require a verified government
     // profile; that check is repeated here so hiding the UI is not enough.
     match /collectionRequests/{requestId} {
-      allow read: if signedIn() && (
+      allow read: if signedIn() && !isAuditViewer() && (
         isAdmin()
         || isCityHall()
         || resource.data.requesterId == request.auth.uid
@@ -497,8 +512,11 @@ service cloud.firestore {
       allow create: if isActive()
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.kind in ['resident', 'special']
-        && (request.resource.data.kind == 'resident' || isVerifiedGovernment())
+        && request.resource.data.kind in ['resident', 'special', 'uncollected']
+        // Every approved resident may ask for a special pickup: their ID was
+        // checked by the barangay at sign-up (isActive above).
+        && (request.resource.data.kind == 'resident'
+            || profile(request.auth.uid).role == 'user')
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.description is string
@@ -539,7 +557,8 @@ service cloud.firestore {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSelf(request.resource.data.userId)
         && request.resource.data.status == 'pending'
-        && request.resource.data.accountType == 'government'
+        // Every resident uploads an ID at sign-up; government accounts too.
+        && request.resource.data.accountType in ['resident', 'government']
         && request.resource.data.document is map
         && request.resource.data.document.dataUrl is string
         && request.resource.data.document.dataUrl.size() < 900000;
@@ -550,13 +569,13 @@ service cloud.firestore {
     // desk; only staff, Iswim and City Hall may notify other users. Each desk
     // reads its own shared channel: `staff`, `cityHall` or `iswim`.
     match /notifications/{notificationId} {
-      allow read: if signedIn() && (
+      allow read: if signedIn() && !isAuditViewer() && (
         isAdmin()
         || resource.data.userId == request.auth.uid
         || (resource.data.userId == 'cityHall' && isCityHall())
         || (resource.data.userId == 'iswim' && isIswim())
       );
-      allow create: if isActive()
+      allow create: if ((isActive()
         && request.resource.data.userId is string
         && (request.resource.data.userId == request.auth.uid
             || request.resource.data.userId == 'staff'
@@ -568,7 +587,8 @@ service cloud.firestore {
             || profile(request.auth.uid).role == 'cityHall'
             // Drivers send truck alerts and job updates, nothing else.
             || (profile(request.auth.uid).role == 'driver'
-                && request.resource.data.get('type', '') in ['route', 'request']))
+                && request.resource.data.get('type', '') in ['route', 'request'])))
+          || pendingRegistrationNotice())
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.body is string
@@ -592,7 +612,8 @@ service cloud.firestore {
     // Community feed. Any active member may post; neighbours may react and
     // reply, while only the author or an admin may delete.
     match /communityPosts/{postId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create: if isActive()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.body is string
@@ -610,7 +631,8 @@ service cloud.firestore {
 
     // Designated collection points.
     match /collectionPoints/{pointId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create, update: if isAdmin()
         && request.resource.data.name is string
         && request.resource.data.lat is number
@@ -619,8 +641,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Who changed roles, approved or deleted accounts. Append-only: admins can
-    // add entries naming themselves, and nobody can edit or delete them.
     // Delay reports: Iswim files, DSQC pushes to the district officer, the
     // barangay keeps the copy.
     match /delay_reports/{reportId} {
@@ -687,6 +707,16 @@ service cloud.firestore {
     }
 
     // Outgoing mail to the district officer. No SMTP: this is the record.
+    // The District Officer has no account; City Hall keeps their email address
+    // so ISWIM announcements can be sent from City Hall's own email app.
+    match /settings/districtOfficer {
+      allow read: if isCityHall();
+      allow write: if isCityHall()
+        && request.resource.data.keys().hasOnly(['email'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200;
+    }
+
     match /email_log/{entryId} {
       allow read: if isCityHall() || isAdmin();
       allow create: if isIswim();
@@ -753,8 +783,40 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() <= 4000
         && uploadListOk(request.resource.data, 'images');
-      allow update: if isCityHall();
+      // City Hall works the complaint. The resident may only add one reply of
+      // their own to the thread while it is still open.
+      allow update: if isCityHall()
+        || (isActive()
+            && resource.data.residentId == request.auth.uid
+            && resource.data.status in ['pending', 'underReview']
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['responses', 'updatedAt'])
+            && appendsOnlyResidentReply());
       allow delete: if isCityHall();
+    }
+
+    function appendsOnlyResidentReply() {
+      let before = resource.data.get('responses', []);
+      let after = request.resource.data.get('responses', []);
+      // Checked in this order so a list that did not grow by one is refused
+      // before the new entry is read.
+      return after is list
+        && after.size() == before.size() + 1
+        // An empty slice raises an index error, so a first reply skips it.
+        && (before.size() == 0 || after[0:before.size()] == before)
+        && isResidentReply(after[before.size()]);
+    }
+
+    function isResidentReply(added) {
+      return added is map
+        && added.keys().hasOnly(['message', 'byName', 'byRole', 'at'])
+        && added.byRole == 'resident'
+        && added.message is string
+        && added.message.size() > 0
+        && added.message.size() <= 2000
+        && added.byName is string
+        && added.byName.size() <= 80
+        && added.at is timestamp;
     }
 
     // Immutable points ledger. Staff credit through the waste validation
@@ -770,10 +832,10 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Trusted Cloud Functions append audit entries; clients cannot write them.
     match /admin_audit/{entryId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && request.resource.data.actorUid == request.auth.uid;
-      allow update, delete: if false;
+      allow read: if isAdmin() || isCityHall() || isAuditViewer();
+      allow create, update, delete: if false;
     }
   }
 }

@@ -19,6 +19,9 @@ const {
   getDoc,
   getDocs,
   increment,
+  limit,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -65,9 +68,26 @@ beforeEach(async () => {
     await setDoc(doc(db, 'users/root'), {name: 'Root', role: 'admin'});
     await setDoc(doc(db, 'users/ivy'), {name: 'Ivy', role: 'iswim'});
     await setDoc(doc(db, 'users/carl'), {name: 'Carl', role: 'cityHall'});
+    await setDoc(doc(db, 'users/auditor'), {
+      name: 'Auditor',
+      role: 'auditor',
+      accountStatus: 'active',
+    });
     await setDoc(doc(db, 'users/alice/locations/l1'), {latitude: 1});
     await setDoc(doc(db, 'shared_locations/dan'), shared('driver'));
     await setDoc(doc(db, 'shared_locations/alice'), shared('user'));
+    await setDoc(doc(db, 'admin_audit/a1'), {
+      action: 'update',
+      actorUid: 'root',
+      at: Timestamp.now(),
+    });
+    await setDoc(doc(db, 'routes/dan'), {status: 'inTransit'});
+    await setDoc(doc(db, 'trucks/t1'), {plateNumber: 'ABC-123'});
+    await setDoc(doc(db, 'announcements/a1'), {status: 'published'});
+    await setDoc(doc(db, 'incidents/old-report'), {
+      residentId: 'alice',
+      status: 'pending',
+    });
   });
 });
 
@@ -92,6 +112,7 @@ test('only the owner reads or writes their login session, with a valid shape', a
   await assertFails(setDoc(doc(as('dan'), 'sessions/alice'), session(id)));
   await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), session('short')));
   await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), {...session(id), role: 'admin'}));
+  await assertSucceeds(setDoc(doc(asSignedInAt('auditor', 1000), 'sessions/auditor'), session(id)));
   // The recorded login time must be the token's own, not a made-up one.
   await assertFails(setDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice'), session(id, 5000)));
   await assertFails(deleteDoc(doc(asSignedInAt('alice', 1000), 'sessions/alice')));
@@ -127,6 +148,17 @@ test('a device replaced by a newer login is refused everywhere, the new one is n
   const live = {status: 'inTransit', lat: 1, lng: 2, updatedAt: Timestamp.now()};
   await assertFails(setDoc(doc(asSignedInAt('dan', 1000), 'routes/dan'), live));
   await assertSucceeds(setDoc(doc(asSignedInAt('dan', 3000), 'routes/dan'), live));
+});
+
+test('residents cannot create or read incident reports; staff retain access', async () => {
+  await assertFails(getDoc(doc(as('alice'), 'incidents/old-report')));
+  await assertFails(getDocs(collection(as('alice'), 'incidents')));
+  await assertFails(setDoc(doc(as('alice'), 'incidents/new-report'), {
+    residentId: 'alice',
+    status: 'pending',
+  }));
+  await assertSucceeds(getDoc(doc(as('carl'), 'incidents/old-report')));
+  await assertSucceeds(getDocs(collection(as('carl'), 'incidents')));
 });
 
 test('event sign-ups: own row only, fixed shape, create-only, open events only', async () => {
@@ -299,14 +331,69 @@ test('ending a run lets the driver clear the published position', async () => {
 
 test('signup cannot choose the admin role', async () => {
   await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin', accountStatus: 'active'}));
-  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'active'}));
+  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'pending'}));
 });
 
-test('signup cannot skip approval, self-credit points or upload a huge photo', async () => {
+test('signup is residents only, waits for the barangay and cannot self-verify', async () => {
+  // Residents start pending; nobody signs themselves up active or as a driver.
+  await assertFails(setDoc(doc(as('u0'), 'users/u0'), {name: 'U', role: 'user', accountStatus: 'active'}));
   await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active'}));
-  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'active', points: 999}));
-  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'active', photoUrl: 'x'.repeat(150000)}));
-  await assertSucceeds(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'pending', points: 999}));
+  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'pending', photoUrl: 'x'.repeat(150000)}));
+  // A new profile never claims a confirmed email.
+  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailVerified: true}));
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: false,
+  };
+  await assertSucceeds(setDoc(doc(as('u4', false), 'users/u4'), pending));
+  await assertFails(updateDoc(doc(as('u4', false), 'users/u4'), {accountStatus: 'active'}));
+});
+
+test('only City Hall creates driver and staff accounts; the barangay does not', async () => {
+  const crew = (role) => ({name: 'Crew', role, accountStatus: 'active'});
+  await assertFails(setDoc(doc(as('root'), 'users/newdriver'), crew('driver')));
+  await assertFails(setDoc(doc(as('root'), 'users/newstaff'), crew('admin')));
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/newdriver'), crew('driver')));
+});
+
+test('City Hall alone keeps the District Officer email address', async () => {
+  const ref = (uid) => doc(as(uid), 'settings/districtOfficer');
+  await assertSucceeds(setDoc(ref('carl'), {email: 'officer@qc.gov.ph'}));
+  await assertSucceeds(getDoc(ref('carl')));
+  await assertFails(setDoc(ref('carl'), {email: 'x'.repeat(201)}));
+  await assertFails(setDoc(ref('carl'), {email: 'officer@qc.gov.ph', extra: true}));
+  await assertFails(setDoc(ref('root'), {email: 'officer@qc.gov.ph'}));
+  await assertFails(getDoc(ref('alice')));
+});
+
+test('a resident marks their email confirmed only once Firebase confirmed it', async () => {
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: false,
+  };
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'users/u5'), pending));
+  // Link not clicked yet: the sign-in token says the email is unconfirmed.
+  await assertFails(updateDoc(doc(as('u5', false), 'users/u5'), {emailVerified: true}));
+  await assertSucceeds(updateDoc(doc(as('u5', true), 'users/u5'), {emailVerified: true}));
+});
+
+test('a pending resident with a confirmed email may tell the barangay, nothing more', async () => {
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: true,
+  };
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'users/u6'), pending));
+  const notice = (overrides = {}) => ({
+    userId: 'staff', title: 'New resident registration', body: 'U is waiting for ID review.',
+    type: 'account', read: false, ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('u6', true), 'notifications/n1'), notice()));
+  await assertFails(setDoc(doc(as('u6', false), 'notifications/n2'), notice()));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n3'), notice({type: 'system'})));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n4'), notice({userId: 'alice'})));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n5'), notice({userId: 'cityHall'})));
 });
 
 test('users cannot approve themselves, edit points or set a huge photo', async () => {
@@ -332,15 +419,39 @@ test('a pending driver cannot publish a route or plan until approved', async () 
   await assertSucceeds(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
 });
 
-test('only admins write the audit log, only as themselves, and entries are permanent', async () => {
-  const entry = (actorUid) => ({action: 'approve', targetUid: 'dan', actorUid});
-  await assertFails(setDoc(doc(as('alice'), 'admin_audit/a1'), entry('alice')));
-  await assertFails(setDoc(doc(as('root'), 'admin_audit/a1'), entry('someone-else')));
-  await assertSucceeds(setDoc(doc(as('root'), 'admin_audit/a1'), entry('root')));
+test('only admins, City Hall, and auditors read immutable server audit entries', async () => {
+  const entry = {action: 'approve', targetUid: 'dan', actorUid: 'root'};
+  await assertFails(setDoc(doc(as('alice'), 'admin_audit/a2'), entry));
+  await assertFails(setDoc(doc(as('root'), 'admin_audit/a2'), entry));
+  await assertFails(setDoc(doc(as('auditor'), 'admin_audit/a2'), entry));
   await assertFails(updateDoc(doc(as('root'), 'admin_audit/a1'), {action: 'x'}));
   await assertFails(deleteDoc(doc(as('root'), 'admin_audit/a1')));
   await assertFails(getDoc(doc(as('alice'), 'admin_audit/a1')));
   await assertSucceeds(getDoc(doc(as('root'), 'admin_audit/a1')));
+  await assertSucceeds(getDoc(doc(as('carl'), 'admin_audit/a1')));
+  await assertSucceeds(getDoc(doc(as('auditor'), 'admin_audit/a1')));
+  await assertSucceeds(getDocs(query(
+      collection(as('auditor'), 'admin_audit'),
+      orderBy('at', 'desc'),
+      limit(50),
+  )));
+});
+
+test('auditors cannot read operational collections or provision themselves', async () => {
+  await assertFails(getDoc(doc(as('auditor'), 'routes/dan')));
+  await assertFails(getDoc(doc(as('auditor'), 'trucks/t1')));
+  await assertFails(getDoc(doc(as('auditor'), 'announcements/a1')));
+  await assertFails(getDoc(doc(as('auditor'), 'users/alice')));
+  await assertFails(setDoc(doc(as('auditor'), 'users/self-made'), {
+    name: 'Not an auditor',
+    role: 'auditor',
+    accountStatus: 'active',
+  }));
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/new-auditor'), {
+    name: 'New auditor',
+    role: 'auditor',
+    accountStatus: 'active',
+  }));
 });
 
 test('users cannot change their own role but can edit other fields', async () => {
@@ -432,8 +543,17 @@ test('members can like and unlike as themselves, but not for someone else', asyn
 test('members can append their own comment but not edit, remove or forge one', async () => {
   await seedPost();
   const post = doc(as('alice'), 'communityPosts/p1');
-  const mine = {id: 'c2', authorId: 'alice', authorName: 'Alice', body: 'thanks'};
-  await assertSucceeds(updateDoc(post, {comments: arrayUnion(mine)}));
+  const mine = {
+    id: 'c2',
+    authorId: 'alice',
+    authorName: 'Alice',
+    body: 'thanks',
+    createdAt: Timestamp.now(),
+  };
+  await assertSucceeds(updateDoc(post, {
+    comments: arrayUnion(mine),
+    updatedAt: serverTimestamp(),
+  }));
   await assertFails(updateDoc(post, {comments: arrayUnion({...mine, id: 'c3', authorId: 'dan'})}));
   await assertFails(updateDoc(post, {comments: arrayUnion({...mine, id: 'c4', junk: 'x'.repeat(500)})}));
   await assertFails(updateDoc(post, {comments: []}));
@@ -442,14 +562,22 @@ test('members can append their own comment but not edit, remove or forge one', a
   }));
 });
 
-test('a comment must carry the name on the sign-in token when it has one', async () => {
+test('the first reply on a post with no replies yet goes through', async () => {
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'communityPosts/p2'), {
+      authorId: 'dan', body: 'Fresh post', likedBy: [], comments: [],
+    }));
+  await assertSucceeds(updateDoc(doc(as('alice'), 'communityPosts/p2'), {
+    comments: arrayUnion({id: 'c1', authorId: 'alice', authorName: 'Alice', body: 'First!'}),
+  }));
+});
+
+test('a comment uses the account profile name rather than a stale token name', async () => {
   await seedPost();
-  const named = env.authenticatedContext('alice', {email_verified: true, name: 'Alice'}).firestore();
+  const named = env.authenticatedContext('alice', {email_verified: true, name: 'Old Alice'}).firestore();
   const comment = (id, authorName) => ({id, authorId: 'alice', authorName, body: 'hi'});
   await assertSucceeds(updateDoc(doc(named, 'communityPosts/p1'), {comments: arrayUnion(comment('c5', 'Alice'))}));
   await assertFails(updateDoc(doc(named, 'communityPosts/p1'), {comments: arrayUnion(comment('c6', 'Barangay Captain'))}));
-  // A fresh token has no name yet, so the app's own name is accepted.
-  await assertSucceeds(updateDoc(doc(as('alice'), 'communityPosts/p1'), {comments: arrayUnion(comment('c7', 'Alice'))}));
 });
 
 test('admins can strip a deleted user from other posts', async () => {
@@ -594,6 +722,51 @@ test('City Hall works complaints; the barangay and admin do not', async () => {
     updatedAt: serverTimestamp(),
   }));
   await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {status: 'resolved'}));
+});
+
+test('a resident replies in their own open complaint thread, and nothing more', async () => {
+  const reply = (overrides = {}) => ({
+    message: 'It happened again today.',
+    byName: 'Alice',
+    byRole: 'resident',
+    at: Timestamp.now(),
+    ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('alice'), 'complaints/c1'), complaint()));
+
+  // Their own reply, appended while the complaint is open.
+  await assertSucceeds(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply()),
+    updatedAt: serverTimestamp(),
+  }));
+  // Never posing as City Hall, never with extra fields or an empty message.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({byRole: 'cityHall', message: 'Resolved'})),
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: '', at: Timestamp.now()})),
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'x', status: 'resolved'})),
+  }));
+  // A reply cannot carry a status change, and nobody else can reply.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'And close it'})),
+    status: 'resolved',
+  }));
+  await assertFails(updateDoc(doc(as('dan'), 'complaints/c1'), {
+    responses: arrayUnion(reply({byName: 'Dan', message: 'Me too'})),
+  }));
+  // Earlier messages cannot be rewritten.
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: [reply({message: 'Edited history'})],
+  }));
+
+  // Once City Hall closes it, the thread is read-only for the resident.
+  await assertSucceeds(updateDoc(doc(as('carl'), 'complaints/c1'), {status: 'resolved'}));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {
+    responses: arrayUnion(reply({message: 'Not fixed'})),
+  }));
 });
 
 // --- Points ledger ----------------------------------------------------------

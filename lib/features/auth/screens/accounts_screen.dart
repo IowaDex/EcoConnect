@@ -13,10 +13,9 @@ import '../services/provisioning_service.dart';
 
 /// City Hall's account desk.
 ///
-/// Nobody signs themselves up for a government account: City Hall creates the
-/// login, the barangay gets the copy, and the crew receives an email and a
-/// password to type once. A truck is never left without a driver, so a driver
-/// account must be tied to a plate before it can be saved.
+/// Nobody signs themselves up for a staff account: City Hall creates the login
+/// and hands the credentials to the account owner. Driver accounts are tied to
+/// a truck; audit viewer accounts only have access to audit records.
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
 
@@ -49,7 +48,7 @@ class AccountsScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
         label: const Text(
-          'Driver',
+          'New account',
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
       ),
@@ -64,14 +63,14 @@ class AccountsScreen extends StatelessWidget {
           final accounts = snapshot.data ?? const <ProvisionedAccount>[];
           if (accounts.isEmpty) {
             return const _Message(
-              text: 'No crew accounts yet. Tap "Driver" to create the first one.',
+              text: 'No staff accounts yet. Tap "New account" to create one.',
             );
           }
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 6, 20, 96),
             children: [
               Text(
-                '${accounts.length} accounts · only drivers and guides are '
+                '${accounts.length} accounts · staff and audit viewers are '
                 'created here, not self-signup',
                 style: const TextStyle(
                   fontSize: 10,
@@ -316,6 +315,7 @@ class _AccountTile extends StatelessWidget {
         UserRole.admin => Icons.shield_outlined,
         UserRole.driver => Icons.local_shipping_rounded,
         UserRole.user => Icons.person_outline_rounded,
+        UserRole.auditor => Icons.fact_check_outlined,
       };
 }
 
@@ -495,9 +495,8 @@ class _Action extends StatelessWidget {
   }
 }
 
-/// The form the desk fills in. It only makes **crew** accounts: Iswim and City
-/// Hall are separate accounts that already exist, so a driver and his truck is
-/// the only thing left to provision.
+/// The form creates driver or audit viewer accounts. Iswim and City Hall are
+/// separate accounts that already exist.
 class _AccountForm extends StatefulWidget {
   const _AccountForm();
 
@@ -512,6 +511,7 @@ class _AccountFormState extends State<_AccountForm> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
 
+  UserRole _role = UserRole.driver;
   TruckCrewRole _crewRole = TruckCrewRole.driver;
   GarbageTruck? _truck;
   bool _busy = false;
@@ -563,9 +563,9 @@ class _AccountFormState extends State<_AccountForm> {
           name: _name.text,
           email: _email.text,
           password: _password.text,
-          role: UserRole.driver,
+          role: _role,
           crewRole: _crewRole,
-          truckId: _truck?.id,
+          truckId: _role == UserRole.driver ? _truck?.id : null,
           phone: _phone.text,
         ),
       );
@@ -619,9 +619,9 @@ class _AccountFormState extends State<_AccountForm> {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
-                'New driver account',
-                style: TextStyle(
+              Text(
+                'New ${_role.label} account',
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: AppColors.forest,
@@ -629,14 +629,24 @@ class _AccountFormState extends State<_AccountForm> {
               ),
               const SizedBox(height: 2),
               const Text(
-                'Only Driver and Truck Guide accounts are created here. Iswim and '
-                'City Hall are separate accounts and do not need to be '
-                'created again.',
+                'Create an operational account or a read-only audit account.',
                 style: TextStyle(
                   fontSize: 9,
                   height: 1.45,
                   color: AppColors.inkMuted,
                 ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 7,
+                children: [
+                  for (final role in [UserRole.driver, UserRole.auditor])
+                    ChoiceChip(
+                      label: Text(role.label),
+                      selected: _role == role,
+                      onSelected: (_) => setState(() => _role = role),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -694,8 +704,7 @@ class _AccountFormState extends State<_AccountForm> {
                     ? 'Use at least 6 characters'
                     : null,
               ),
-              // Always a crew account, so the plate is always required.
-              ...<Widget>[
+              if (_role == UserRole.driver) ...<Widget>[
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 7,
@@ -758,7 +767,7 @@ class _AccountFormState extends State<_AccountForm> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Create driver account'),
+                      : Text('Create ${_role.label} account'),
                 ),
               ),
             ],

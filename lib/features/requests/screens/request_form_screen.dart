@@ -15,18 +15,20 @@ import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
-import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/collection_request.dart';
 import '../services/collection_request_service.dart';
 
 /// Collection request form.
 ///
-/// The special collection variant is only rendered for verified government
-/// personnel. The same rule is enforced by Firestore, so a modified client
-/// cannot submit a special request from a resident account.
+/// Every resident may ask for a standard or a special pickup: their ID was
+/// checked by the barangay at sign-up. Firestore enforces the same rule (only
+/// approved residents, never crews).
 class RequestFormScreen extends StatefulWidget {
-  const RequestFormScreen({super.key});
+  const RequestFormScreen({super.key, this.initialKind = RequestKind.resident});
+
+  /// Opened as an uncollected-garbage (wave 2) report from the resident home.
+  final RequestKind initialKind;
 
   @override
   State<RequestFormScreen> createState() => _RequestFormScreenState();
@@ -43,7 +45,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
 
   final List<UploadPayload> _images = [];
   WasteCategory _category = WasteCategory.recyclable;
-  RequestKind _kind = RequestKind.resident;
+  late RequestKind _kind = widget.initialKind;
   DateTime _preferred = DateTime.now().add(const Duration(days: 2));
   bool _saving = false;
 
@@ -92,13 +94,6 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
-    if (_kind == RequestKind.special && !user.isVerifiedGovernment) {
-      AppFeedback.error(
-        context,
-        'Special collection requests are only available to verified government personnel.',
-      );
-      return;
-    }
     if (_images.isEmpty) {
       AppFeedback.error(context, 'Add at least one photo of the waste.');
       return;
@@ -137,9 +132,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
           ),
           title: const Text('Request submitted'),
           content: Text(
-            _kind == RequestKind.special
-                ? 'Barangay staff will review your special collection request and assign a schedule.'
-                : 'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+            switch (_kind) {
+              RequestKind.special =>
+                'Barangay staff will review your special collection request and assign a schedule.',
+              RequestKind.uncollected =>
+                'Barangay Batasan Hills will check your report and ask City Hall for a second (wave 2) collection.',
+              RequestKind.resident =>
+                'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+            },
           ),
           actions: [
             FilledButton(
@@ -160,7 +160,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
-    final canSpecial = user?.isVerifiedGovernment ?? false;
+    final canSpecial = user?.role == UserRole.user;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -170,7 +170,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
             AppPageHeader(
               title: canSpecial ? 'Collection request' : 'Request a collection',
               subtitle: canSpecial
-                  ? 'Standard or special pickup for government personnel.'
+                  ? 'Standard or special pickup from your barangay.'
                   : 'Tell the barangay what needs to be collected.',
               onBack: () => context.go('/user'),
               actions: [
@@ -195,26 +195,20 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                           onChanged: (value) => setState(() => _kind = value),
                         ),
                         const SizedBox(height: 14),
-                      ] else if (user?.isGovernment == true) ...[
-                        EcoBanner(
+                      ],
+                      if (_kind == RequestKind.uncollected) ...[
+                        const EcoBanner(
                           message:
-                              user?.verificationStatus ==
-                                  VerificationStatus.rejected
-                              ? 'Your government ID was rejected. Standard requests still work while you resubmit your document.'
-                              : 'Your government account is pending verification. Special collection requests unlock once staff approve your ID.',
-                          icon: Icons.badge_outlined,
-                          color:
-                              user?.verificationStatus ==
-                                  VerificationStatus.rejected
-                              ? AppColors.error
-                              : AppColors.warning,
+                              'Report garbage the truck missed on its regular run. Add a photo and the exact street or landmark. The barangay asks City Hall for a wave 2 pickup.',
+                          icon: Icons.report_gmailerrorred_outlined,
+                          color: Color(0xFFEF6C00),
                         ),
                         const SizedBox(height: 14),
                       ],
                       if (_kind == RequestKind.special) ...[
                         const EcoBanner(
                           message:
-                              'Special collection is for government offices, schools and public facilities. Include the office name and authorized contact in the description.',
+                              'Special collection is for a big load that can’t wait for the next scheduled pickup, like old furniture or renovation debris. Barangay Batasan Hills reviews it and sets a schedule.',
                           icon: Icons.info_outline_rounded,
                           color: Color(0xFF1565C0),
                         ),
@@ -515,8 +509,15 @@ class _KindSelector extends StatelessWidget {
             context,
             kind: RequestKind.special,
             label: 'Special',
-            icon: Icons.badge_outlined,
-            subtitle: 'Government',
+            icon: Icons.inventory_2_outlined,
+            subtitle: 'Big load',
+          ),
+          _option(
+            context,
+            kind: RequestKind.uncollected,
+            label: 'Missed',
+            icon: Icons.report_gmailerrorred_outlined,
+            subtitle: 'Wave 2',
           ),
         ],
       ),

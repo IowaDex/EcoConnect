@@ -113,8 +113,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onParticipation: () => context.go('/event-participation'),
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
-                        onAccounts: () => context.go('/accounts'),
                         onTickets: () => context.go('/ticket-signatures'),
+                        onDelays: () => context.go('/delays'),
                         onWave2: () => context.go('/wave2/pass'),
                         onMemos: () => context.go('/memos/barangay'),
                       );
@@ -558,8 +558,8 @@ class _QuickActions extends StatelessWidget {
     required this.onParticipation,
     required this.onRecycling,
     required this.onUsers,
-    required this.onAccounts,
     required this.onTickets,
+    required this.onDelays,
     required this.onWave2,
     required this.onMemos,
   });
@@ -575,9 +575,9 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onEvents;
   final VoidCallback onRecycling;
   final VoidCallback onUsers;
-  final VoidCallback onAccounts;
   final VoidCallback onParticipation;
   final VoidCallback onTickets;
+  final VoidCallback onDelays;
   final VoidCallback onWave2;
   final VoidCallback onMemos;
 
@@ -651,11 +651,11 @@ class _QuickActions extends StatelessWidget {
         label: 'Users',
         onTap: onUsers,
       ),
-      // Driver and guide logins are made here, not by the crew itself.
+      // Delays City Hall sends down, to announce to residents.
       _QuickTile(
-        icon: Icons.badge_outlined,
-        label: 'Accounts',
-        onTap: onAccounts,
+        icon: Icons.schedule_rounded,
+        label: 'Delays',
+        onTap: onDelays,
       ),
     ];
 

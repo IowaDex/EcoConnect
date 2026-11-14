@@ -70,12 +70,14 @@ test('nobody can self-verify, change account type or clear a rejection', async (
 });
 
 test('signup can ask for government review but not skip it', async () => {
-  const base = {name: 'E', role: 'user', accountStatus: 'active'};
+  const base = {name: 'E', role: 'user', accountStatus: 'pending'};
   const gov = {...base, accountType: 'government'};
   await assertFails(setDoc(doc(as('e1'), 'users/e1'), {...gov, verificationStatus: 'verified'}));
   await assertFails(setDoc(doc(as('e2'), 'users/e2'), {...base, accountType: 'admin'}));
   await assertFails(setDoc(doc(as('e3'), 'users/e3'), {...base, accountType: 'resident', verificationStatus: 'verified'}));
   await assertSucceeds(setDoc(doc(as('e4'), 'users/e4'), {...gov, verificationStatus: 'pending'}));
+  // Every resident's ID now waits for the barangay too.
+  await assertSucceeds(setDoc(doc(as('e5'), 'users/e5'), {...base, accountType: 'resident', verificationStatus: 'pending'}));
 });
 
 // -------------------------------------------------------- collectionRequests
@@ -92,12 +94,19 @@ const request = (requesterId, overrides = {}) => ({
   ...overrides,
 });
 
-test('special requests need a verified government account', async () => {
+test('every approved resident may send a special request; crews may not', async () => {
+  // All residents had their ID checked by the barangay at sign-up.
   const special = {kind: 'special'};
   await assertSucceeds(setDoc(doc(as('alice'), 'collectionRequests/a'), request('alice')));
-  await assertFails(setDoc(doc(as('alice'), 'collectionRequests/b'), request('alice', special)));
-  await assertFails(setDoc(doc(as('ugo'), 'collectionRequests/c'), request('ugo', special)));
+  await assertSucceeds(setDoc(doc(as('alice'), 'collectionRequests/b'), request('alice', special)));
   await assertSucceeds(setDoc(doc(as('gina'), 'collectionRequests/d'), request('gina', special)));
+  await assertFails(setDoc(doc(as('dan'), 'collectionRequests/e'), request('dan', special)));
+  // Residents report garbage the truck missed (wave 2); unknown kinds fail.
+  await assertSucceeds(setDoc(doc(as('bob'), 'collectionRequests/g'), request('bob', {kind: 'uncollected'})));
+  await assertFails(setDoc(doc(as('bob'), 'collectionRequests/h'), request('bob', {kind: 'vip'})));
+  // A resident still waiting for the barangay cannot send anything.
+  await seed((db) => setDoc(doc(db, 'users/pat'), {name: 'Pat', role: 'user', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('pat'), 'collectionRequests/f'), request('pat', special)));
 });
 
 test('a request is created as the caller, pending, with valid fields and photos', async () => {
@@ -240,7 +249,9 @@ test('a government ID is submitted by its owner, as pending, within the size cap
   await assertSucceeds(create('ugo', 'a', verification('ugo')));
   await assertFails(create('alice', 'b', verification('ugo')));
   await assertFails(create('ugo', 'c', verification('ugo', {status: 'verified'})));
-  await assertFails(create('ugo', 'd', verification('ugo', {accountType: 'resident'})));
+  // Residents upload an ID at sign-up as well; other account types do not.
+  await assertSucceeds(create('ugo', 'd', verification('ugo', {accountType: 'resident'})));
+  await assertFails(create('ugo', 'g', verification('ugo', {accountType: 'admin'})));
   await assertFails(create('ugo', 'e', verification('ugo', {document: {dataUrl: text(900000)}})));
   await assertFails(create('ugo', 'f', verification('ugo', {document: 'scan.pdf'})));
 });

@@ -128,6 +128,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         UserRole.user => 'Resident',
         UserRole.iswim => 'Iswim',
         UserRole.cityHall => 'City Hall (DSQC)',
+        UserRole.auditor => 'Audit viewer',
       };
 
   @override

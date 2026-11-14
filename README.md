@@ -109,6 +109,35 @@ firebase deploy --only firestore:rules --project ecoconnect-ecaf8
 
 The emulator compiles the same file during CI, so a syntax error fails fast.
 
+### Audit trail
+
+Business-record changes are captured by server-side Firestore triggers and
+written to the append-only `admin_audit` collection. The log records the actor
+UID/type, action, document path, changed field names, outcome, and event time;
+it does not copy field values. Private resident location history, driver
+coordinates/heartbeat-only updates, reads/navigation, and generated counters
+and notifications are intentionally excluded.
+
+Deploy the functions and rules together:
+
+~~~bash
+firebase deploy --only functions,firestore:rules --project ecoconnect-ecaf8
+~~~
+
+Cloud Functions deployment requires the Firebase project to use the Blaze
+billing plan. Once deployed, City Hall can create an **Audit viewer** login in
+Accounts → New account. The viewer can access the audit page but not the
+operational screens or their data. Admins and City Hall can also view the log.
+Audit entries have no automatic deletion; set an organizational retention
+policy before the collection grows substantially.
+
+Functions run after the source write commits and retry failed log writes, so
+entries may arrive with a delay. Firestore rules prevent app clients from
+changing audit entries, but this application audit trail is not an immutable
+legal evidence service: project owners with privileged Cloud access can still
+administer the project. For formal evidentiary requirements, enable and retain
+Google Cloud Data Access audit logs as well.
+
 ### Collections
 
 | Collection | Purpose |
@@ -123,7 +152,7 @@ The emulator compiles the same file during CI, so a syntax error fails fast.
 | notifications | Personal and shared staff notifications |
 | routes / routePlans | Driver presence and staff assignments |
 | shared_locations | Retired; kept only so old documents can be deleted |
-| dropOffs / incidents | Recycling ledger and incident reports |
+| dropOffs / incidents | Recycling ledger and legacy staff-only incident records |
 
 ### Uploads
 
