@@ -10,6 +10,7 @@ import 'features/auth/screens/signup_screen.dart';
 import 'features/landing/screens/landing_screen.dart';
 import 'features/user/screens/user_screen.dart';
 import 'features/user/screens/wallet_screen.dart';
+import 'features/driver/screens/truck_picker_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
 import 'features/driver/screens/driver_routes_screen.dart';
 import 'features/driver/screens/driver_completed_screen.dart';
@@ -42,6 +43,20 @@ import 'features/notifications/widgets/notification_banner_host.dart';
 import 'features/tracking/screens/tracking_screen.dart';
 import 'features/tracking/widgets/truck_proximity_host.dart';
 import 'features/driver/widgets/run_broadcast_host.dart';
+import 'features/tickets/screens/ticket_detail_screen.dart';
+import 'features/tickets/screens/driver_tickets_screen.dart';
+import 'features/tickets/screens/create_ticket_screen.dart';
+import 'features/tickets/screens/ticket_queue_screen.dart';
+import 'features/tickets/screens/truck_history_screen.dart';
+import 'features/tickets/models/trip_ticket.dart';
+import 'features/iswim/screens/iswim_dashboard_screen.dart';
+import 'features/cityhall/screens/cityhall_dashboard_screen.dart';
+import 'features/delay/screens/delay_screens.dart';
+import 'features/memos/screens/memo_screens.dart';
+import 'features/memos/screens/email_log_screen.dart';
+import 'features/requests/screens/wave_approval_screen.dart';
+import 'features/fleet/screens/fleet_screen.dart';
+import 'features/auth/screens/accounts_screen.dart';
 import 'features/auth/widgets/session_ended_host.dart';
 
 const _publicRoutes = {
@@ -75,10 +90,41 @@ const _residentRoutes = {
 };
 
 const _driverRoutes = {
+  '/driver-trucks',
   '/driver',
   '/driver-routes',
   '/driver-completed',
   '/driver-profile',
+  '/driver-tickets',
+  '/tickets',
+  ..._sharedRoutes,
+};
+
+const _ticketRoutes = {'/tickets', '/trucks'};
+
+const _iswimRoutes = {
+  '/iswim',
+  '/iswim/new-ticket',
+  '/tickets',
+  '/trucks',
+  '/fleet',
+  '/delays',
+  '/delays/new',
+  '/memos',
+  ..._sharedRoutes,
+};
+
+const _cityHallRoutes = {
+  '/cityhall',
+  '/tickets',
+  '/trucks',
+  '/fleet',
+  '/accounts',
+  '/delays',
+  '/memos',
+  '/email-log',
+  '/wave2',
+  '/incidents',
   ..._sharedRoutes,
 };
 
@@ -87,6 +133,7 @@ const _staffRoutes = {
   '/admin',
   '/incidents',
   '/pending-accounts',
+  '/accounts',
   '/routes',
   '/dropoff',
   '/tracking',
@@ -96,18 +143,31 @@ const _staffRoutes = {
   '/waste-validation',
   '/collection-points',
   '/event-participation',
+  '/ticket-signatures',
+  '/delays',
+  '/memos',
+  '/wave2',
+  '/wave2/pass',
+  ..._ticketRoutes,
   ..._sharedRoutes,
 };
 
 String _homeFor(UserRole role) => switch (role) {
       UserRole.admin => '/admin-dashboard',
+      // A driver already owns a truck, so the dashboard opens straight away.
+      // A guide has no truck of his own and is bounced to the fleet list from
+      // inside the dashboard.
       UserRole.driver => '/driver',
+      UserRole.iswim => '/iswim',
+      UserRole.cityHall => '/cityhall',
       UserRole.user => '/user',
     };
 
 Set<String> _allowedFor(UserRole role) => switch (role) {
       UserRole.admin => _staffRoutes,
       UserRole.driver => _driverRoutes,
+      UserRole.iswim => _iswimRoutes,
+      UserRole.cityHall => _cityHallRoutes,
       UserRole.user => _residentRoutes,
     };
 
@@ -195,7 +255,80 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (_, __) => const ForgotPasswordScreen(),
         ),
         GoRoute(path: '/user', builder: (_, __) => const UserScreen()),
+        GoRoute(
+          path: '/driver-trucks',
+          builder: (_, __) => const TruckPickerScreen(),
+        ),
         GoRoute(path: '/driver', builder: (_, __) => const DriverScreen()),
+        GoRoute(
+          path: '/driver-tickets',
+          builder: (_, __) => const DriverTicketsScreen(),
+        ),
+        GoRoute(
+          path: '/tickets/:id',
+          builder: (_, state) => TicketDetailScreen(
+            ticketId: state.pathParameters['id'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: '/trucks/:id/history',
+          builder: (_, state) => TruckHistoryScreen(
+            truckId: state.pathParameters['id'] ?? '',
+          ),
+        ),
+        GoRoute(path: '/iswim', builder: (_, __) => const IswimDashboardScreen()),
+        GoRoute(
+          path: '/iswim/new-ticket',
+          builder: (_, __) => const CreateTicketScreen(),
+        ),
+        GoRoute(
+          path: '/cityhall',
+          builder: (_, __) => const CityHallDashboardScreen(),
+        ),
+        GoRoute(path: '/fleet', builder: (_, __) => const FleetScreen()),
+        GoRoute(path: '/accounts', builder: (_, __) => const AccountsScreen()),
+        GoRoute(
+          path: '/delays',
+          builder: (context, __) => DelayListScreen(
+            canForward: context.read<AuthProvider>().currentUser?.role ==
+                UserRole.cityHall,
+          ),
+        ),
+        GoRoute(
+          path: '/delays/new',
+          builder: (_, __) => const FileDelayScreen(),
+        ),
+        GoRoute(path: '/memos/new', builder: (_, __) => const MemoComposeScreen()),
+        GoRoute(
+          path: '/memos/:channel',
+          builder: (_, state) {
+            final channel = state.pathParameters['channel'] ?? 'cityHall';
+            return MemoInboxScreen(
+              channel: channel,
+              title: switch (channel) {
+                'iswim' => 'Memos · Iswim',
+                'barangay' => 'Memos · Barangay',
+                _ => 'Memos · City Hall',
+              },
+            );
+          },
+        ),
+        GoRoute(path: '/email-log', builder: (_, __) => const EmailLogScreen()),
+        GoRoute(
+          path: '/wave2',
+          builder: (_, __) => const WaveApprovalScreen(forCityHall: true),
+        ),
+        GoRoute(
+          path: '/wave2/pass',
+          builder: (_, __) => const WaveApprovalScreen(forCityHall: false),
+        ),
+        GoRoute(
+          path: '/ticket-signatures',
+          builder: (_, __) => const TicketQueueScreen(
+            signer: TicketStatusSigner.barangay,
+            title: 'Pirma ng Barangay',
+          ),
+        ),
         GoRoute(
           path: '/driver-routes',
           builder: (_, __) => const DriverRoutesScreen(),

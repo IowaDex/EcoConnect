@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
 import '../models/account_type.dart';
+import '../../driver/models/truck_crew_role.dart';
 import 'session_service.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/image_payload.dart';
@@ -14,6 +15,7 @@ enum AuthErrorType {
   emailNotVerified,
   accountRemoved,
   accountPending,
+  accountSuspended,
 }
 
 class AuthException implements Exception {
@@ -73,6 +75,9 @@ class AuthService {
       verificationStatus:
           VerificationStatusX.fromName(data['verificationStatus'] as String?),
       rejectionReason: data['rejectionReason'] as String?,
+      crewRole: TruckCrewRoleX.fromName(data['crewRole'] as String?),
+      // Provisioned drivers open straight onto the truck City Hall linked.
+      assignedTruckId: data['assignedTruckId'] as String?,
     );
   }
 
@@ -93,6 +98,7 @@ class AuthService {
     Map<String, dynamic>? profile,
     AccountType accountType = AccountType.resident,
     UploadPayload? verificationDocument,
+    TruckCrewRole crewRole = TruckCrewRole.driver,
   }) async {
     // Government personnel must supply an ID before the account is created;
     // otherwise the Firestore rules would reject the follow-up write and
@@ -130,6 +136,9 @@ class AuthService {
       'verificationStatus': isGovernment
           ? VerificationStatus.pending.name
           : VerificationStatus.unverified.name,
+      // Driver vs. guide. Both keep role 'driver': the crew role only changes
+      // the labels and who the barangay is told is holding the device.
+      if (role == UserRole.driver) 'crewRole': crewRole.wireName,
       if (profile != null) ...profile,
     });
 
@@ -182,6 +191,13 @@ class AuthService {
       if (appUser.isPendingApproval) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.accountPending);
+      }
+
+      // A frozen login keeps its data but loses access: City Hall suspends a
+      // crew member instead of deleting the tickets he signed.
+      if (appUser.accountStatus == 'suspended') {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.accountSuspended);
       }
 
       // Residents must verify their email. Drivers and staff are provisioned

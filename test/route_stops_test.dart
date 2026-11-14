@@ -18,10 +18,11 @@ class _BlankTileProvider extends TileProvider {
       MemoryImage(_blankPixel);
 }
 
+/// Fixtures sit inside Barangay Batasan Hills, the area every map is locked to.
 const _stops = [
-  RouteStop(name: 'Purok 1', latitude: 14.5995, longitude: 120.9842),
-  RouteStop(name: 'Purok 2', latitude: 14.6010, longitude: 120.9860),
-  RouteStop(name: 'Public market', latitude: 14.6030, longitude: 120.9880),
+  RouteStop(name: 'Purok 1', latitude: 14.6836, longitude: 121.0970),
+  RouteStop(name: 'Purok 2', latitude: 14.6850, longitude: 121.0990),
+  RouteStop(name: 'Public market', latitude: 14.6870, longitude: 121.1010),
 ];
 
 Widget _wrap(Widget child) => MaterialApp(
@@ -148,7 +149,7 @@ void main() {
         _wrap(
           RoutePreviewMap(
             stops: _stops,
-            truck: const LatLng(14.6000, 120.9850),
+            truck: const LatLng(14.6840, 121.0960),
             tileProvider: _BlankTileProvider(),
           ),
         ),
@@ -179,7 +180,7 @@ void main() {
         _wrap(
           RoutePreviewMap(
             stops: _stops,
-            truck: const LatLng(14.6000, 120.9850),
+            truck: const LatLng(14.6840, 121.0960),
             tileProvider: _BlankTileProvider(),
           ),
         ),

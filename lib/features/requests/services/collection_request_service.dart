@@ -188,6 +188,47 @@ class CollectionRequestService {
     );
   }
 
+  /// Barangay reviews the request, then passes it up as wave 2.
+  Future<void> passToCityHall(String id, {String? byName}) async {
+    await _col.doc(id).update({
+      'wave': 2,
+      'cityHallStatus': 'pending',
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (byName != null) 'staffNote': 'Passed to City Hall by $byName',
+    });
+    await _notifications.notifyStaff(
+      title: 'Wave 2 request for approval',
+      body: 'The barangay passed a collection request to City Hall.',
+      type: AppNotificationType.request,
+      data: {'requestId': id, 'kind': 'wave2Pending'},
+    );
+  }
+
+  /// City Hall approves or rejects the wave 2 request. The resident and the
+  /// barangay both see the outcome on the request thread.
+  Future<void> cityHallDecision(
+    String id, {
+    required bool approve,
+    String? note,
+  }) async {
+    await _col.doc(id).update({
+      'cityHallStatus': approve ? 'approved' : 'rejected',
+      'status': approve
+          ? RequestStatus.approved.name
+          : RequestStatus.rejected.name,
+      'rejectionReason': approve ? null : note,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await _notifications.notifyStaff(
+      title: approve ? 'Wave 2 approved by City Hall' : 'Wave 2 rejected',
+      body: note ?? (approve
+          ? 'City Hall approved the request. The barangay can schedule it.'
+          : 'City Hall rejected the request.'),
+      type: AppNotificationType.request,
+      data: {'requestId': id, 'kind': 'wave2Decision'},
+    );
+  }
+
   Future<void> delete(String id) => _col.doc(id).delete();
 
   /// Lets the assigned driver move their own job forward: assigned ->

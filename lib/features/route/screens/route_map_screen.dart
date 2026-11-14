@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 import '../../../core/utils/maps.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../models/route_directions.dart';
@@ -213,28 +214,13 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 Positioned.fill(
                   child: FlutterMap(
                     mapController: _map,
-                    options: MapOptions(
-                      initialCenter: all.first,
-                      initialZoom: 15,
-                      initialCameraFit: bounds == null
-                          ? null
-                          : CameraFit.bounds(
-                              bounds: bounds,
-                              padding:
-                                  const EdgeInsets.fromLTRB(56, 70, 56, 230),
-                            ),
-                      interactionOptions: const InteractionOptions(
-                        flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                      ),
+                    options: BatasanHills.options(
+                      center: all.first,
+                      fit: bounds,
+                      fitPadding: const EdgeInsets.fromLTRB(56, 70, 56, 230),
                     ),
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.ecoconnect',
-                        maxZoom: 19,
-                        tileProvider: widget.tileProvider,
-                      ),
+                      BatasanHills.tiles(tileProvider: widget.tileProvider),
                       if (road.length > 1)
                         PolylineLayer(
                           polylines: [
@@ -282,6 +268,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                             ),
                         ],
                       ),
+                      const OsmAttribution(),
                     ],
                   ),
                 ),

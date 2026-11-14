@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/utils/map_config.dart';
+
 /// One place returned by the OpenStreetMap geocoder.
 class GeocodeResult {
   const GeocodeResult({required this.displayName, required this.point});
@@ -32,11 +34,16 @@ class GeocodingService {
     final text = query.trim();
     if (text.isEmpty) return const [];
 
+    // Results are biased to the barangay the map is locked to, so a typed
+    // street always lands somewhere the user can actually see.
+    final bounds = BatasanHills.bounds;
     final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
       'q': text,
       'format': 'jsonv2',
       'limit': '$limit',
       'addressdetails': '0',
+      'bounded': '1',
+      'viewbox': '${bounds.west},${bounds.north},${bounds.east},${bounds.south}',
     });
 
     final response = await http.get(

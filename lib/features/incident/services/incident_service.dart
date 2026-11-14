@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 import '../models/incident.dart';
 
 class IncidentService {
@@ -28,7 +30,17 @@ class IncidentService {
       'lat': latitude,
       'lng': longitude,
       'createdAt': FieldValue.serverTimestamp(),
+      // Incidents skip the barangay and land on the DSQC desk.
+      'channel': 'cityHall',
     });
+
+    // City Hall is told immediately; the barangay only sees it as a copy.
+    await NotificationService().notifyStaff(
+      title: 'Incident reported · ${category.name}',
+      body: '$residentName: $description',
+      type: AppNotificationType.request,
+      data: {'kind': 'incident', 'channel': 'cityHall'},
+    );
   }
 
   Stream<List<Incident>> watchAll() {

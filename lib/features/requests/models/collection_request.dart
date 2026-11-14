@@ -136,6 +136,8 @@ class CollectionRequest {
     this.createdAt,
     this.updatedAt,
     this.history = const [],
+    this.wave = 1,
+    this.cityHallStatus = 'none',
   });
 
   final String id;
@@ -161,6 +163,15 @@ class CollectionRequest {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final List<RequestHistoryEntry> history;
+
+  /// 1 for the regular round, 2 once the barangay passes it to City Hall.
+  final int wave;
+
+  /// Wave 2 approval state: `none`, `pending`, `approved` or `rejected`.
+  final String cityHallStatus;
+
+  bool get needsCityHall => cityHallStatus == 'pending';
+  bool get isWave2 => wave == 2;
 
   bool get isSpecial => kind == RequestKind.special;
 
@@ -225,6 +236,8 @@ class CollectionRequest {
               .toList(growable: false)
           : const [],
       status: RequestStatusX.fromName(data['status'] as String?),
+      wave: (data['wave'] as num?)?.toInt() ?? 1,
+      cityHallStatus: data['cityHallStatus'] as String? ?? 'none',
       assignedDriverId: data['assignedDriverId'] as String?,
       assignedDriverName: data['assignedDriverName'] as String?,
       scheduledAt: _asDate(data['scheduledAt']),
