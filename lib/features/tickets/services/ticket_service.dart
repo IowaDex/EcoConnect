@@ -135,7 +135,7 @@ class TicketService {
     return 'TT-$year-${next.toString().padLeft(4, '0')}';
   }
 
-  Future<void> accept(String id) async {
+  Future<void> accept(String id, {String byUid = '', String byName = 'Driver'}) async {
     await _advance(
       id,
       from: TicketStatus.issued,
@@ -144,10 +144,18 @@ class TicketService {
         'pendingSigner': null,
         'acceptedAt': FieldValue.serverTimestamp(),
       },
+      byUid: byUid,
+      byName: byName,
+      note: 'Ticket received by driver',
     );
   }
 
-  Future<void> decline(String id, String reason) async {
+  Future<void> decline(
+    String id,
+    String reason, {
+    String byUid = '',
+    String byName = 'Driver',
+  }) async {
     await _advance(
       id,
       from: TicketStatus.issued,
@@ -156,11 +164,24 @@ class TicketService {
         'pendingSigner': null,
         'declineReason': reason,
       },
+      byUid: byUid,
+      byName: byName,
+      note: reason,
+    );
+    await _notifications.notifyIswim(
+      title: 'Trip ticket declined',
+      body: '$byName declined a ticket: $reason',
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'ticketDeclined'},
     );
   }
 
   /// Called when the driver actually starts moving on this ticket.
-  Future<void> markRunning(String id) async {
+  Future<void> markRunning(
+    String id, {
+    String byUid = '',
+    String byName = 'Driver',
+  }) async {
     await _advance(
       id,
       from: TicketStatus.accepted,
@@ -168,11 +189,19 @@ class TicketService {
         'status': TicketStatus.running.name,
         'startedAt': FieldValue.serverTimestamp(),
       },
+      byUid: byUid,
+      byName: byName,
+      note: 'Route started',
     );
   }
 
   /// End of trip: the driver submits and the ticket walks to the barangay.
-  Future<void> submit(String id, {String driverName = 'Driver'}) async {
+  Future<void> submit(
+    String id, {
+    String driverName = 'Driver',
+    String byUid = '',
+    String note = 'Route completed and submitted',
+  }) async {
     await _advance(
       id,
       from: TicketStatus.running,
@@ -181,12 +210,109 @@ class TicketService {
         'pendingSigner': TicketStatusSigner.barangay.wireName,
         'submittedAt': FieldValue.serverTimestamp(),
       },
+      byUid: byUid,
+      byName: driverName,
+      note: note,
     );
     await _notifications.notifyStaff(
       title: 'Trip ticket for signature',
       body: '$driverName submitted a trip ticket. Barangay signature needed.',
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketSubmitted'},
+    );
+  }
+
+  /// Barangay returns the ticket to the driver instead of approving it. The
+  /// driver can correct the trip and submit again; the previous record stays
+  /// in the audit trail.
+  Future<void> returnForRevision({
+    required String id,
+    required String reason,
+    required String byUid,
+    required String byName,
+  }) async {
+    final ticket = await _load(id);
+    await _advance(
+      id,
+      from: TicketStatus.submitted,
+      data: {
+        'status': TicketStatus.revisionRequired.name,
+        'pendingSigner': TicketStatusSigner.driver.wireName,
+        'revisionReason': reason,
+      },
+      byUid: byUid,
+      byName: byName,
+      note: reason,
+    );
+    await _notifications.push(
+      userId: ticket.driverId,
+      title: 'Trip ticket needs revision · ${ticket.code}',
+      body: reason,
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'ticketRevision'},
+    );
+  }
+
+  /// Final rejection. Barangay can reject before signing, Iswim can reject
+  /// after the barangay approved.
+  Future<void> reject({
+    required String id,
+    required String reason,
+    required String byUid,
+    required String byName,
+  }) async {
+    final ticket = await _load(id);
+    await _advanceFromAny(
+      id,
+      allowed: const [TicketStatus.submitted, TicketStatus.barangaySigned],
+      data: {
+        'status': TicketStatus.rejected.name,
+        'pendingSigner': null,
+        'rejectionReason': reason,
+      },
+      byUid: byUid,
+      byName: byName,
+      note: reason,
+    );
+    await _notifications.push(
+      userId: ticket.driverId,
+      title: 'Trip ticket rejected · ${ticket.code}',
+      body: reason,
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'ticketRejected'},
+    );
+    await _notifications.notifyStaff(
+      title: 'Trip ticket rejected · ${ticket.code}',
+      body: '$byName rejected the ticket: $reason',
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'ticketRejected'},
+    );
+  }
+
+  /// Driver resubmits after a barangay revision request.
+  Future<void> resubmit({
+    required String id,
+    required String byUid,
+    required String byName,
+    String note = 'Corrected and resubmitted',
+  }) async {
+    await _advance(
+      id,
+      from: TicketStatus.revisionRequired,
+      data: {
+        'status': TicketStatus.submitted.name,
+        'pendingSigner': TicketStatusSigner.barangay.wireName,
+        'submittedAt': FieldValue.serverTimestamp(),
+      },
+      byUid: byUid,
+      byName: byName,
+      note: note,
+    );
+    await _notifications.notifyStaff(
+      title: 'Trip ticket resubmitted',
+      body: '$byName corrected and resubmitted a trip ticket.',
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'ticketResubmitted'},
     );
   }
 
@@ -230,6 +356,15 @@ class TicketService {
       'pendingSigner': next.pendingSigner?.wireName,
       if (next == TicketStatus.completed)
         'completedAt': FieldValue.serverTimestamp(),
+      'history': FieldValue.arrayUnion([
+        TicketHistoryEntry(
+          status: next,
+          previousStatus: ticket.status,
+          byUid: uid,
+          byName: name,
+          note: '${signer.label} signature recorded',
+        ).toMap(),
+      ]),
     });
 
     // Signed copy goes back to the barangay the moment City Hall signs.
@@ -253,13 +388,49 @@ class TicketService {
     });
   }
 
+  Future<TripTicket> _load(String id) async {
+    final snap = await _col.doc(id).get();
+    if (!snap.exists) throw const TicketException('Ticket not found.');
+    return TripTicket.fromDoc(snap.id, snap.data()!)!;
+  }
+
   /// Status-guarded write: the ticket must still be in [from], so a double tap
   /// or a second device cannot move it twice.
   Future<void> _advance(
     String id, {
     required TicketStatus from,
     required Map<String, dynamic> data,
+    String byUid = '',
+    String byName = '',
+    String note = '',
+  }) =>
+      _advanceFromAny(
+        id,
+        allowed: [from],
+        data: data,
+        byUid: byUid,
+        byName: byName,
+        note: note,
+      );
+
+  /// Same guard, but accepts one of several current statuses. Used by the
+  /// rejection step, which can happen before or after the barangay signature.
+  Future<void> _advanceFromAny(
+    String id, {
+    required List<TicketStatus> allowed,
+    required Map<String, dynamic> data,
+    String byUid = '',
+    String byName = '',
+    String note = '',
   }) async {
+    final next = TicketStatusX.fromName(data['status'] as String?);
+    final entry = TicketHistoryEntry(
+      status: next,
+      previousStatus: null,
+      byUid: byUid,
+      byName: byName,
+      note: note,
+    );
     await _db.runTransaction((tx) async {
       final ref = _col.doc(id);
       final snap = await tx.get(ref);
@@ -267,12 +438,22 @@ class TicketService {
       final current = TicketStatusX.fromName(
         snap.data()?['status'] as String?,
       );
-      if (current != from) {
+      if (!allowed.contains(current)) {
         throw TicketException(
           'This ticket already moved (${current.label}). Pull to refresh.',
         );
       }
-      tx.update(ref, data);
+      // Fill the previous status from the document so the audit entry is
+      // accurate even when the caller allowed several statuses.
+      tx.update(ref, {
+        ...data,
+        'history': FieldValue.arrayUnion([
+          {
+            ...entry.toMap(),
+            'previousStatus': current.name,
+          },
+        ]),
+      });
     });
   }
 }

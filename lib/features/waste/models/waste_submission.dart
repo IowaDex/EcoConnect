@@ -56,6 +56,7 @@ class WasteSubmission {
     this.remarks,
     this.validatedBy,
     this.validatedAt,
+    this.pointsAwarded = 0,
     this.createdAt,
     this.updatedAt,
   });
@@ -73,6 +74,7 @@ class WasteSubmission {
   final String? remarks;
   final String? validatedBy;
   final DateTime? validatedAt;
+  final int pointsAwarded;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -99,6 +101,7 @@ class WasteSubmission {
       remarks: data['remarks'] as String?,
       validatedBy: data['validatedBy'] as String?,
       validatedAt: _asDate(data['validatedAt']),
+      pointsAwarded: (data['pointsAwarded'] as num?)?.toInt() ?? 0,
       createdAt: _asDate(data['createdAt']),
       updatedAt: _asDate(data['updatedAt']),
     );

@@ -47,8 +47,9 @@ class EmailLogScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(28),
                 child: Text(
-                  'Wala pang na-email. Pag may announcement ang Iswim, '
-                  'automatic itong lalabas dito para sa District Officer.',
+                  'Nothing has been emailed yet. When Iswim posts an '
+                  'announcement, it appears here automatically for the '
+                  'District Officer.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 10.5,
@@ -122,7 +123,7 @@ class EmailLogScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'ni ${entry.byName}',
+                        'by ${entry.byName}',
                         style: const TextStyle(
                           fontSize: 8.5,
                           color: AppColors.sage,

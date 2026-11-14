@@ -73,7 +73,7 @@ class TruckHistoryScreen extends StatelessWidget {
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 30),
                   child: Text(
-                    'Wala pang trip ticket ang truck na ito.',
+                    'This truck has no trip tickets yet.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 10.5,

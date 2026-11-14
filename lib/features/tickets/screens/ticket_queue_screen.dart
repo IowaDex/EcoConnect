@@ -63,7 +63,7 @@ class TicketQueueScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 6, 20, 26),
             children: [
               Text(
-                '${tickets.length} ticket na naghihintay ng pirma mo',
+                '${tickets.length} ticket${tickets.length == 1 ? '' : 's'} waiting for your signature',
                 style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -74,7 +74,7 @@ class TicketQueueScreen extends StatelessWidget {
               for (final ticket in tickets) ...[
                 TicketCard(
                   ticket: ticket,
-                  trailingLabel: 'Pirma mo',
+                  trailingLabel: 'Your signature',
                   onTap: () => context.push('/tickets/${ticket.id}'),
                 ),
                 const SizedBox(height: 9),
@@ -104,7 +104,7 @@ class _EmptyQueue extends StatelessWidget {
             const Icon(Icons.draw_outlined, size: 42, color: AppColors.sage),
             const SizedBox(height: 12),
             const Text(
-              'Wala pang pirma na kailangan',
+              'Nothing to sign yet',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -114,8 +114,8 @@ class _EmptyQueue extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               subtitle ??
-                  'Automatic na darating dito ang ticket pag tapos na ang '
-                      'naunang pirma.',
+                  'Tickets arrive here automatically once the previous '
+                      'signature is done.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 10,

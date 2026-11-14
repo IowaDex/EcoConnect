@@ -75,19 +75,105 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 
   Future<void> _decline() async {
+    final user = context.read<AuthProvider>().currentUser;
+    final reason = await _reasonDialog(
+      title: 'Decline this ticket?',
+      label: 'Why are you declining it?',
+      hint: 'e.g. the truck is broken, no crew with me',
+      action: 'Decline',
+    );
+    if (reason == null || !mounted) return;
+    await _run(
+      () => _service.decline(
+        widget.ticketId,
+        reason,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'Driver',
+      ),
+      'Ticket declined — Iswim will be notified',
+    );
+  }
+
+  Future<void> _returnForRevision() async {
+    final user = context.read<AuthProvider>().currentUser;
+    final reason = await _reasonDialog(
+      title: 'Return to driver?',
+      label: 'What needs to be corrected?',
+      hint: 'e.g. departure time is too short, wrong route',
+      action: 'Return',
+    );
+    if (reason == null || !mounted) return;
+    await _run(
+      () => _service.returnForRevision(
+        id: widget.ticketId,
+        reason: reason,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'Barangay',
+      ),
+      'Ticket returned to the driver for revision',
+    );
+  }
+
+  Future<void> _rejectTicket() async {
+    final user = context.read<AuthProvider>().currentUser;
+    final reason = await _reasonDialog(
+      title: 'Reject this ticket?',
+      label: 'Reason for rejection',
+      hint: 'This is recorded permanently in the audit trail.',
+      action: 'Reject',
+      danger: true,
+    );
+    if (reason == null || !mounted) return;
+    await _run(
+      () => _service.reject(
+        id: widget.ticketId,
+        reason: reason,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'Barangay',
+      ),
+      'Ticket rejected and recorded',
+    );
+  }
+
+  Future<void> _resubmit() async {
+    final user = context.read<AuthProvider>().currentUser;
+    final note = await _reasonDialog(
+      title: 'Resubmit ticket?',
+      label: 'What did you correct?',
+      hint: 'Optional note for the barangay',
+      action: 'Resubmit',
+      required: false,
+    );
+    if (note == null || !mounted) return;
+    await _run(
+      () => _service.resubmit(
+        id: widget.ticketId,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'Driver',
+        note: note.trim().isEmpty ? 'Corrected and resubmitted' : note,
+      ),
+      'Ticket resubmitted to the barangay',
+    );
+  }
+
+  Future<String?> _reasonDialog({
+    required String title,
+    required String label,
+    required String hint,
+    required String action,
+    bool danger = false,
+    bool required = true,
+  }) async {
     final controller = TextEditingController();
-    final reason = await showDialog<String>(
+    final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Tanggihan ang ticket?'),
+        title: Text(title),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Bakit hindi mo tatanggapin?',
-            hintText: 'Hal. may sira ang truck, wala akong kasama',
-          ),
+          decoration: InputDecoration(labelText: label, hintText: hint),
         ),
         actions: [
           TextButton(
@@ -97,17 +183,19 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           FilledButton(
             onPressed: () {
               final text = controller.text.trim();
-              if (text.isEmpty) return;
+              if (required && text.isEmpty) return;
               Navigator.of(ctx).pop(text);
             },
-            child: const Text('Decline'),
+            style: danger
+                ? FilledButton.styleFrom(backgroundColor: AppColors.error)
+                : null,
+            child: Text(action),
           ),
         ],
       ),
     );
-    if (reason == null || !mounted) return;
-    await _run(() => _service.decline(widget.ticketId, reason),
-        'Ticket declined — Iswim will be notified');
+    controller.dispose();
+    return result;
   }
 
   Future<void> _sign(TripTicket ticket, TicketStatusSigner signer) async {
@@ -128,7 +216,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         name: user.displayName ?? signer.label,
         image: image,
       ),
-      'Napirmahan na — automatic na napasa sa susunod',
+      'Signed — automatically forwarded to the next signer',
     );
   }
 
@@ -188,7 +276,101 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               _Timeline(ticket: ticket, format: _format),
               const SizedBox(height: 14),
               _Signatures(ticket: ticket, format: _format),
+              const SizedBox(height: 14),
+              _AuditTrail(ticket: ticket, format: _format),
               const SizedBox(height: 18),
+              if (isDriver && ticket.needsRevision && !_busy) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.warning),
+                  ),
+                  child: Text(
+                    'Returned by the barangay: '
+                    '${ticket.revisionReason ?? 'Please correct the trip details.'}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      height: 1.5,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 46,
+                  child: FilledButton.icon(
+                    onPressed: _resubmit,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text(
+                      'Resubmit corrected ticket',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.forest,
+                    ),
+                  ),
+                ),
+              ],
+              if (user?.role == UserRole.admin &&
+                  ticket.status == TicketStatus.submitted &&
+                  !_busy) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: _returnForRevision,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.warning,
+                            side: const BorderSide(color: AppColors.warning),
+                            textStyle: const TextStyle(fontSize: 10.5),
+                          ),
+                          child: const Text('Return for revision'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: _rejectTicket,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error),
+                            textStyle: const TextStyle(fontSize: 10.5),
+                          ),
+                          child: const Text('Reject'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (user?.role == UserRole.iswim &&
+                  ticket.status == TicketStatus.barangaySigned &&
+                  !_busy) ...[
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton(
+                    onPressed: _rejectTicket,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      side: const BorderSide(color: AppColors.error),
+                      textStyle: const TextStyle(fontSize: 11),
+                    ),
+                    child: const Text('Reject after barangay approval'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               if (isDriver && ticket.needsDriver && !_busy) ...[
                 Row(
                   children: [
@@ -213,8 +395,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                         height: 46,
                         child: FilledButton(
                           onPressed: () => _run(
-                            () => _service.accept(ticket.id),
-                            'Ticket accepted — pwede nang mag-start ng trip',
+                            () => _service.accept(
+                              ticket.id,
+                              byUid: user?.uid ?? '',
+                              byName: user?.displayName ?? 'Driver',
+                            ),
+                            'Ticket accepted — you can start the trip',
                           ),
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.forest,
@@ -236,7 +422,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   child: FilledButton.icon(
                     onPressed: () => context.go('/driver'),
                     icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: const Text('Pumunta sa trip dashboard'),
+                    label: const Text('Go to trip dashboard'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.forest,
                       textStyle: const TextStyle(
@@ -263,7 +449,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                           )
                         : const Icon(Icons.draw_rounded, size: 18),
                     label: Text(
-                      'Pirma bilang ${mySigner.label}',
+                      'Sign as ${mySigner.label}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -277,7 +463,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               ],
               if (expected != null && !canSign) ...[
                 Text(
-                  'Naghihintay ng pirma ng ${expected.label}.',
+                  'Waiting for the ${expected.label} signature.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 10,
@@ -300,8 +486,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                       SizedBox(width: 9),
                       Expanded(
                         child: Text(
-                          'Kumpleto na ang tatlong pirma. May signed copy na '
-                          'ang barangay at City Hall.',
+                          'All three signatures are complete. The barangay and '
+                          'City Hall each have a signed copy.',
                           style: TextStyle(
                             fontSize: 10,
                             height: 1.45,
@@ -420,6 +606,12 @@ class _Details extends StatelessWidget {
             _row(Icons.sticky_note_2_outlined, 'Notes', ticket.notes),
           if ((ticket.declineReason ?? '').trim().isNotEmpty)
             _row(Icons.block_rounded, 'Decline reason', ticket.declineReason!),
+          if ((ticket.revisionReason ?? '').trim().isNotEmpty)
+            _row(Icons.edit_note_rounded, 'Revision reason',
+                ticket.revisionReason!),
+          if ((ticket.rejectionReason ?? '').trim().isNotEmpty)
+            _row(Icons.gpp_bad_outlined, 'Rejection reason',
+                ticket.rejectionReason!),
         ],
       ),
     );
@@ -470,33 +662,33 @@ class _Timeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final steps = <({String label, DateTime? time, bool done})>[
       (
-        label: 'Inisyu ni Iswim',
+        label: 'Issued by Iswim',
         time: ticket.createdAt,
         done: ticket.createdAt != null,
       ),
       (
-        label: 'Tinanggap ng driver',
+        label: 'Received by driver',
         time: ticket.acceptedAt,
         done: ticket.acceptedAt != null,
       ),
       (
-        label: 'Umikot / tapos ang ruta',
+        label: 'Route completed',
         time: ticket.submittedAt,
         done: ticket.submittedAt != null,
       ),
       (
-        label: 'Pirma ng Barangay',
+        label: 'Barangay signature',
         time: ticket.signatureFor(TicketStatusSigner.barangay)?.signedAt,
         done: ticket.signatureFor(TicketStatusSigner.barangay)?.isPresent ??
             false,
       ),
       (
-        label: 'Pirma ng Iswim',
+        label: 'Iswim signature',
         time: ticket.signatureFor(TicketStatusSigner.iswim)?.signedAt,
         done: ticket.signatureFor(TicketStatusSigner.iswim)?.isPresent ?? false,
       ),
       (
-        label: 'Pirma ng City Hall',
+        label: 'City Hall signature',
         time: ticket.signatureFor(TicketStatusSigner.cityHall)?.signedAt,
         done:
             ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ?? false,
@@ -514,7 +706,7 @@ class _Timeline extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Daloy ng ticket',
+            'Ticket flow',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -567,6 +759,95 @@ class _Timeline extends StatelessWidget {
   }
 }
 
+class _AuditTrail extends StatelessWidget {
+  const _AuditTrail({required this.ticket, required this.format});
+
+  final TripTicket ticket;
+  final String Function(DateTime?) format;
+
+  @override
+  Widget build(BuildContext context) {
+    if (ticket.history.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Audit trail',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: AppColors.forest,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final entry in ticket.history.reversed) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 3),
+                    height: 7,
+                    width: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.previousStatus == null
+                              ? entry.status.label
+                              : '${entry.previousStatus!.label} → '
+                                  '${entry.status.label}',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          '${entry.byName.isEmpty ? 'System' : entry.byName}'
+                          '${entry.note.trim().isEmpty ? '' : ' · ${entry.note}'}',
+                          style: const TextStyle(
+                            fontSize: 8.5,
+                            height: 1.4,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    format(entry.at),
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _Signatures extends StatelessWidget {
   const _Signatures({required this.ticket, required this.format});
 
@@ -586,7 +867,7 @@ class _Signatures extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Mga pirma',
+            'Signatures',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
@@ -671,7 +952,7 @@ class _SignatureBox extends StatelessWidget {
           Text(
             signature?.isPresent == true
                 ? format(signature!.signedAt)
-                : 'hindi pa',
+                : 'not yet',
             style: const TextStyle(fontSize: 8, color: AppColors.inkMuted),
           ),
         ],

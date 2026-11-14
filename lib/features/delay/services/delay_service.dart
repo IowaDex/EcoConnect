@@ -53,7 +53,9 @@ class DelayService {
     );
 
     final ref = await _col.add(report.toMap());
-    await _notifications.notifyStaff(
+    // DSQC receives the report first; the barangay copy is sent only after
+    // DSQC forwards it to the district officer.
+    await _notifications.notifyCityHall(
       title: 'Delay report · $code',
       body: '$plateNumber ($driverName) · $reason · $minutesLate min late.',
       type: AppNotificationType.route,

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/motion.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -835,16 +836,7 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
           const SizedBox(width: 8),
           SizedBox(
             width: 62,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: count / max,
-                minHeight: 5,
-                backgroundColor: AppColors.sage,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.primary),
-              ),
-            ),
+            child: GrowBar(value: count / max, height: 5),
           ),
           const SizedBox(width: 8),
           SizedBox(

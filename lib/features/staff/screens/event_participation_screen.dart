@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/motion.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
@@ -225,16 +226,10 @@ class _StandingRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 5),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: standing.points / maxPoints,
-                    minHeight: 5,
-                    backgroundColor: AppColors.sage,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      leading ? AppColors.primary : AppColors.lightGreen,
-                    ),
-                  ),
+                GrowBar(
+                  value: standing.points / maxPoints,
+                  height: 5,
+                  color: leading ? AppColors.primary : AppColors.lightGreen,
                 ),
               ],
             ),

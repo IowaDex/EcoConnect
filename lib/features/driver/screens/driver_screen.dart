@@ -394,9 +394,9 @@ class _DriverScreenState extends State<DriverScreen> {
     if (ticket == null || ticket.needsDriver) {
       _toast(
         ticket == null
-            ? 'Wala pang trip ticket. Iswim ang gumagawa nito — hintayin ang '
+            ? 'No trip ticket yet. Iswim creates it — wait for the '
                 'notification.'
-            : 'Tanggapin muna ang trip ticket bago mag-start ng biyahe.',
+            : 'Accept the trip ticket before starting the trip.',
         isError: true,
       );
       if (ticket != null) context.push('/driver-tickets');
@@ -502,7 +502,11 @@ class _DriverScreenState extends State<DriverScreen> {
       await _evaluateGeofence();
       if (ticket.status == TicketStatus.accepted) {
         try {
-          await _ticketService.markRunning(ticket.id);
+          await _ticketService.markRunning(
+            ticket.id,
+            byUid: user.uid,
+            byName: user.displayName ?? 'Driver',
+          );
         } catch (_) {
           // The trip itself must not fail because the ticket write did.
         }
@@ -727,11 +731,12 @@ class _DriverScreenState extends State<DriverScreen> {
           await _ticketService.submit(
             ticket.id,
             driverName: user.displayName ?? 'Driver',
+            byUid: user.uid,
           );
-          _toast('Ticket submitted — barangay ang susunod na pipirma');
+          _toast('Ticket submitted — the barangay signs next');
         } catch (_) {
           _toast(
-            'Trip ended, pero hindi na-submit ang ticket. Subukan ulit.',
+            'The trip ended but the ticket was not submitted. Try again.',
             isError: true,
           );
         }
@@ -898,8 +903,8 @@ class _DriverScreenState extends State<DriverScreen> {
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
-                          'Wala pang trip ticket. Iswim ang gumagawa — hindi '
-                          'makakabyahe hangga\'t wala nito.',
+                          'No trip ticket yet. Iswim creates it — you cannot '
+                          'start the trip without one.',
                           style: TextStyle(
                             fontSize: 9.5,
                             height: 1.45,
@@ -916,7 +921,7 @@ class _DriverScreenState extends State<DriverScreen> {
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text(
-                          'Tingnan',
+                          'View',
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w700,

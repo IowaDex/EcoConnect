@@ -58,6 +58,13 @@ import 'features/requests/screens/wave_approval_screen.dart';
 import 'features/fleet/screens/fleet_screen.dart';
 import 'features/auth/screens/accounts_screen.dart';
 import 'features/auth/widgets/session_ended_host.dart';
+import 'features/manuals/screens/manuals_screen.dart';
+import 'features/manuals/screens/manual_detail_screen.dart';
+import 'features/manuals/screens/manual_requests_screen.dart';
+import 'features/complaints/screens/complaint_form_screen.dart';
+import 'features/complaints/screens/my_complaints_screen.dart';
+import 'features/complaints/screens/complaint_desk_screen.dart';
+import 'features/cityhall/screens/cityhall_requests_screen.dart';
 
 const _publicRoutes = {
   '/splash',
@@ -86,6 +93,8 @@ const _residentRoutes = {
   '/waste-history',
   '/request-collection',
   '/my-requests',
+  '/my-complaints',
+  '/complaints/new',
   ..._sharedRoutes,
 };
 
@@ -111,6 +120,8 @@ const _iswimRoutes = {
   '/delays',
   '/delays/new',
   '/memos',
+  '/manuals',
+  '/manual-requests',
   ..._sharedRoutes,
 };
 
@@ -125,6 +136,10 @@ const _cityHallRoutes = {
   '/email-log',
   '/wave2',
   '/incidents',
+  '/complaints',
+  '/cityhall-requests',
+  '/manuals',
+  '/manual-requests',
   ..._sharedRoutes,
 };
 
@@ -326,7 +341,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/ticket-signatures',
           builder: (_, __) => const TicketQueueScreen(
             signer: TicketStatusSigner.barangay,
-            title: 'Pirma ng Barangay',
+            title: 'Barangay signature',
           ),
         ),
         GoRoute(
@@ -417,6 +432,33 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(
           path: '/my-requests',
           builder: (_, __) => const MyRequestsScreen(),
+        ),
+        GoRoute(
+          path: '/my-complaints',
+          builder: (_, __) => const MyComplaintsScreen(),
+        ),
+        GoRoute(
+          path: '/complaints/new',
+          builder: (_, __) => const ComplaintFormScreen(),
+        ),
+        GoRoute(
+          path: '/complaints',
+          builder: (_, __) => const ComplaintDeskScreen(),
+        ),
+        GoRoute(
+          path: '/cityhall-requests',
+          builder: (_, __) => const CityHallRequestsScreen(),
+        ),
+        GoRoute(path: '/manuals', builder: (_, __) => const ManualsScreen()),
+        GoRoute(
+          path: '/manuals/:id',
+          builder: (_, state) => ManualDetailScreen(
+            manualId: state.pathParameters['id'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: '/manual-requests',
+          builder: (_, __) => const ManualRequestsScreen(),
         ),
         GoRoute(
           path: '/notifications',

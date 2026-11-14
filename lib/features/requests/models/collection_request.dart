@@ -109,6 +109,39 @@ class RequestHistoryEntry {
   }
 }
 
+/// One message in the shared response thread. City Hall replies are visible to
+/// the requesting resident **and** the concerned barangay staff.
+class RequestResponse {
+  const RequestResponse({
+    required this.message,
+    required this.byName,
+    required this.byRole,
+    this.at,
+  });
+
+  final String message;
+  final String byName;
+  final String byRole;
+  final DateTime? at;
+
+  Map<String, dynamic> toMap() => {
+        'message': message,
+        'byName': byName,
+        'byRole': byRole,
+        'at': Timestamp.now(),
+      };
+
+  static RequestResponse? fromMap(dynamic raw) {
+    if (raw is! Map) return null;
+    return RequestResponse(
+      message: raw['message'] as String? ?? '',
+      byName: raw['byName'] as String? ?? 'City Hall',
+      byRole: raw['byRole'] as String? ?? 'cityHall',
+      at: _asDate(raw['at']),
+    );
+  }
+}
+
 /// A garbage collection request submitted by a resident or government
 /// personnel. Stored at collectionRequests/{id}.
 class CollectionRequest {
@@ -136,6 +169,7 @@ class CollectionRequest {
     this.createdAt,
     this.updatedAt,
     this.history = const [],
+    this.responses = const [],
     this.wave = 1,
     this.cityHallStatus = 'none',
   });
@@ -163,6 +197,7 @@ class CollectionRequest {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final List<RequestHistoryEntry> history;
+  final List<RequestResponse> responses;
 
   /// 1 for the regular round, 2 once the barangay passes it to City Hall.
   final int wave;
@@ -209,12 +244,16 @@ class CollectionRequest {
       createdAt: createdAt,
       updatedAt: updatedAt,
       history: history,
+      responses: responses,
+      wave: wave,
+      cityHallStatus: cityHallStatus,
     );
   }
 
   static CollectionRequest fromDoc(String id, Map<String, dynamic> data) {
     final rawImages = data['images'];
     final rawHistory = data['history'];
+    final rawResponses = data['responses'];
     return CollectionRequest(
       id: id,
       requesterId: (data['requesterId'] as String?) ?? '',
@@ -248,6 +287,12 @@ class CollectionRequest {
       history: rawHistory is List
           ? rawHistory
               .map(RequestHistoryEntry.fromMap)
+              .toList(growable: false)
+          : const [],
+      responses: rawResponses is List
+          ? rawResponses
+              .map(RequestResponse.fromMap)
+              .whereType<RequestResponse>()
               .toList(growable: false)
           : const [],
     );

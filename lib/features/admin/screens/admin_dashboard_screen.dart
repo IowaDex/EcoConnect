@@ -7,6 +7,7 @@ import '../../incident/models/incident.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../notifications/widgets/notification_bell.dart';
+import '../../../core/widgets/motion.dart';
 import '../../incident/services/incident_service.dart';
 import '../../route/services/route_service.dart';
 import '../../requests/models/collection_request.dart';
@@ -660,7 +661,14 @@ class _QuickActions extends StatelessWidget {
       mainAxisSpacing: 14,
       crossAxisSpacing: 6,
       childAspectRatio: 0.82,
-      children: items,
+      children: [
+        for (var i = 0; i < items.length; i++)
+          FadeSlideIn(
+            index: i,
+            offset: 10,
+            child: HoverLift(child: items[i]),
+          ),
+      ],
     );
   }
 }

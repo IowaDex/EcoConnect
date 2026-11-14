@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../models/trip_ticket.dart';
+import '../../../core/widgets/motion.dart';
 
 /// Compact row for ticket lists: code, plate, driver, route and where it is.
 class TicketCard extends StatelessWidget {
@@ -30,7 +31,7 @@ class TicketCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = trailingLabel ?? ticket.status.label;
-    return Material(
+    final card = Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
@@ -144,5 +145,7 @@ class TicketCard extends StatelessWidget {
         ),
       ),
     );
+
+    return HoverLift(child: card);
   }
 }

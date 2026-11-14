@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/widgets/motion.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../notifications/widgets/notification_bell.dart';
@@ -129,16 +130,16 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
                         ..._cards(
                           context,
                           forSignature,
-                          'Pirma mo',
-                          empty: 'Wala pang ticket na dumarating dito. Dadaan '
-                              'muna ito sa Barangay at Iswim.',
+                          'Your signature',
+                          empty: 'No tickets have reached this desk yet. Tickets '
+                              'pass through the Barangay and Iswim first.',
                         )
                       else
                         ..._cards(
                           context,
                           received,
                           null,
-                          empty: 'Wala pang kumpletong ticket.',
+                          empty: 'No completed tickets yet.',
                         ),
                     ],
                   );
@@ -225,49 +226,73 @@ class _ActionGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final actions = <({String label, String detail, IconData icon, String route})>[
       (
+        label: 'Complaints',
+        detail: 'Sent directly by residents',
+        icon: Icons.report_outlined,
+        route: '/complaints',
+      ),
+      (
+        label: 'Resident requests',
+        detail: 'Shared reply with the barangay',
+        icon: Icons.forum_outlined,
+        route: '/cityhall-requests',
+      ),
+      (
+        label: 'Manuals',
+        detail: 'Latest revision and history',
+        icon: Icons.menu_book_outlined,
+        route: '/manuals',
+      ),
+      (
+        label: 'Manual requests',
+        detail: 'Request to Iswim',
+        icon: Icons.mark_email_unread_outlined,
+        route: '/manual-requests',
+      ),
+      (
         label: 'Delay reports',
-        detail: 'Push sa district officer',
+        detail: 'Pushed to district officer',
         icon: Icons.timer_outlined,
         route: '/delays',
       ),
       (
         label: 'Incidents',
-        detail: 'Deretso galing resident',
+        detail: 'Sent directly by residents',
         icon: Icons.report_outlined,
         route: '/incidents',
       ),
       (
         label: 'Wave 2',
-        detail: 'Approval ng barangay',
+        detail: 'Barangay approval',
         icon: Icons.layers_outlined,
         route: '/wave2',
       ),
       (
         label: 'Memos',
-        detail: 'Endorsements at memo',
+        detail: 'Endorsements and memos',
         icon: Icons.mail_outline_rounded,
         route: '/memos/cityHall',
       ),
       (
         label: 'Email log',
-        detail: 'Auto-email sa officer',
+        detail: 'Auto-email to officer',
         icon: Icons.outgoing_mail,
         route: '/email-log',
       ),
       (
         label: 'Accounts',
-        detail: 'Gawa ng login ng crew',
+        detail: 'Creates crew logins',
         icon: Icons.badge_outlined,
         route: '/accounts',
       ),
       (
         label: 'Fleet',
-        detail: 'Truck at driver',
+        detail: 'Trucks and drivers',
         icon: Icons.local_shipping_outlined,
         route: '/fleet',
       ),
       (
-        label: 'Mga pirma',
+        label: 'Signatures',
         detail: '$pendingSignatures pending',
         icon: Icons.draw_outlined,
         route: '/cityhall',
@@ -278,44 +303,51 @@ class _ActionGrid extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final action in actions)
+        for (var i = 0; i < actions.length; i++)
           SizedBox(
             width: 132,
-            child: GestureDetector(
-              onTap: () {
-                if (action.route == '/cityhall') return;
-                context.push(action.route);
-              },
-              child: Container(
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(color: AppColors.sage),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(action.icon, size: 16, color: AppColors.forest),
-                    const SizedBox(height: 6),
-                    Text(
-                      action.label,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
-                      ),
+            child: FadeSlideIn(
+              index: i,
+              offset: 10,
+              child: HoverLift(
+                child: GestureDetector(
+                  onTap: () {
+                    if (actions[i].route == '/cityhall') return;
+                    context.push(actions[i].route);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: AppColors.sage),
                     ),
-                    Text(
-                      action.detail,
-                      maxLines: 2,
-                      style: const TextStyle(
-                        fontSize: 8,
-                        height: 1.3,
-                        color: AppColors.inkMuted,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(actions[i].icon,
+                            size: 16, color: AppColors.forest),
+                        const SizedBox(height: 6),
+                        Text(
+                          actions[i].label,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.forest,
+                          ),
+                        ),
+                        Text(
+                          actions[i].detail,
+                          maxLines: 2,
+                          style: const TextStyle(
+                            fontSize: 8,
+                            height: 1.3,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

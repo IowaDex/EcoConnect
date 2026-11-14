@@ -196,7 +196,7 @@ class CollectionRequestService {
       'updatedAt': FieldValue.serverTimestamp(),
       if (byName != null) 'staffNote': 'Passed to City Hall by $byName',
     });
-    await _notifications.notifyStaff(
+    await _notifications.notifyCityHall(
       title: 'Wave 2 request for approval',
       body: 'The barangay passed a collection request to City Hall.',
       type: AppNotificationType.request,
@@ -226,6 +226,61 @@ class CollectionRequestService {
           : 'City Hall rejected the request.'),
       type: AppNotificationType.request,
       data: {'requestId': id, 'kind': 'wave2Decision'},
+    );
+
+    // The resident who filed the request gets the final decision directly.
+    final snap = await _col.doc(id).get();
+    final requesterId = snap.data()?['requesterId'] as String?;
+    if (requesterId != null && requesterId.isNotEmpty) {
+      await _notifications.push(
+        userId: requesterId,
+        title: approve ? 'Wave 2 request approved' : 'Wave 2 request rejected',
+        body: note?.trim().isNotEmpty == true
+            ? note!.trim()
+            : approve
+                ? 'City Hall approved your request. The barangay will schedule it.'
+                : 'City Hall rejected your request.',
+        type: AppNotificationType.request,
+        data: {'requestId': id, 'kind': 'wave2Decision'},
+      );
+    }
+  }
+
+  /// City Hall replies on the request thread. The reply is stored on the
+  /// request itself, so the resident and the concerned barangay read the same
+  /// conversation; both are notified.
+  Future<void> addCityHallResponse({
+    required CollectionRequest request,
+    required String message,
+    required String byName,
+  }) async {
+    final reply = RequestResponse(
+      message: message.trim(),
+      byName: byName,
+      byRole: 'cityHall',
+    );
+
+    await _col.doc(request.id).update({
+      'responses': FieldValue.arrayUnion([reply.toMap()]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await _notifications.push(
+      userId: request.requesterId,
+      title: 'City Hall replied to your request',
+      body: message.trim(),
+      type: AppNotificationType.request,
+      data: {'requestId': request.id, 'kind': 'cityHallResponse'},
+    );
+    await _notifications.notifyStaff(
+      title: 'City Hall reply · ${request.title}',
+      body: '$byName: ${message.trim()}',
+      type: AppNotificationType.request,
+      data: {
+        'requestId': request.id,
+        'kind': 'cityHallResponse',
+        'requesterId': request.requesterId,
+      },
     );
   }
 

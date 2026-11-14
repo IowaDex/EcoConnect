@@ -209,6 +209,44 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
               ),
             if (request.staffNote?.trim().isNotEmpty == true)
               _row(Icons.support_agent_rounded, request.staffNote!),
+            if (request.responses.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const SectionHeader(title: 'City Hall responses'),
+              const SizedBox(height: 8),
+              for (final response in request.responses) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.sage),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        response.message,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          height: 1.55,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${response.byName} · ${timeAgo(response.at)}',
+                        style: const TextStyle(
+                          fontSize: 8,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
             if (request.history.isNotEmpty) ...[
               const SizedBox(height: 16),
               const SectionHeader(title: 'Progress'),

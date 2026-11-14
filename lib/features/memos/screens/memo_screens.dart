@@ -71,7 +71,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('Hindi ma-attach: $e'),
+            content: Text('Could not attach: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -86,7 +86,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Kailangan ng subject at nilalaman'),
+            content: Text('Subject and body are required'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -117,7 +117,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Naipadala na'),
+            content: Text('Sent'),
             backgroundColor: AppColors.forest,
           ),
         );
@@ -128,7 +128,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('Hindi naipadala: $e'),
+            content: Text('Could not send: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -149,7 +149,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
           onPressed: () => context.pop(),
         ),
         title: const Text(
-          'Bagong memo',
+          'New memo',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -177,7 +177,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
             children: [
               for (final channel in _channels)
                 ChoiceChip(
-                  label: Text('Para sa ${channel.label}'),
+                  label: Text('To ${channel.label}'),
                   selected: _channel == channel.value,
                   onSelected: (_) => setState(() => _channel = channel.value),
                 ),
@@ -251,14 +251,14 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Ipadala'),
+                  : const Text('Send'),
             ),
           ),
           if (_kind == MemoKind.announcement) ...[
             const SizedBox(height: 8),
             const Text(
-              'Ang announcement ng Iswim ay automatic ding naka-email sa '
-              'District Officer (nasa email log ni City Hall).',
+              'Iswim announcements are also emailed to the District Officer '
+              'automatically (recorded in the City Hall email log).',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 9,
@@ -324,7 +324,7 @@ class MemoInboxScreen extends StatelessWidget {
           if (memos.isEmpty) {
             return const Center(
               child: Text(
-                'Walang memo sa inbox.',
+                'No memos in the inbox.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
               ),
             );

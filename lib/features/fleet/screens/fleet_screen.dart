@@ -57,7 +57,7 @@ class FleetScreen extends StatelessWidget {
                 },
               ),
               Text(
-                '${trucks.length} trucks · bawat isa may permanenteng driver',
+                '${trucks.length} trucks · each one has a permanent driver',
                 style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -87,7 +87,7 @@ class FleetScreen extends StatelessWidget {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Nailagay na sa registry ang 10 truck.'),
+            content: Text('10 trucks added to the registry.'),
             backgroundColor: AppColors.forest,
           ),
         );
@@ -97,7 +97,7 @@ class FleetScreen extends StatelessWidget {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('Hindi na-save: $e'),
+            content: Text('Could not save: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -134,7 +134,7 @@ class _SeedBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Mock list pa lang ito',
+            'This is still a mock list',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
@@ -143,9 +143,9 @@ class _SeedBanner extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            'I-save ang $count seeded truck para maging totoong registry. '
-            'Pag may naisave nang kahit isa, ito na ang tanging listahan — '
-            'kaya simulan sa lahat.',
+            'Save the $count seeded trucks to make this the real registry. '
+            'Once even one is saved, this becomes the only list — so start '
+            'with all of them.',
             style: const TextStyle(
               fontSize: 9,
               height: 1.45,
@@ -159,7 +159,7 @@ class _SeedBanner extends StatelessWidget {
               onPressed: onSeed,
               icon: const Icon(Icons.save_alt_rounded, size: 14),
               label: const Text(
-                'I-save lahat sa registry',
+                'Save all to registry',
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
               ),
               style: FilledButton.styleFrom(
@@ -238,7 +238,7 @@ class _TruckTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
-                    'walang login',
+                    'no login',
                     style: TextStyle(
                       fontSize: 7.5,
                       fontWeight: FontWeight.w700,
@@ -310,7 +310,7 @@ class _TruckFormState extends State<_TruckForm> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('Hindi na-save: $e'),
+            content: Text('Could not save: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -351,7 +351,7 @@ class _TruckFormState extends State<_TruckForm> {
               ),
               const SizedBox(height: 14),
               Text(
-                widget.truck == null ? 'Bagong truck' : 'I-edit ang truck',
+                widget.truck == null ? 'New truck' : 'Edit truck',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -368,7 +368,7 @@ class _TruckFormState extends State<_TruckForm> {
                   isDense: true,
                 ),
                 validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Ilagay ang plate' : null,
+                    (value ?? '').trim().isEmpty ? 'Enter a plate number' : null,
               ),
               const SizedBox(height: 12),
               Row(
@@ -423,16 +423,16 @@ class _TruckFormState extends State<_TruckForm> {
               TextFormField(
                 controller: _driver,
                 decoration: const InputDecoration(
-                  labelText: 'Driver (pangalan)',
+                  labelText: 'Driver (name)',
                   isDense: true,
                 ),
                 validator: (value) => (value ?? '').trim().isEmpty
-                    ? 'Bawal ang bakanteng driver'
+                    ? 'Driver cannot be empty'
                     : null,
               ),
               const SizedBox(height: 6),
               const Text(
-                'Si City Hall ang gagawa ng login account ng driver na ito.',
+                'City Hall creates the login account for this driver.',
                 style: TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 16),

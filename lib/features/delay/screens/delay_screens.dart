@@ -25,10 +25,10 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
   static const _reasons = [
     'Traffic / road closure',
     'Truck breakdown',
-    'Late start ng crew',
-    'Waiting sa collection point',
+    'Late crew start',
+    'Waiting at collection point',
     'Weather',
-    'Iba pa',
+    'Other',
   ];
 
   final _formKey = GlobalKey<FormState>();
@@ -152,7 +152,7 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
                   ),
               ],
               onChanged: (value) => setState(() => _truck = value),
-              validator: (value) => value == null ? 'Pumili ng truck' : null,
+              validator: (value) => value == null ? 'Select a truck' : null,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -176,12 +176,12 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
               controller: _minutes,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Ilang minuto late',
+                labelText: 'Minutes late',
                 isDense: true,
               ),
               validator: (value) {
                 final parsed = int.tryParse((value ?? '').trim());
-                if (parsed == null || parsed <= 0) return 'Ilagay ang minutes';
+                if (parsed == null || parsed <= 0) return 'Enter the minutes';
                 return null;
               },
             ),
@@ -190,7 +190,7 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
               controller: _notes,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Detalye (optional)',
+                labelText: 'Details (optional)',
                 isDense: true,
               ),
             ),
@@ -215,12 +215,12 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Ipadala sa DSQC'),
+                    : const Text('Send to DSQC'),
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Iswim → DSQC → District Officer (alarm sa DSQC device) → '
+              'Iswim → DSQC → District Officer (alarm on the DSQC device) → '
               'Barangay copy.',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -277,7 +277,7 @@ class DelayListScreen extends StatelessWidget {
           if (reports.isEmpty) {
             return const Center(
               child: Text(
-                'Wala pang delay report.',
+                'No delay reports yet.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
               ),
             );
@@ -376,7 +376,7 @@ class _DelayCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: const Text('I-forward sa District Officer'),
+                child: const Text('Forward to District Officer'),
               ),
             ),
           ],
@@ -391,7 +391,7 @@ class _DelayCard extends StatelessWidget {
                   side: const BorderSide(color: AppColors.sage),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
-                child: const Text('Ipadala ang copy sa Barangay'),
+                child: const Text('Send a copy to the Barangay'),
               ),
             ),
           ],

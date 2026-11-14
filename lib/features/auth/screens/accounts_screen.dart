@@ -35,7 +35,7 @@ class AccountsScreen extends StatelessWidget {
           onPressed: () => context.canPop() ? context.pop() : context.go('/cityhall'),
         ),
         title: const Text(
-          'Mga account',
+          'Accounts',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -58,22 +58,21 @@ class AccountsScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _Message(
-              text: 'Hindi mabasa ang listahan.\n${snapshot.error}',
+              text: 'Could not load the list.\n${snapshot.error}',
             );
           }
           final accounts = snapshot.data ?? const <ProvisionedAccount>[];
           if (accounts.isEmpty) {
             return const _Message(
-              text: 'Wala pang crew account. Pindutin ang "Driver" para '
-                  'gumawa ng una.',
+              text: 'No crew accounts yet. Tap "Driver" to create the first one.',
             );
           }
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 6, 20, 96),
             children: [
               Text(
-                '${accounts.length} accounts · driver at guide lang ang '
-                'ginagawa dito, hindi self-signup',
+                '${accounts.length} accounts · only drivers and guides are '
+                'created here, not self-signup',
                 style: const TextStyle(
                   fontSize: 10,
                   height: 1.5,
@@ -116,7 +115,7 @@ class AccountsScreen extends StatelessWidget {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.creamBright,
         title: const Text(
-          'Nagawa na ang account',
+          'Account created',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -128,8 +127,8 @@ class AccountsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Ipakita ito sa crew ngayon — hindi na ito maipapakita muli. '
-              'Pagkalogin niya, pwede na niyang palitan sa profile.',
+              'Show this to the crew now — it cannot be shown again. '
+              'Once they sign in, they can change it in their profile.',
               style: TextStyle(
                 fontSize: 10,
                 height: 1.5,
@@ -293,7 +292,7 @@ class _AccountTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
-                    'walang truck',
+                    'no truck',
                     style: TextStyle(
                       fontSize: 7.5,
                       fontWeight: FontWeight.w700,
@@ -395,13 +394,13 @@ class _ActionsSheetState extends State<_ActionsSheet> {
           const SizedBox(height: 16),
           _Action(
             icon: Icons.lock_reset_rounded,
-            label: 'Padalhan ng reset password',
-            detail: 'Email mula sa Firebase',
+            label: 'Send a password reset',
+            detail: 'Email from Firebase',
             onTap: _busy
                 ? null
                 : () => _run(
                       () => ProvisioningService().resetPassword(account.email),
-                      'Naipadala ang reset sa ${account.email}',
+                      'Reset email sent to ${account.email}',
                     ),
           ),
           const SizedBox(height: 8),
@@ -410,11 +409,11 @@ class _ActionsSheetState extends State<_ActionsSheet> {
                 ? Icons.block_rounded
                 : Icons.play_circle_outline_rounded,
             label: account.isActive
-                ? 'I-suspend ang access'
-                : 'Ibalik ang access',
+                ? 'Suspend access'
+                : 'Restore access',
             detail: account.isActive
-                ? 'Hindi na makakapasok sa app'
-                : 'Makakapasok na ulit',
+                ? 'Can no longer sign in'
+                : 'Can sign in again',
             danger: account.isActive,
             onTap: _busy
                 ? null
@@ -422,8 +421,8 @@ class _ActionsSheetState extends State<_ActionsSheet> {
                       () => ProvisioningService()
                           .setActive(account.uid, !account.isActive),
                       account.isActive
-                          ? 'Suspendido na si ${account.name}'
-                          : 'Aktibo na ulit si ${account.name}',
+                          ? '${account.name} is now suspended'
+                          : '${account.name} is active again',
                     ),
           ),
         ],
@@ -621,7 +620,7 @@ class _AccountFormState extends State<_AccountForm> {
               ),
               const SizedBox(height: 14),
               const Text(
-                'Bagong driver account',
+                'New driver account',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -630,9 +629,9 @@ class _AccountFormState extends State<_AccountForm> {
               ),
               const SizedBox(height: 2),
               const Text(
-                'Driver at Truck Guide lang ang ginagawa dito. Ang Iswim at '
-                'City Hall ay hiwalay na accounts na — hindi na kailangan '
-                'gumawa pa.',
+                'Only Driver and Truck Guide accounts are created here. Iswim and '
+                'City Hall are separate accounts and do not need to be '
+                'created again.',
                 style: TextStyle(
                   fontSize: 9,
                   height: 1.45,
@@ -644,11 +643,11 @@ class _AccountFormState extends State<_AccountForm> {
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
-                  labelText: 'Buong pangalan',
+                  labelText: 'Full name',
                   isDense: true,
                 ),
                 validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Ilagay ang pangalan' : null,
+                    (value ?? '').trim().isEmpty ? 'Enter a name' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -662,9 +661,9 @@ class _AccountFormState extends State<_AccountForm> {
                 ),
                 validator: (value) {
                   final email = (value ?? '').trim();
-                  if (email.isEmpty) return 'Ilagay ang email';
+                  if (email.isEmpty) return 'Enter an email';
                   if (!email.contains('@') || !email.contains('.')) {
-                    return 'Hindi valid ang email';
+                    return 'Invalid email';
                   }
                   return null;
                 },
@@ -674,7 +673,7 @@ class _AccountFormState extends State<_AccountForm> {
                 controller: _phone,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
-                  labelText: 'Cellphone (optional)',
+                  labelText: 'Mobile number (optional)',
                   isDense: true,
                 ),
               ),
@@ -685,14 +684,14 @@ class _AccountFormState extends State<_AccountForm> {
                   labelText: 'Password',
                   isDense: true,
                   suffixIcon: IconButton(
-                    tooltip: 'Bagong password',
+                    tooltip: 'New password',
                     icon: const Icon(Icons.casino_outlined, size: 17),
                     onPressed: () =>
                         setState(() => _password.text = _suggestPassword()),
                   ),
                 ),
                 validator: (value) => (value ?? '').length < 6
-                    ? '6+ characters ang kailangan'
+                    ? 'Use at least 6 characters'
                     : null,
               ),
               // Always a crew account, so the plate is always required.
@@ -714,7 +713,7 @@ class _AccountFormState extends State<_AccountForm> {
                   initialValue: _truck,
                   isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Truck na hawak niya',
+                    labelText: 'Assigned truck',
                     isDense: true,
                   ),
                   items: [
@@ -723,19 +722,18 @@ class _AccountFormState extends State<_AccountForm> {
                         value: truck,
                         child: Text(
                           '${truck.plateNumber} · ${truck.wheelerLabel}'
-                          '${truck.driverAccountId == null ? ' · walang login' : ''}',
+                          '${truck.driverAccountId == null ? ' · no login' : ''}',
                           style: const TextStyle(fontSize: 11),
                         ),
                       ),
                   ],
                   onChanged: (value) => setState(() => _truck = value),
                   validator: (value) =>
-                      value == null ? 'Pumili ng truck' : null,
+                      value == null ? 'Select a truck' : null,
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Ang truck na ito ang bubuksan agad sa dashboard niya pag '
-                  'nag-login siya.',
+                  'This truck opens first on their dashboard when they sign in.',
                   style: TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
                 ),
               ],
@@ -760,7 +758,7 @@ class _AccountFormState extends State<_AccountForm> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Gawin ang driver account'),
+                      : const Text('Create driver account'),
                 ),
               ),
             ],

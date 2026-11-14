@@ -67,7 +67,7 @@ class _SignatureSheetState extends State<_SignatureSheet> {
 
   Future<void> _saveDrawing() async {
     if (!_hasInk) {
-      setState(() => _error = 'Pumirma muna bago i-save.');
+      setState(() => _error = 'Sign first before saving.');
       return;
     }
     setState(() {
@@ -145,7 +145,7 @@ class _SignatureSheetState extends State<_SignatureSheet> {
           ),
           const SizedBox(height: 14),
           Text(
-            'Pirma ng ${widget.signerLabel}',
+            '${widget.signerLabel} signature',
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -154,8 +154,8 @@ class _SignatureSheetState extends State<_SignatureSheet> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Gumuhit gamit ang daliri (o mouse), o mag-upload ng picture ng '
-            'pirma. Walang print, digital lahat.',
+            'Draw with your finger (or mouse), or upload a photo of your '
+            'signature. Nothing is printed — it is all digital.',
             style: TextStyle(
               fontSize: 10.5,
               height: 1.5,
@@ -185,7 +185,7 @@ class _SignatureSheetState extends State<_SignatureSheet> {
                         ? const SizedBox.expand()
                         : const Center(
                             child: Text(
-                              'Pumirma dito',
+                              'Sign here',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.sage,
@@ -255,7 +255,7 @@ class _SignatureSheetState extends State<_SignatureSheet> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('I-save ang pirma'),
+                  : const Text('Save signature'),
             ),
           ),
         ],

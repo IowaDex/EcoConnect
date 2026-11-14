@@ -88,7 +88,7 @@ class ProvisioningService {
         return ProvisionedAccount(
           uid: doc.id,
           name: (name == null || name.isEmpty)
-              ? (email.isEmpty ? 'Walang pangalan' : email.split('@').first)
+              ? (email.isEmpty ? 'No name' : email.split('@').first)
               : name,
           email: email,
           role: UserRole.values.firstWhere(
@@ -170,8 +170,8 @@ class ProvisioningService {
       // A login without a profile can never sign in, so it is safe to leave
       // behind — but the desk must know, or the email is burned.
       throw ProvisioningException(
-        'Nagawa ang login pero hindi naisave ang profile ($e). '
-        'I-delete ang $email sa Firebase console bago subukan muli.',
+        'The login was created but the profile could not be saved ($e). '
+        'Delete $email in the Firebase console before trying again.',
       );
     }
 
@@ -185,7 +185,7 @@ class ProvisioningService {
   }
 
   /// Stamps the crew onto the truck, so Iswim's ticket form shows the account
-  /// instead of "wala pang login".
+  /// instead of "no login account".
   Future<void> _linkTruck(String truckId, String uid, String name) async {
     try {
       await _db.collection('trucks').doc(truckId).set({
@@ -233,13 +233,13 @@ class ProvisioningService {
 
   String _message(FirebaseAuthException e) => switch (e.code) {
         'email-already-in-use' =>
-          'May account na ang email na ito. Gamitin ang "Reset password" kung '
-              'siya mismo ang nawalan ng access.',
-        'invalid-email' => 'Hindi valid ang email.',
-        'weak-password' => 'Masyadong mahina ang password (6+ characters).',
+          'This email already has an account. Use "Reset password" if the '
+              'owner lost access.',
+        'invalid-email' => 'Invalid email.',
+        'weak-password' => 'Password is too weak (use at least 6 characters).',
         'operation-not-allowed' =>
-          'Hindi naka-enable ang Email/Password sign-in sa Firebase project.',
-        _ => 'Hindi nagawa ang account (${e.code}).',
+          'Email/Password sign-in is not enabled in the Firebase project.',
+        _ => 'Could not create the account (${e.code}).',
       };
 }
 
