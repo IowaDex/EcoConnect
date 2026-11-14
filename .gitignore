@@ -91,3 +91,5 @@ coverage/
 # Claude Code local settings
 .claude/settings.local.json
 node_modules/
+# Widget Preview related
+.widget_preview/
