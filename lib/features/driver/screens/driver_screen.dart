@@ -11,6 +11,7 @@ import '../../route/models/route_plan.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../route/services/route_service.dart';
+import '../../../core/network/network_status.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/brand_wordmark.dart';
@@ -22,8 +23,17 @@ import '../../requests/services/collection_request_service.dart';
 import '../../../core/models/waste_category.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
+import '../data/mock_trucks.dart';
+import '../../fleet/services/fleet_service.dart';
+import '../models/truck_crew_role.dart';
+import '../providers/truck_provider.dart';
 import '../services/driver_session_service.dart';
+import '../services/trip_guard_service.dart';
 import '../widgets/driver_nav_bar.dart';
+import '../widgets/truck_trip_header.dart';
+import '../../tickets/models/trip_ticket.dart';
+import '../../tickets/services/ticket_service.dart';
+import '../../tickets/widgets/ticket_card.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../notifications/widgets/notification_bell.dart';
 
@@ -44,6 +54,8 @@ class _DriverScreenState extends State<DriverScreen> {
   Timer? _clockTimer;
   Timer? _healthTimer;
   final _sessionService = DriverSessionService();
+  final _guardService = TripGuardService();
+  final _ticketService = TicketService();
 
   /// Latest device-level diagnosis, mirrored to the staff dashboard.
   DriverLocationState _locationState = DriverLocationState.ok;
@@ -55,6 +67,19 @@ class _DriverScreenState extends State<DriverScreen> {
   DateTime? _startedAt;
   bool _busy = false;
   bool _serviceUnavailable = false;
+
+  /// Trip guard state: the 100 m radius and the phone's connection.
+  double? _metresFromCenter;
+  bool _outsideRadius = false;
+  bool _connectionLost = false;
+  ({double lat, double lng})? _guardCenter;
+  NetworkStatus? _network;
+  LocationProvider? _locationRef;
+  StreamSubscription<List<TripTicket>>? _ticketSub;
+
+  /// The ticket the crew is working on: accepted (ready to run) or still
+  /// waiting for acceptance.
+  TripTicket? _ticket;
 
   bool get _isLive =>
       _status == RouteStatus.inTransit || _status == RouteStatus.delayed;
@@ -72,6 +97,36 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _bootstrap() async {
+    // A driver already owns a truck: Iswim pairs the plate with him and City
+    // Hall provisions the account, so there is nothing to pick. A guide has no
+    // truck of his own, so he chooses from the fleet list.
+    final trucks = context.read<TruckProvider>();
+    if (!trucks.isRestored) await trucks.restore();
+    if (!mounted) return;
+
+    final account = context.read<AuthProvider>().currentUser;
+    final role = trucks.resolveRole(account?.crewRole ?? TruckCrewRole.driver);
+
+    if (role == TruckCrewRole.driver) {
+      // The registry first: Iswim may have added or re-plated the truck since
+      // the app was built. The mock roster is only the seed data.
+      final registered = await FleetService().findTruck(account?.assignedTruckId);
+      final designated = registered ??
+          truckForDriver(
+            assignedTruckId: account?.assignedTruckId,
+            driverName: account?.displayName,
+            uid: account?.uid,
+          );
+      if (!mounted) return;
+      if (designated != null && trucks.selectedTruck?.id != designated.id) {
+        await trucks.select(designated);
+      }
+      if (!mounted) return;
+    } else if (!trucks.hasTruck) {
+      context.go('/driver-trucks');
+      return;
+    }
+
     final location = context.read<LocationProvider>();
     if (!location.hasLocation) await location.getCurrentLocation();
     // Record why a fix is missing so the card can explain it accurately
@@ -79,7 +134,15 @@ class _DriverScreenState extends State<DriverScreen> {
     await location.refreshLocationHealth();
 
     final uid = _uid;
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
+
+    // Offline during a run is an alert, not a blocked screen: the guard needs
+    // the link state to tell staff the moment the phone drops off the map.
+    _network = context.read<NetworkStatus?>();
+    _network?.addListener(_onConnectionChanged);
+    _connectionLost = _network?.isOffline ?? false;
+    _locationRef = location;
+    location.addListener(_onPositionChanged);
 
     // Mirror the server state so a reload never desyncs the dashboard from
     // what residents are actually seeing.
@@ -91,14 +154,47 @@ class _DriverScreenState extends State<DriverScreen> {
           _status = status;
           _startedAt = route?.startedAt;
           _activePlanId = route?.planId;
+          if (route?.geofenceLatitude != null &&
+              route?.geofenceLongitude != null) {
+            _guardCenter = (
+              lat: route!.geofenceLatitude!,
+              lng: route.geofenceLongitude!,
+            );
+          }
         });
         if (status == RouteStatus.inTransit || status == RouteStatus.delayed) {
           _checkLocationHealth();
+          _evaluateGeofence();
         }
       },
       onError: (_) {
         if (mounted) setState(() => _serviceUnavailable = true);
       },
+    );
+
+    // The trip ticket is the gate: accepted tickets unlock Start trip, and a
+    // fresh ticket sits here until the crew accepts or declines it.
+    _ticketSub = _ticketService.watchForDriver(uid).listen(
+      (tickets) {
+        if (!mounted) return;
+        TripTicket? active;
+        for (final ticket in tickets) {
+          if (ticket.canStartTrip) {
+            active = ticket;
+            break;
+          }
+        }
+        if (active == null) {
+          for (final ticket in tickets) {
+            if (ticket.needsDriver) {
+              active = ticket;
+              break;
+            }
+          }
+        }
+        setState(() => _ticket = active);
+      },
+      onError: (_) {},
     );
 
     // The assignment is the source of truth for *what* the driver may start.
@@ -131,8 +227,85 @@ class _DriverScreenState extends State<DriverScreen> {
   void _ensureHealthTimer() {
     if (_healthTimer?.isActive ?? false) return;
     _healthTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted && _isRunning) _checkLocationHealth();
+      if (mounted && _isRunning) {
+        _checkLocationHealth();
+        _evaluateGeofence();
+      }
     });
+  }
+
+  void _onPositionChanged() {
+    if (mounted && _isLive) _evaluateGeofence();
+  }
+
+  /// Fires when the phone's link goes up or down. Going offline mid-trip is a
+  /// rule break the barangay must hear about immediately.
+  void _onConnectionChanged() {
+    final offline = _network?.isOffline ?? false;
+    if (offline == _connectionLost || !mounted) return;
+    setState(() => _connectionLost = offline);
+    if (!_isRunning) return;
+    _reportConnection(offline);
+  }
+
+  Future<void> _reportConnection(bool offline) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final user = context.read<AuthProvider>().currentUser;
+    try {
+      await _guardService.reportState(
+        driverId: uid,
+        driverName: user?.displayName ?? 'Collector',
+        kind: TripAlertKind.connection,
+        alert: offline,
+        // Only the drop is announced; reconnecting is silent.
+        notify: offline,
+      );
+    } catch (_) {
+      // Writes queue while offline and flush on reconnect.
+    }
+  }
+
+  /// Measures the truck against the 100 m radius and alerts staff once per
+  /// breach, not on every GPS tick.
+  Future<void> _evaluateGeofence() async {
+    final center = _guardCenter;
+    final location = context.read<LocationProvider>();
+    if (center == null || !location.hasLocation) return;
+
+    final metres = TripGuardService.metresBetween(
+      location.latitude!,
+      location.longitude!,
+      center.lat,
+      center.lng,
+    );
+    // Hysteresis: leaving needs 100 m, coming back needs 92 m, so a truck
+    // parked on the line does not flap between the two states.
+    final outside = _outsideRadius
+        ? !TripGuardService.isBackInside(metres)
+        : TripGuardService.isOutsideRadius(metres);
+
+    if (mounted) setState(() => _metresFromCenter = metres);
+    if (outside == _outsideRadius) return;
+
+    setState(() => _outsideRadius = outside);
+    final uid = _uid;
+    if (uid == null) return;
+    final user = context.read<AuthProvider>().currentUser;
+    try {
+      await _guardService.reportState(
+        driverId: uid,
+        driverName: user?.displayName ?? 'Collector',
+        kind: TripAlertKind.radius,
+        alert: outside,
+        metres: metres,
+        centerLat: center.lat,
+        centerLng: center.lng,
+        notify: outside,
+      );
+    } catch (_) {
+      // A failed report must not interrupt the crew; the next tick retries.
+    }
   }
 
   /// Asks for location again. On the web the OS settings page does not exist,
@@ -205,12 +378,30 @@ class _DriverScreenState extends State<DriverScreen> {
     _pointsSub?.cancel();
     _clockTimer?.cancel();
     _healthTimer?.cancel();
+    _ticketSub?.cancel();
+    _network?.removeListener(_onConnectionChanged);
+    // The location provider outlives this screen, so the listener must go.
+    _locationRef?.removeListener(_onPositionChanged);
     super.dispose();
   }
 
   Future<void> _activate() async {
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
+
+    // The ticket gates the trip: no accepted ticket, no moving truck.
+    final ticket = _ticket;
+    if (ticket == null || ticket.needsDriver) {
+      _toast(
+        ticket == null
+            ? 'Wala pang trip ticket. Iswim ang gumagawa nito — hintayin ang '
+                'notification.'
+            : 'Tanggapin muna ang trip ticket bago mag-start ng biyahe.',
+        isError: true,
+      );
+      if (ticket != null) context.push('/driver-tickets');
+      return;
+    }
 
     final location = context.read<LocationProvider>();
     if (!location.hasLocation) await location.getCurrentLocation();
@@ -262,6 +453,25 @@ class _DriverScreenState extends State<DriverScreen> {
     if (!mounted) return;
     setState(() => _busy = true);
     try {
+      final trucks = context.read<TruckProvider>();
+      final truck = trucks.selectedTruck;
+      final role = trucks.resolveRole(user.crewRole);
+
+      // The radius is measured from the assigned zone centre. A crew testing
+      // far from Batasan would trip the alarm before moving, so the start
+      // point is used instead when the device is nowhere near the zone.
+      ({double lat, double lng})? center;
+      if (truck != null &&
+          location.latitude != null &&
+          location.longitude != null) {
+        center = TripGuardService.resolveCenter(
+          zoneLat: truck.centerLatitude,
+          zoneLng: truck.centerLongitude,
+          startLat: location.latitude!,
+          startLng: location.longitude!,
+        );
+      }
+
       // Step 3 — atomic activation: plan -> active, route -> inTransit.
       await _routeService.activateRoute(
         driverId: user.uid,
@@ -271,6 +481,11 @@ class _DriverScreenState extends State<DriverScreen> {
         latitude: location.latitude,
         longitude: location.longitude,
         overrideWindow: overrideWindow,
+        truckPlate: truck?.plateNumber,
+        truckWheelers: truck?.wheelers,
+        crewRole: role.wireName,
+        geofenceLat: center?.lat,
+        geofenceLng: center?.lng,
       );
       _ensureHealthTimer();
       await _checkLocationHealth();
@@ -279,9 +494,20 @@ class _DriverScreenState extends State<DriverScreen> {
           _status = RouteStatus.inTransit;
           _startedAt = DateTime.now();
           _activePlanId = activePlan.id;
+          _guardCenter = center;
+          _outsideRadius = false;
+          _metresFromCenter = null;
         });
       }
-      _toast('Route activated — residents can see you now');
+      await _evaluateGeofence();
+      if (ticket.status == TicketStatus.accepted) {
+        try {
+          await _ticketService.markRunning(ticket.id);
+        } catch (_) {
+          // The trip itself must not fail because the ticket write did.
+        }
+      }
+      _toast('Trip started — residents can see you now');
     } on RouteActivationException catch (e) {
       _toast(e.message, isError: true);
     } catch (e) {
@@ -441,7 +667,8 @@ class _DriverScreenState extends State<DriverScreen> {
       await _checkLocationHealth();
       if (!mounted) return;
       setState(() => _status = RouteStatus.inTransit);
-      _toast('Route resumed — tracking is live again');
+      await _evaluateGeofence();
+      _toast('Trip resumed — tracking is live again');
     } catch (e) {
       _fail('resume your route', e);
     } finally {
@@ -490,7 +717,25 @@ class _DriverScreenState extends State<DriverScreen> {
         _status = RouteStatus.idle;
         _startedAt = null;
         _activePlanId = null;
+        _outsideRadius = false;
+        _metresFromCenter = null;
       });
+      // End of trip: the ticket walks to the barangay for signature 1.
+      final ticket = _ticket;
+      if (ticket != null && ticket.status == TicketStatus.running) {
+        try {
+          await _ticketService.submit(
+            ticket.id,
+            driverName: user.displayName ?? 'Driver',
+          );
+          _toast('Ticket submitted — barangay ang susunod na pipirma');
+        } catch (_) {
+          _toast(
+            'Trip ended, pero hindi na-submit ang ticket. Subukan ulit.',
+            isError: true,
+          );
+        }
+      }
       if (startedAt != null) _showSummary(startedAt);
     } catch (e) {
       _fail('end your route', e);
@@ -570,7 +815,10 @@ class _DriverScreenState extends State<DriverScreen> {
     if (!mounted) return;
     // Delete the shared pin while still signed in; rules reject it afterwards.
     final auth = context.read<AuthProvider>();
+    final trucks = context.read<TruckProvider>();
     await context.read<LocationProvider>().endSession();
+    // The next crew on this phone picks their own truck.
+    await trucks.clear();
     await auth.logout();
     if (mounted) context.go('/login');
   }
@@ -579,6 +827,8 @@ class _DriverScreenState extends State<DriverScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final location = context.watch<LocationProvider>();
+    final trucks = context.watch<TruckProvider>();
+    final truck = trucks.selectedTruck;
     final user = auth.currentUser;
 
     return Scaffold(
@@ -610,22 +860,118 @@ class _DriverScreenState extends State<DriverScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Driver dashboard',
-                style: TextStyle(
-                  fontSize: 24,
+              Text(
+                trucks.resolveRole(user?.crewRole ?? TruckCrewRole.driver).label,
+                style: const TextStyle(
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
+                  letterSpacing: 0.8,
+                  color: AppColors.moss,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 user?.displayName ?? 'Collector',
                 style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              if (_ticket != null) ...[
+                TicketCard(
+                  ticket: _ticket!,
+                  trailingLabel:
+                      _ticket!.needsDriver ? 'Accept muna' : null,
+                  onTap: () => context.push('/tickets/${_ticket!.id}'),
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.cream,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.sage),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.confirmation_number_outlined,
+                          size: 15, color: AppColors.inkMuted),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Wala pang trip ticket. Iswim ang gumagawa — hindi '
+                          'makakabyahe hangga\'t wala nito.',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            height: 1.45,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => context.push('/driver-tickets'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.forest,
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 26),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Tingnan',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (truck != null)
+                TruckTripHeader(
+                  truck: truck,
+                  role: trucks.resolveRole(
+                    user?.crewRole ?? TruckCrewRole.driver,
+                  ),
+                  status: _status,
+                  startedAt: _startedAt,
+                  busy: _busy,
+                  metresFromCenter: _metresFromCenter,
+                  connectionLost: _connectionLost,
+                  onStart: _activate,
+                  onPause: _pauseRoute,
+                  onResume: _resumeRoute,
+                  onEnd: _endRoute,
+                  onChangeTruck: () => context.go('/driver-trucks'),
+                ),
+              const SizedBox(height: 14),
               if (_serviceUnavailable) ...[
                 const _ServiceWarning(),
+                const SizedBox(height: 14),
+              ],
+              if (_isRunning && _connectionLost) ...[
+                const EcoBanner(
+                  message: 'No wifi or data. The truck is off the live map — '
+                      'barangay staff were alerted the moment you went offline.',
+                  icon: Icons.wifi_off_rounded,
+                  color: AppColors.error,
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (_isRunning && _outsideRadius) ...[
+                EcoBanner(
+                  message: _metresFromCenter == null
+                      ? 'You are outside your assigned radius. Move back '
+                          'inside the ${TripGuardService.radiusMeters.round()} m '
+                          'zone.'
+                      : 'You are ${_metresFromCenter!.round()} m from the zone '
+                          'centre — ${(_metresFromCenter! - TripGuardService.radiusMeters).round()} m '
+                          'past the ${TripGuardService.radiusMeters.round()} m '
+                          'limit. Barangay staff were alerted.',
+                  icon: Icons.wrong_location_rounded,
+                  color: AppColors.warning,
+                ),
                 const SizedBox(height: 14),
               ],
               if (_isRunning && _locationState.needsAttention) ...[
@@ -651,11 +997,6 @@ class _DriverScreenState extends State<DriverScreen> {
                 plan: _plan,
                 status: _status,
                 startedAt: _startedAt,
-                busy: _busy,
-                onActivate: _activate,
-                onPause: _pauseRoute,
-                onResume: _resumeRoute,
-                onEnd: _endRoute,
               ),
               if (_plan != null) ...[
                 const SizedBox(height: 14),
@@ -795,21 +1136,11 @@ class _AssignmentCard extends StatelessWidget {
     required this.plan,
     required this.status,
     required this.startedAt,
-    required this.busy,
-    required this.onActivate,
-    required this.onPause,
-    required this.onResume,
-    required this.onEnd,
   });
 
   final RoutePlan? plan;
   final RouteStatus status;
   final DateTime? startedAt;
-  final bool busy;
-  final VoidCallback onActivate;
-  final VoidCallback onPause;
-  final VoidCallback onResume;
-  final VoidCallback onEnd;
 
   bool get _isLive =>
       status == RouteStatus.inTransit || status == RouteStatus.delayed;
@@ -920,100 +1251,17 @@ class _AssignmentCard extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 16),
-          if (_isRunning)
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: FilledButton(
-                      onPressed: busy ? null : (_isPaused ? onResume : onPause),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _isPaused
-                            ? AppColors.lime
-                            : Colors.white.withValues(alpha: 0.16),
-                        foregroundColor: _isPaused
-                            ? AppColors.darkGreen
-                            : Colors.white,
-                        side: _isPaused
-                            ? null
-                            : BorderSide(
-                                color: Colors.white.withValues(alpha: 0.5),
-                              ),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _isPaused
-                                ? Icons.play_arrow_rounded
-                                : Icons.pause_rounded,
-                            size: 17,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(_isPaused ? 'Resume' : 'Pause'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: OutlinedButton(
-                      onPressed: busy ? null : onEnd,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      child: const Text('End route'),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else if (plan != null)
-            PrimaryButton(
-              label: plan!.status == RoutePlanStatus.active
-                  ? 'Resume route'
-                  : 'Activate route',
-              loading: busy,
-              onPressed: onActivate,
-              height: 44,
-            )
-          else
-            SizedBox(
-              height: 44,
-              child: FilledButton(
-                onPressed: busy ? null : onActivate,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.forest,
-                  textStyle: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                child: busy
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.forest),
-                      )
-                    : const Text('Start ad-hoc route'),
-              ),
+          const SizedBox(height: 10),
+          Text(
+            _isRunning
+                ? 'Start, pause and end the trip from the truck card above.'
+                : 'Start the trip from the truck card above.',
+            style: TextStyle(
+              fontSize: 9,
+              height: 1.4,
+              color: Colors.white.withValues(alpha: 0.62),
             ),
+          ),
         ],
       ),
     );

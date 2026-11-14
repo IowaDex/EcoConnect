@@ -127,6 +127,10 @@ class AuthProvider extends ChangeNotifier {
             'Your account is waiting for barangay staff approval. '
             'Please try again once you are approved.',
           );
+        case AuthErrorType.accountSuspended:
+          _setError(
+            'This account is suspended. Ask City Hall to restore your access.',
+          );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
       }
