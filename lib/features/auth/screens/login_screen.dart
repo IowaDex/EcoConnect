@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -170,6 +171,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 controller: _emailController,
                                 keyboardType: TextInputType.emailAddress,
                                 textInputAction: TextInputAction.next,
+                                // A pasted address often carries a trailing
+                                // space, which reads as "invalid email" with no
+                                // visible reason. Drop whitespace as it is typed.
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.deny(
+                                    RegExp(r'\s'),
+                                  ),
+                                ],
                                 validator: Validators.validateEmail,
                                 autofillHints: const [AutofillHints.email],
                               ),

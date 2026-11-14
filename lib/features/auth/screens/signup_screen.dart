@@ -295,6 +295,10 @@ class _SignupScreenState extends State<SignupScreen> {
             controller: _email,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
+            // Same guard as the login screen: no invisible whitespace.
+            inputFormatters: [
+              FilteringTextInputFormatter.deny(RegExp(r'\s')),
+            ],
             validator: Validators.validateEmail,
           ),
           const SizedBox(height: 14),

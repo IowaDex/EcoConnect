@@ -1,15 +1,19 @@
 class Validators {
   /// Validate email format
+  ///
+  /// Deliberately loose: any local part, an `@`, a domain, a dot and a TLD of
+  /// two or more letters. Stricter patterns (`.com`-only, 2-3 letter TLDs)
+  /// reject addresses Firebase Auth happily accepts, which blocked sign-in
+  /// with a correct email and password.
   static String? validateEmail(String? value) {
-    if (value == null || value.isEmpty) {
+    final email = (value ?? '').trim();
+    if (email.isEmpty) {
       return 'Email is required';
     }
 
-    final emailRegex = RegExp(
-      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
-    );
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$');
 
-    if (!emailRegex.hasMatch(value)) {
+    if (!emailRegex.hasMatch(email)) {
       return 'Please enter a valid email address';
     }
 
