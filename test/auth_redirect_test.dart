@@ -62,8 +62,8 @@ void main() {
     // Iswim owns the fleet but never creates accounts.
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/fleet'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), '/iswim');
-    // The barangay desk may make its own crews, but not Iswim's.
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), isNull);
+    // The barangay creates no accounts: drivers and staff come from City Hall.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), '/admin-dashboard');
     // A crew member can never reach either desk.
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/fleet'), '/driver');

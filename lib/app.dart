@@ -151,7 +151,6 @@ const _staffRoutes = {
   '/admin',
   '/incidents',
   '/pending-accounts',
-  '/accounts',
   '/routes',
   '/dropoff',
   '/tracking',

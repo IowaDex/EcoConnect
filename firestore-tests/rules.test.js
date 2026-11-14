@@ -319,6 +319,13 @@ test('signup is residents only, waits for the barangay and cannot self-verify', 
   await assertFails(updateDoc(doc(as('u4', false), 'users/u4'), {accountStatus: 'active'}));
 });
 
+test('only City Hall creates driver and staff accounts; the barangay does not', async () => {
+  const crew = (role) => ({name: 'Crew', role, accountStatus: 'active'});
+  await assertFails(setDoc(doc(as('root'), 'users/newdriver'), crew('driver')));
+  await assertFails(setDoc(doc(as('root'), 'users/newstaff'), crew('admin')));
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/newdriver'), crew('driver')));
+});
+
 test('a resident marks their email confirmed only once Firebase confirmed it', async () => {
   const pending = {
     name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',

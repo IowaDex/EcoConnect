@@ -142,14 +142,12 @@ service cloud.firestore {
       // Iswim needs the driver directory to issue tickets; City Hall needs it
       // to provision the accounts Iswim asks for.
       allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
-      // Three ways a profile is born:
-      //  1. self sign-up — residents go active, drivers wait for approval, and
-      //     nobody self-credits points or self-verifies a government account;
-      //  2. City Hall provisions a government login. The crew never signs
-      //     itself up: the login is made on a secondary app, so the profile is
-      //     written by the desk and arrives already active;
-      //  3. the barangay desk makes its own crews — but it cannot mint another
-      //     super admin or an Iswim account.
+      // Two ways a profile is born:
+      //  1. self sign-up — residents only, pending until the barangay checks
+      //     their ID;
+      //  2. City Hall provisions every crew, staff and Iswim login. The login
+      //     is made on a secondary app, so the profile is written by City Hall
+      //     and arrives already active. The barangay creates no accounts.
       // Self sign-up is residents only. They start pending: confirming their
       // email (the Firebase link) and the barangay's ID check both come before
       // they may sign in.
@@ -172,12 +170,6 @@ service cloud.firestore {
           && request.resource.data.accountStatus == 'active'
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
-          && !('points' in request.resource.data)
-          && photoOk(request.resource.data))
-        || (isAdmin()
-          && !isRemoved(userId)
-          && request.resource.data.role in ['driver', 'admin']
-          && request.resource.data.accountStatus == 'active'
           && !('points' in request.resource.data)
           && photoOk(request.resource.data));
       allow update: if (isSelf(userId)

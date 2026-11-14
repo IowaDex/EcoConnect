@@ -112,7 +112,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onParticipation: () => context.go('/event-participation'),
                         onRecycling: () => context.go('/dropoff'),
                         onUsers: () => context.go('/admin'),
-                        onAccounts: () => context.go('/accounts'),
                         onTickets: () => context.go('/ticket-signatures'),
                         onWave2: () => context.go('/wave2/pass'),
                       );
@@ -556,7 +555,6 @@ class _QuickActions extends StatelessWidget {
     required this.onParticipation,
     required this.onRecycling,
     required this.onUsers,
-    required this.onAccounts,
     required this.onTickets,
     required this.onWave2,
   });
@@ -572,7 +570,6 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onEvents;
   final VoidCallback onRecycling;
   final VoidCallback onUsers;
-  final VoidCallback onAccounts;
   final VoidCallback onParticipation;
   final VoidCallback onTickets;
   final VoidCallback onWave2;
@@ -645,12 +642,6 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.person_add_alt_1_rounded,
         label: 'Users',
         onTap: onUsers,
-      ),
-      // Driver and guide logins are made here, not by the crew itself.
-      _QuickTile(
-        icon: Icons.badge_outlined,
-        label: 'Accounts',
-        onTap: onAccounts,
       ),
     ];
 
