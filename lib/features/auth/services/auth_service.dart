@@ -58,7 +58,11 @@ class AuthService {
       uid: firebaseUser.uid,
       email: firebaseUser.email,
       displayName: firebaseUser.displayName ?? firebaseUser.email?.split('@').first,
-      emailVerified: firebaseUser.emailVerified,
+      // Either the person clicked the link Firebase mailed, or the desk that
+      // provisioned the account marked it verified. Rules stop a resident from
+      // setting that flag on their own profile.
+      emailVerified:
+          firebaseUser.emailVerified || data['emailVerified'] == true,
       role: UserRole.values.firstWhere(
         (e) => e.name == roleStr,
         orElse: () => UserRole.user,
@@ -202,7 +206,7 @@ class AuthService {
 
       // Residents must verify their email. Drivers and staff are provisioned
       // by the barangay, so staff approval (accountStatus) is the gate instead.
-      if (!credential.user!.emailVerified && appUser.role == UserRole.user) {
+      if (!appUser.emailVerified && appUser.role == UserRole.user) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.emailNotVerified);
       }

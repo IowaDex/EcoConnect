@@ -657,7 +657,7 @@ class _AccountFormState extends State<_AccountForm> {
                 autocorrect: false,
                 decoration: const InputDecoration(
                   labelText: 'Email',
-                  hintText: 'ramon@ecoconnect.test',
+                  hintText: 'ramon.ecoconnect@gmail.com',
                   isDense: true,
                 ),
                 validator: (value) {

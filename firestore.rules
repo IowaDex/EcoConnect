@@ -167,7 +167,10 @@ service cloud.firestore {
           && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
                          'accountType', 'verificationStatus', 'verifiedBy',
-                         'verificationDate', 'rejectionReason', 'approvedAt'])
+                         'verificationDate', 'rejectionReason', 'approvedAt',
+                         // Only the desk that provisions an account may mark
+                         // the email verified; a resident cannot skip it.
+                         'emailVerified'])
           && photoOk(request.resource.data))
         || isAdmin() || isCityHall();
       // Not their own profile: that would lock the admin out for good.

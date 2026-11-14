@@ -10,11 +10,11 @@
  *
  *   login as your admin -> Admin panel -> tap the account -> change role
  *
- *   cityhall@ecoconnect.test  -> City Hall (DSQC)
- *   iswim@ecoconnect.test     -> Iswim
- *   barangay@ecoconnect.test  -> Barangay admin
- *   ramon@ecoconnect.test     -> Driver   (name matches truck SK 4821)
- *   guide@ecoconnect.test     -> Driver   (then switch to Truck Guide on the
+ *   cityhall.ecoconnect@gmail.com  -> City Hall (DSQC)
+ *   iswim.ecoconnect@gmail.com     -> Iswim
+ *   barangay.ecoconnect@gmail.com  -> Barangay admin
+ *   ramon.ecoconnect@gmail.com     -> Driver   (name matches truck SK 4821)
+ *   guide.ecoconnect@gmail.com     -> Driver   (then switch to Truck Guide on the
  *                                          fleet list to preview the guide view)
  *
  * Passwords are printed at the end. Nothing is deleted: re-running skips
@@ -43,12 +43,12 @@ if (!API_KEY || !PROJECT) {
 const PASSWORD = 'EcoConnect2026!';
 
 const ACCOUNTS = [
-  { email: 'cityhall@ecoconnect.test', name: 'DSQC City Hall' },
-  { email: 'iswim@ecoconnect.test', name: 'Iswim Operations' },
-  { email: 'barangay@ecoconnect.test', name: 'Barangay Batasan Admin' },
+  { email: 'cityhall.ecoconnect@gmail.com', name: 'DSQC City Hall' },
+  { email: 'iswim.ecoconnect@gmail.com', name: 'Iswim Operations' },
+  { email: 'barangay.ecoconnect@gmail.com', name: 'Barangay Batasan Admin' },
   // Name matches the mock fleet roster, so the driver lands on SK 4821.
-  { email: 'ramon@ecoconnect.test', name: 'Ramon Dela Cruz' },
-  { email: 'guide@ecoconnect.test', name: 'Joel Santiago' },
+  { email: 'ramon.ecoconnect@gmail.com', name: 'Ramon Dela Cruz' },
+  { email: 'guide.ecoconnect@gmail.com', name: 'Joel Santiago' },
 ];
 
 const AUTH = 'https://identitytoolkit.googleapis.com/v1';
@@ -134,7 +134,7 @@ console.log(`
 Accounts ready. Password for all: ${PASSWORD}
 
 ONE manual step, in the Firebase console (Firestore -> users -> the doc):
-  cityhall@ecoconnect.test -> role: cityHall   (this is the super admin)
+  cityhall.ecoconnect@gmail.com -> role: cityHall   (this is the super admin)
 
 After that, sign in as cityhall@ and create the rest in-app:
   /accounts -> "Account" -> Iswim / Driver / Barangay admin / City Hall.
