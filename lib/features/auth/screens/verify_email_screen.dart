@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -11,12 +10,12 @@ import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 
-/// Second half of resident sign-up: type the 6-digit code that was emailed.
+/// Second half of resident sign-up: confirm the email with Firebase's link.
 ///
-/// Reached right after sign-up, or from login when someone left before
-/// entering the code. The resident is signed in but still pending; a correct
-/// code sends the registration to the barangay and signs them out until it is
-/// approved.
+/// Reached right after sign-up (the link was just sent) or from login when
+/// someone has not confirmed yet. The resident is signed in but still pending;
+/// once the link is clicked, "I've confirmed" sends the registration to the
+/// barangay and signs them out until it is approved.
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
 
@@ -27,11 +26,9 @@ class VerifyEmailScreen extends StatefulWidget {
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   static const _resendSeconds = 60;
 
-  final _code = TextEditingController();
   String? _email;
   int _wait = 0;
   Timer? _timer;
-  bool _sending = false;
 
   AuthProvider get _auth => context.read<AuthProvider>();
 
@@ -45,14 +42,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         context.go('/login');
         return;
       }
-      _send();
+      // The link was just sent by sign-up (or earlier); wait before resending.
+      _startCountdown();
     });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _code.dispose();
     super.dispose();
   }
 
@@ -80,30 +77,26 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     });
   }
 
-  Future<void> _send() async {
-    setState(() => _sending = true);
-    final sentTo = await _auth.requestEmailCode();
+  Future<void> _resend() async {
+    final ok = await _auth.resendVerificationLink();
     if (!mounted) return;
-    setState(() => _sending = false);
-    if (sentTo == null) {
-      _toast(_auth.error ?? 'Could not send the code.', error: true);
+    if (!ok) {
+      _toast(_auth.error ?? 'Could not send the email.', error: true);
       return;
     }
     _startCountdown();
-    _toast('Code sent to $sentTo');
+    _toast('Link sent again to $_email');
   }
 
-  Future<void> _verify() async {
-    final code = _code.text.trim();
-    if (code.length != 6) {
-      _toast('Enter the 6-digit code.', error: true);
-      return;
-    }
-    FocusScope.of(context).unfocus();
-    final ok = await _auth.verifyEmailCode(code);
+  Future<void> _confirmed() async {
+    final ok = await _auth.confirmEmailVerified();
     if (!mounted) return;
     if (!ok) {
-      _toast(_auth.error ?? 'That code did not work.', error: true);
+      _toast(
+        _auth.error ??
+            'Your email is not confirmed yet. Open the link in the email first.',
+        error: true,
+      );
       return;
     }
     await showDialog<void>(
@@ -112,7 +105,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Sent to your barangay'),
         content: const Text(
-          'Your email is verified. Barangay Batasan Hills will now check your '
+          'Your email is confirmed. Barangay Batasan Hills will now check your '
           'ID. You can sign in once they approve your account.',
         ),
         actions: [
@@ -164,8 +157,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 ],
               ),
               const SizedBox(height: 24),
+              const Icon(
+                Icons.mark_email_unread_outlined,
+                size: 48,
+                color: AppColors.forest,
+              ),
+              const SizedBox(height: 14),
               const Text(
-                'Check your\nemail',
+                'Confirm your\nemail',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w700,
@@ -175,47 +174,22 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'We sent a 6-digit code to ${_email ?? 'your email'}. '
-                'It expires in 10 minutes.',
+                'We sent a confirmation link to ${_email ?? 'your email'}. '
+                'Open it, then come back here and tap the button below.',
                 style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 24),
-              TextField(
-                key: const ValueKey('otp-field'),
-                controller: _code,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                maxLength: 6,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: const TextStyle(
-                  fontSize: 26,
-                  letterSpacing: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
-                ),
-                decoration: const InputDecoration(
-                  hintText: '000000',
-                  counterText: '',
-                ),
-                onSubmitted: (_) => _verify(),
-              ),
-              const SizedBox(height: 20),
               PrimaryButton(
-                label: 'Verify and send to barangay',
+                label: 'I’ve confirmed my email',
                 loading: busy,
-                onPressed: _verify,
+                onPressed: _confirmed,
               ),
               const SizedBox(height: 12),
               Center(
                 child: TextButton(
-                  onPressed: (_wait > 0 || _sending) ? null : _send,
+                  onPressed: _wait > 0 ? null : _resend,
                   child: Text(
-                    _sending
-                        ? 'Sending…'
-                        : _wait > 0
-                            ? 'Resend code in ${_wait}s'
-                            : 'Resend code',
+                    _wait > 0 ? 'Resend link in ${_wait}s' : 'Resend link',
                   ),
                 ),
               ),

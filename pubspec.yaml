@@ -47,8 +47,6 @@ dependencies:
   file_picker: ^13.3.2
   url_launcher: ^6.3.0
   shared_preferences: ^2.5.6
-  cloud_functions: ^7.0.1
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

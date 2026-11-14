@@ -183,7 +183,7 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!mounted) return;
 
     if (success) {
-      // Still signed in: the next step emails a code and checks it.
+      // Still signed in: the next step confirms the emailed link.
       context.go('/verify-email');
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context)
@@ -426,7 +426,7 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
         const SizedBox(height: 10),
         const Text(
-          'Next, we email you a 6-digit code to confirm your address.',
+          'Next, we email you a link to confirm your address.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
         ),

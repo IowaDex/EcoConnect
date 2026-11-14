@@ -309,19 +309,42 @@ test('signup is residents only, waits for the barangay and cannot self-verify', 
   await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
   await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'pending', points: 999}));
   await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'pending', photoUrl: 'x'.repeat(150000)}));
-  // The email code is checked by the server, never claimed by the client.
-  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailOtpVerified: true}));
-  await assertSucceeds(setDoc(doc(as('u4'), 'users/u4'), {
-    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending', verificationStatus: 'pending',
-  }));
-  await assertFails(updateDoc(doc(as('u4'), 'users/u4'), {emailOtpVerified: true}));
-  await assertFails(updateDoc(doc(as('u4'), 'users/u4'), {accountStatus: 'active'}));
+  // A new profile never claims a confirmed email.
+  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailVerified: true}));
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: false,
+  };
+  await assertSucceeds(setDoc(doc(as('u4', false), 'users/u4'), pending));
+  await assertFails(updateDoc(doc(as('u4', false), 'users/u4'), {accountStatus: 'active'}));
 });
 
-test('sign-up email codes are server-only', async () => {
-  await assertFails(getDoc(doc(as('u4'), 'signupOtps/u4')));
-  await assertFails(setDoc(doc(as('u4'), 'signupOtps/u4'), {codeHash: 'x'}));
-  await assertFails(getDoc(doc(as('root'), 'signupOtps/u4')));
+test('a resident marks their email confirmed only once Firebase confirmed it', async () => {
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: false,
+  };
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'users/u5'), pending));
+  // Link not clicked yet: the sign-in token says the email is unconfirmed.
+  await assertFails(updateDoc(doc(as('u5', false), 'users/u5'), {emailVerified: true}));
+  await assertSucceeds(updateDoc(doc(as('u5', true), 'users/u5'), {emailVerified: true}));
+});
+
+test('a pending resident with a confirmed email may tell the barangay, nothing more', async () => {
+  const pending = {
+    name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
+    verificationStatus: 'pending', emailVerified: true,
+  };
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'users/u6'), pending));
+  const notice = (overrides = {}) => ({
+    userId: 'staff', title: 'New resident registration', body: 'U is waiting for ID review.',
+    type: 'account', read: false, ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('u6', true), 'notifications/n1'), notice()));
+  await assertFails(setDoc(doc(as('u6', false), 'notifications/n2'), notice()));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n3'), notice({type: 'system'})));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n4'), notice({userId: 'alice'})));
+  await assertFails(setDoc(doc(as('u6', true), 'notifications/n5'), notice({userId: 'cityHall'})));
 });
 
 test('users cannot approve themselves, edit points or set a huge photo', async () => {

@@ -1,6 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import '../models/user.dart';
 import '../models/account_type.dart';
 import '../../driver/models/truck_crew_role.dart';
@@ -19,9 +18,9 @@ enum AuthErrorType {
   accountRemoved,
   accountPending,
   accountSuspended,
-  /// A resident signed up but never entered the emailed code. The session is
-  /// kept so the code screen can finish it.
-  needsEmailCode,
+  /// A resident signed up but has not confirmed their email yet. The session
+  /// is kept so the confirmation screen can finish it.
+  needsEmailVerification,
   /// The barangay rejected the registration; [AuthException.reason] says why.
   accountDeclined,
 }
@@ -130,9 +129,9 @@ class AuthService {
     await credential.user?.updateDisplayName(name);
     final uid = credential.user!.uid;
 
-    // Pending until two things happen: the resident types the emailed code
-    // (checked by the server, which then tells the barangay) and the barangay
-    // approves their ID. Only then can they sign in.
+    // Pending until two things happen: the resident confirms their email
+    // (the Firebase link) and the barangay approves their ID. Only then can
+    // they sign in.
     await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
@@ -160,26 +159,46 @@ class AuthService {
       'submittedAt': FieldValue.serverTimestamp(),
     });
 
-    // The session is kept: the email-code screen needs it next.
-    AppLogger.info('Resident signed up; waiting for the email code');
+    await credential.user?.sendEmailVerification();
+    // The session is kept: the confirmation screen needs it next.
+    AppLogger.info('Resident signed up; confirmation link sent');
   }
 
-  /// Emails a 6-digit sign-up code to the signed-in, still-pending resident.
-  /// Returns the address it went to.
-  Future<String> requestEmailCode() async {
-    final result = await FirebaseFunctions.instance
-        .httpsCallable('requestSignupOtp')
-        .call<Map<String, dynamic>>();
-    return (result.data['sentTo'] as String?) ?? '';
+  /// Sends the email confirmation link again.
+  Future<void> resendVerificationLink() async {
+    await _auth.currentUser?.sendEmailVerification();
   }
 
-  /// Checks the typed code. On success the barangay is notified and the
-  /// session ends: the resident signs in once the barangay approves.
-  Future<void> verifyEmailCode(String code) async {
-    await FirebaseFunctions.instance
-        .httpsCallable('verifySignupOtp')
-        .call<Map<String, dynamic>>({'code': code.trim()});
+  /// Checks whether the resident clicked the link. If so, the profile records
+  /// it, the barangay is told a registration is waiting, and the session ends:
+  /// the resident signs in once the barangay approves. False if not yet.
+  Future<bool> confirmEmailVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    await user.reload();
+    final fresh = _auth.currentUser;
+    if (fresh == null || !fresh.emailVerified) return false;
+    // The rules check the sign-in token, so refresh it to carry the new state.
+    await fresh.getIdToken(true);
+    await _markEmailConfirmed(fresh.uid, fresh.displayName);
     await _auth.signOut();
+    return true;
+  }
+
+  /// Records the confirmed email once and tells the barangay the resident is
+  /// waiting for ID review.
+  Future<void> _markEmailConfirmed(String uid, String? name) async {
+    final ref = _firestore.collection('users').doc(uid);
+    final data = (await ref.get()).data();
+    if (data == null || data['emailVerified'] == true) return;
+    await ref.update({'emailVerified': true});
+    await NotificationService().notifyStaff(
+      title: 'New resident registration',
+      body: '${name ?? data['name'] ?? 'A resident'} confirmed their email '
+          'and is waiting for ID review.',
+      type: AppNotificationType.account,
+      data: {'uid': uid},
+    );
   }
 
   /// The email address of the half-finished sign-up, if one is signed in.
@@ -213,17 +232,16 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountRemoved);
       }
 
-      // A resident who left before typing the emailed code finishes it now:
-      // the session stays so the code screen can call the server.
+      // A pending resident: either they still have to confirm their email
+      // (the session stays for the confirmation screen), or they clicked the
+      // link since signing up and it is recorded now, before the pending
+      // message below.
       if (appUser.role == UserRole.user && appUser.isPendingApproval) {
-        final raw = (await _firestore
-                .collection('users')
-                .doc(appUser.uid)
-                .get())
-            .data();
-        if (raw?['emailOtpVerified'] != true) {
-          throw const AuthException(AuthErrorType.needsEmailCode);
+        if (!credential.user!.emailVerified) {
+          throw const AuthException(AuthErrorType.needsEmailVerification);
         }
+        await credential.user!.getIdToken(true);
+        await _markEmailConfirmed(appUser.uid, appUser.displayName);
       }
 
       if (appUser.isPendingApproval) {

@@ -735,10 +735,10 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             );
             final registration =
                 (user['registrationStatus'] as String?) ?? 'accepted';
-            // A new sign-up must type its emailed code before the barangay
-            // can approve it.
+            // A new sign-up must confirm its email before the barangay can
+            // approve it.
             final awaitingEmail = user['accountStatus'] == 'pending' &&
-                user['emailOtpVerified'] != true;
+                user['emailVerified'] != true;
             return EcoCard(
               child: Row(
                 children: [

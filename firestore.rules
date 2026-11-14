@@ -57,13 +57,6 @@ service cloud.firestore {
         && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
     }
 
-    // Government-only features are gated here, not just in the UI.
-    function isVerifiedGovernment() {
-      return isActive()
-        && profile(request.auth.uid).get('accountType', 'resident') == 'government'
-        && profile(request.auth.uid).get('verificationStatus', 'unverified') == 'verified';
-    }
-
     // Avatars are stored inline in the profile, so cap their size.
     function photoOk(data) {
       return !('photoUrl' in data) || data.photoUrl == null
@@ -73,6 +66,18 @@ service cloud.firestore {
     // The resident answers the barangay's registration approval. Either the
     // fields are untouched, or the write is exactly the one allowed transition
     // (approved -> accepted / declined) stamped with the server time.
+    // A resident still waiting for the barangay, whose email Firebase has
+    // confirmed, may send the one "new registration" notice to barangay staff.
+    function pendingRegistrationNotice() {
+      return signedIn()
+        && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role == 'user'
+        && profile(request.auth.uid).get('accountStatus', 'active') == 'pending'
+        && request.auth.token.get('email_verified', false) == true
+        && request.resource.data.userId == 'staff'
+        && request.resource.data.get('type', '') == 'account';
+    }
+
     function residentAnswer() {
       return !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['registrationStatus', 'registrationDecidedAt'])
@@ -145,9 +150,9 @@ service cloud.firestore {
       //     written by the desk and arrives already active;
       //  3. the barangay desk makes its own crews — but it cannot mint another
       //     super admin or an Iswim account.
-      // Self sign-up is residents only. They start pending: the email code
-      // (checked server-side, which alone sets emailOtpVerified) and the
-      // barangay's ID check both come before they may sign in.
+      // Self sign-up is residents only. They start pending: confirming their
+      // email (the Firebase link) and the barangay's ID check both come before
+      // they may sign in.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
         && request.resource.data.role == 'user'
@@ -158,7 +163,7 @@ service cloud.firestore {
             || request.resource.data.accountType in ['resident', 'government'])
         && (!('verificationStatus' in request.resource.data)
             || request.resource.data.verificationStatus == 'pending')
-        && !('emailOtpVerified' in request.resource.data)
+        && request.resource.data.get('emailVerified', false) == false
         && !('points' in request.resource.data)
         && photoOk(request.resource.data))
         || (isCityHall()
@@ -180,8 +185,12 @@ service cloud.firestore {
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
                          'accountType', 'verificationStatus', 'verifiedBy',
                          'verificationDate', 'rejectionReason', 'approvedAt',
-                         'registrationApprovedAt', 'emailOtpVerified',
-                         'emailOtpVerifiedAt'])
+                         'registrationApprovedAt'])
+          // "Email confirmed" is only true when Firebase says so.
+          && (!request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['emailVerified'])
+              || request.resource.data.emailVerified
+                   == request.auth.token.get('email_verified', false))
           && residentAnswer()
           && photoOk(request.resource.data))
         || isAdmin() || isCityHall();
@@ -483,7 +492,10 @@ service cloud.firestore {
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.status == 'pending'
         && request.resource.data.kind in ['resident', 'special']
-        && (request.resource.data.kind == 'resident' || isVerifiedGovernment())
+        // Every approved resident may ask for a special pickup: their ID was
+        // checked by the barangay at sign-up (isActive above).
+        && (request.resource.data.kind == 'resident'
+            || profile(request.auth.uid).role == 'user')
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.description is string
@@ -520,12 +532,6 @@ service cloud.firestore {
     }
 
     // Government ID submissions. Readable only by the applicant and staff.
-    // Sign-up email codes. Written and checked only by the Cloud Functions
-    // (Admin SDK); no client may read or write them.
-    match /signupOtps/{userId} {
-      allow read, write: if false;
-    }
-
     match /verificationRequests/{requestId} {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSelf(request.resource.data.userId)
@@ -548,7 +554,7 @@ service cloud.firestore {
         || (resource.data.userId == 'cityHall' && isCityHall())
         || (resource.data.userId == 'iswim' && isIswim())
       );
-      allow create: if isActive()
+      allow create: if ((isActive()
         && request.resource.data.userId is string
         && (request.resource.data.userId == request.auth.uid
             || request.resource.data.userId == 'staff'
@@ -560,7 +566,8 @@ service cloud.firestore {
             || profile(request.auth.uid).role == 'cityHall'
             // Drivers send truck alerts and job updates, nothing else.
             || (profile(request.auth.uid).role == 'driver'
-                && request.resource.data.get('type', '') in ['route', 'request']))
+                && request.resource.data.get('type', '') in ['route', 'request'])))
+          || pendingRegistrationNotice())
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 160
         && request.resource.data.body is string

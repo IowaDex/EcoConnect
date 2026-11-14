@@ -94,12 +94,16 @@ const request = (requesterId, overrides = {}) => ({
   ...overrides,
 });
 
-test('special requests need a verified government account', async () => {
+test('every approved resident may send a special request; crews may not', async () => {
+  // All residents had their ID checked by the barangay at sign-up.
   const special = {kind: 'special'};
   await assertSucceeds(setDoc(doc(as('alice'), 'collectionRequests/a'), request('alice')));
-  await assertFails(setDoc(doc(as('alice'), 'collectionRequests/b'), request('alice', special)));
-  await assertFails(setDoc(doc(as('ugo'), 'collectionRequests/c'), request('ugo', special)));
+  await assertSucceeds(setDoc(doc(as('alice'), 'collectionRequests/b'), request('alice', special)));
   await assertSucceeds(setDoc(doc(as('gina'), 'collectionRequests/d'), request('gina', special)));
+  await assertFails(setDoc(doc(as('dan'), 'collectionRequests/e'), request('dan', special)));
+  // A resident still waiting for the barangay cannot send anything.
+  await seed((db) => setDoc(doc(db, 'users/pat'), {name: 'Pat', role: 'user', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('pat'), 'collectionRequests/f'), request('pat', special)));
 });
 
 test('a request is created as the caller, pending, with valid fields and photos', async () => {
