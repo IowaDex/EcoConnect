@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -16,7 +17,7 @@ import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
 import '../../notifications/widgets/notification_bell.dart';
 
-const _fallbackCentre = LatLng(14.5995, 120.9842);
+const _fallbackCentre = BatasanHills.center;
 
 /// Designated collection points with a live map, driver assignments and
 /// weekly schedules.
@@ -97,18 +98,14 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                         borderRadius: BorderRadius.circular(18),
                         child: FlutterMap(
                           mapController: _map,
-                          options: MapOptions(
-                            initialCenter: points.isEmpty
+                          options: BatasanHills.options(
+                            center: points.isEmpty
                                 ? _fallbackCentre
                                 : points.first.latLng,
-                            initialZoom: 14,
+                            zoom: BatasanHills.minZoom,
                           ),
                           children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.example.ecoconnect',
-                            ),
+                            BatasanHills.tiles(),
                             PolylineLayer(
                               polylines: _routes(points),
                             ),
@@ -127,6 +124,8 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                                   ),
                               ],
                             ),
+                            // The recentre button owns the bottom-right corner.
+                            const OsmAttribution(alignment: Alignment.bottomLeft),
                           ],
                         ),
                       ),
@@ -798,18 +797,13 @@ class _PointEditorState extends State<_PointEditor> {
                         child: SizedBox(
                           height: 190,
                           child: FlutterMap(
-                            options: MapOptions(
-                              initialCenter: _position,
-                              initialZoom: 15,
+                            options: BatasanHills.options(
+                              center: _position,
                               onTap: (_, point) =>
                                   setState(() => _position = point),
                             ),
                             children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName: 'com.example.ecoconnect',
-                              ),
+                              BatasanHills.tiles(),
                               MarkerLayer(
                                 markers: [
                                   Marker(

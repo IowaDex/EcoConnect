@@ -12,6 +12,7 @@ import '../../location/providers/location_provider.dart';
 import '../../route/services/route_service.dart';
 import '../../route/screens/route_map_screen.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../user/widgets/profile_sheet.dart';
@@ -24,7 +25,7 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen> {
-  static const _fallback = LatLng(14.5995, 120.9842);
+  static const _fallback = BatasanHills.center;
   final _mapController = MapController();
   final _routeService = RouteService();
   late final Stream<CollectionRoute?> _routeStream;
@@ -109,18 +110,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
               Positioned.fill(
                 child: FlutterMap(
                   mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: truckPoint ?? resident,
-                    initialZoom: 15,
-                    minZoom: 5,
-                    maxZoom: 19,
-                  ),
+                  options: BatasanHills.options(center: truckPoint ?? resident),
                   children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.ecoconnect',
-                      maxZoom: 19,
-                    ),
+                    BatasanHills.tiles(),
                     // The planned path, so residents know the streets the
                     // truck will take before it arrives.
                     if (stopPoints.length > 1)
@@ -174,6 +166,8 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           ),
                       ],
                     ),
+                    // The driver sheet covers the bottom of the map.
+                    const OsmAttribution(alignment: Alignment.centerRight),
                   ],
                 ),
               ),

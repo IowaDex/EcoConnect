@@ -10,8 +10,9 @@ import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
 import '../../driver/services/driver_session_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 
-const _fallbackCentre = LatLng(14.5995, 120.9842);
+const _fallbackCentre = BatasanHills.center;
 
 /// One colour per driver, cycled so routes stay distinguishable.
 const _driverColours = <Color>[
@@ -229,20 +230,12 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
 
     return FlutterMap(
       mapController: _map,
-      options: const MapOptions(
-        initialCenter: _fallbackCentre,
-        initialZoom: 14,
-        minZoom: 5,
-        maxZoom: 19,
-      ),
+      options: BatasanHills.options(zoom: BatasanHills.minZoom),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.ecoconnect',
-          maxZoom: 19,
-        ),
+        BatasanHills.tiles(),
         if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
         if (markers.isNotEmpty) MarkerLayer(markers: markers),
+        const OsmAttribution(),
       ],
     );
   }
