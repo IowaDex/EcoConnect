@@ -47,6 +47,13 @@ class GarbageTruck {
   /// `8-wheeler` — the wording used on the truck cards.
   String get wheelerLabel => '$wheelers-wheeler';
 
+  /// A plate the barangay has paired with a person. Every seeded truck has a
+  /// named driver; a truck saved without one is parked and shows as inactive.
+  bool get hasDriver {
+    final name = driverName.trim();
+    return name.isNotEmpty && name.toLowerCase() != 'unassigned';
+  }
+
   /// `8-wheeler compactor` — used in one-line summaries.
   String get description => '$wheelerLabel ${bodyType.toLowerCase()}';
 

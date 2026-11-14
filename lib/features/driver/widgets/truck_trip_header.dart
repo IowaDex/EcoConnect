@@ -4,10 +4,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../route/models/collection_route.dart';
 import '../models/garbage_truck.dart';
 import '../models/truck_crew_role.dart';
+import '../models/truck_status.dart';
 import '../services/trip_guard_service.dart';
 
-/// The card the crew sees first: which truck they are on, whether the trip is
-/// running, and the two trip controls (start / pause).
+/// The card the crew sees first: which truck they are on, who is riding with
+/// them, whether the trip is running, and the trip controls.
 ///
 /// It also carries the trip guard read-out, so the 100 m radius and the
 /// connection state are visible without scrolling.
@@ -23,7 +24,7 @@ class TruckTripHeader extends StatelessWidget {
     required this.onPause,
     required this.onResume,
     required this.onEnd,
-    required this.onChangeTruck,
+    this.canStart = true,
     this.metresFromCenter,
     this.connectionLost = false,
   });
@@ -37,7 +38,10 @@ class TruckTripHeader extends StatelessWidget {
   final VoidCallback onPause;
   final VoidCallback onResume;
   final VoidCallback onEnd;
-  final VoidCallback onChangeTruck;
+
+  /// False until a trip ticket exists: without one there is no trip to start,
+  /// so the button stays inert instead of failing on tap.
+  final bool canStart;
 
   /// Distance from the zone centre while the trip is running.
   final double? metresFromCenter;
@@ -66,140 +70,186 @@ class TruckTripHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusLabel = _isRunning ? status.label : 'Trip not started';
-    final statusColor = _isRunning ? status.color : const Color(0xCCFFFFFF);
+    // Without a ticket the truck is not ready, whatever the route says.
+    final badge = _isRunning
+        ? (
+            label: status.label,
+            color: _isPaused || status == RouteStatus.delayed
+                ? AppColors.warning
+                : AppColors.forest,
+            background: _isPaused || status == RouteStatus.delayed
+                ? const Color(0xFFFDF4E4)
+                : const Color(0xFFE8F3E7),
+            icon: Icons.navigation_rounded,
+          )
+        : canStart
+            ? (
+                label: TruckStatus.ticketReady.label,
+                color: TruckStatus.ticketReady.color,
+                background: TruckStatus.ticketReady.background,
+                icon: null,
+              )
+            : (
+                label: TruckStatus.noTicket.label,
+                color: TruckStatus.noTicket.color,
+                background: TruckStatus.noTicket.background,
+                icon: Icons.confirmation_number_outlined,
+              );
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: BoxDecoration(
-        gradient: AppColors.forestGradient,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.darkGreen.withValues(alpha: 0.18),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE4EDE4)),
+        boxShadow: AppColors.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: statusColor.withValues(alpha: 0.7)),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
-                  ),
-                ),
+              _Badge(
+                label: badge.label,
+                color: badge.color,
+                background: badge.background,
+                icon: badge.icon,
               ),
               const Spacer(),
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.14),
+                  color: AppColors.mint,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(
-                  children: [
-                    Icon(role.icon, size: 11, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text(
-                      role.label,
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  role.label,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.forest,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Your truck',
-                      style: TextStyle(fontSize: 9, color: Color(0xB3FFFFFF)),
+                      'Assigned truck',
+                      style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       truck.plateNumber,
                       style: const TextStyle(
-                        fontSize: 26,
-                        height: 1.05,
+                        fontSize: 27,
+                        height: 1.1,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                        color: Colors.white,
+                        letterSpacing: 0.4,
+                        color: AppColors.forest,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '${truck.description} · ${truck.zone}',
                       style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Color(0xD9FFFFFF),
+                        fontSize: 11.5,
+                        color: AppColors.inkMuted,
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.local_shipping_rounded,
-                size: 30,
-                color: Colors.white.withValues(alpha: 0.85),
+              const SizedBox(width: 12),
+              Container(
+                height: 52,
+                width: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.mint,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  size: 26,
+                  color: AppColors.forest,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _Metric(
-                icon: Icons.settings_input_component_rounded,
-                label: truck.wheelerLabel,
-              ),
-              const SizedBox(width: 14),
-              _Metric(
-                icon: Icons.my_location_rounded,
-                label: _isRunning
-                    ? (metresFromCenter == null
-                        ? 'Locating…'
-                        : '${metresFromCenter!.round()} m from centre')
-                    : '${TripGuardService.radiusMeters.round()} m radius',
-                alert: _isRunning && _outsideRadius,
-              ),
-              const Spacer(),
-              if (_isRunning && startedAt != null)
-                Text(
-                  _isPaused ? 'Paused · $_elapsed' : 'Running $_elapsed',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: _isPaused ? AppColors.warning : AppColors.lime,
-                  ),
-                ),
-            ],
+          const SizedBox(height: 14),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFEDF2ED)),
+          const SizedBox(height: 13),
+          const Text(
+            'CREW',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 11),
+          _CrewRow(
+            name: truck.hasDriver ? truck.driverName : 'No driver assigned',
+            role: 'Driver',
+            icon: Icons.person_rounded,
+            trailing: _isRunning ? status.label : 'Trip not started',
+            muted: true,
+          ),
+          const SizedBox(height: 11),
+          _CrewRow(
+            name: 'You',
+            role: role.shortLabel,
+            icon: role.icon,
+            trailing: _isRunning ? 'On board' : 'Waiting',
+            muted: true,
           ),
           if (_isRunning) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  _isPaused ? 'Paused' : 'Running',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+                if (startedAt != null) ...[
+                  const SizedBox(width: 5),
+                  Text(
+                    _elapsed,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Text(
+                  metresFromCenter == null
+                      ? 'Locating…'
+                      : '${metresFromCenter!.round()} m from centre',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: _outsideRadius
+                        ? AppColors.warning
+                        : AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 10),
             _GuardLine(
               connectionLost: connectionLost,
@@ -213,23 +263,19 @@ class TruckTripHeader extends StatelessWidget {
               children: [
                 Expanded(
                   child: SizedBox(
-                    height: 44,
+                    height: 46,
                     child: FilledButton(
                       onPressed: busy ? null : (_isPaused ? onResume : onPause),
                       style: FilledButton.styleFrom(
                         backgroundColor: _isPaused
-                            ? AppColors.lime
-                            : Colors.white.withValues(alpha: 0.16),
-                        foregroundColor:
-                            _isPaused ? AppColors.darkGreen : Colors.white,
-                        side: _isPaused
-                            ? null
-                            : BorderSide(
-                                color: Colors.white.withValues(alpha: 0.5),
-                              ),
+                            ? AppColors.forest
+                            : const Color(0xFFF1F5F1),
+                        foregroundColor: _isPaused
+                            ? Colors.white
+                            : AppColors.forest,
                         textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       child: Row(
@@ -248,20 +294,18 @@ class TruckTripHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 9),
                 Expanded(
                   child: SizedBox(
-                    height: 44,
+                    height: 46,
                     child: OutlinedButton(
                       onPressed: busy ? null : onEnd,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
+                        foregroundColor: AppColors.forest,
+                        side: const BorderSide(color: AppColors.sage),
                         textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       child: const Text('End trip'),
@@ -272,11 +316,28 @@ class TruckTripHeader extends StatelessWidget {
             )
           else
             SizedBox(
-              height: 46,
-              child: FilledButton.icon(
+              height: 48,
+              child: FilledButton(
+                // Tappable even without a ticket: the tap is what explains the
+                // gate. It just paints itself as inert.
                 onPressed: busy ? null : onStart,
-                icon: busy
-                    ? const SizedBox(
+                style: FilledButton.styleFrom(
+                  backgroundColor: canStart
+                      ? AppColors.forest
+                      : const Color(0xFFE8EEE8),
+                  foregroundColor: canStart ? Colors.white : const Color(0xFF9AA79D),
+                  disabledBackgroundColor: const Color(0xFFE8EEE8),
+                  disabledForegroundColor: const Color(0xFF9AA79D),
+                  textStyle: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (busy)
+                      const SizedBox(
                         height: 16,
                         width: 16,
                         child: CircularProgressIndicator(
@@ -284,38 +345,66 @@ class TruckTripHeader extends StatelessWidget {
                           color: AppColors.forest,
                         ),
                       )
-                    : const Icon(Icons.play_arrow_rounded, size: 20),
-                label: Text(busy ? 'Starting…' : 'Start trip'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.forest,
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                    else
+                      Icon(
+                        canStart ? Icons.play_arrow_rounded : Icons.lock_rounded,
+                        size: 18,
+                      ),
+                    const SizedBox(width: 7),
+                    Text(busy ? 'Starting…' : 'Start trip'),
+                  ],
                 ),
               ),
             ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: _isRunning ? null : onChangeTruck,
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.white.withValues(alpha: 0.85),
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 26),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ],
+      ),
+    );
+  }
+}
+
+/// The status chip at the top of the card: a dot or an icon, then the label.
+class _Badge extends StatelessWidget {
+  const _Badge({
+    required this.label,
+    required this.color,
+    required this.background,
+    this.icon,
+  });
+
+  final String label;
+  final Color color;
+  final Color background;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null)
+            Icon(icon, size: 12, color: color)
+          else
+            Container(
+              height: 7,
+              width: 7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color,
               ),
-              child: Text(
-                _isRunning
-                    ? 'End the trip to switch trucks'
-                    : 'Switch truck',
-                style: const TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
           ),
         ],
@@ -324,31 +413,75 @@ class TruckTripHeader extends StatelessWidget {
   }
 }
 
-class _Metric extends StatelessWidget {
-  const _Metric({
+/// One line of the crew list: who it is, what they do, and where they are at.
+class _CrewRow extends StatelessWidget {
+  const _CrewRow({
+    required this.name,
+    required this.role,
     required this.icon,
-    required this.label,
-    this.alert = false,
+    required this.trailing,
+    this.muted = false,
   });
 
+  final String name;
+  final String role;
   final IconData icon;
-  final String label;
-  final bool alert;
+  final String trailing;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
-    final color = alert ? AppColors.warning : const Color(0xCCFFFFFF);
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 9.5,
-            fontWeight: FontWeight.w600,
-            color: color,
+        Container(
+          height: 34,
+          width: 34,
+          decoration: const BoxDecoration(
+            color: AppColors.forest,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 17, color: Colors.white),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.forest,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                role,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            trailing,
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: muted ? AppColors.inkMuted : AppColors.forest,
+            ),
           ),
         ),
       ],
@@ -388,7 +521,7 @@ class _GuardLine extends StatelessWidget {
               '${TripGuardService.radiusMeters.round()} m limit.',
         ),
       (false, false) => (
-          AppColors.lime,
+          AppColors.forest,
           Icons.verified_rounded,
           'Online and inside the ${TripGuardService.radiusMeters.round()} m '
               'radius.',
@@ -398,9 +531,9 @@ class _GuardLine extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
+        color: color.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.55)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [

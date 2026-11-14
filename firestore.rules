@@ -45,6 +45,15 @@ service cloud.firestore {
       return isAdmin() || isIswim() || isCityHall();
     }
 
+    // The crew runs the fleet together. A guide holds the device for a driver
+    // without a phone, so the guide has to read the truck's paperwork even
+    // though the ticket is issued against the driver's login. Only approved
+    // crew accounts get this, and only for reading.
+    function isCrew() {
+      return isActive()
+        && profile(request.auth.uid).get('crewRole', '') in ['driver', 'guide'];
+    }
+
     // A deleted user keeps their login, so access also requires a profile.
     function hasProfile(uid) {
       return exists(/databases/$(database)/documents/users/$(uid));
@@ -223,7 +232,10 @@ service cloud.firestore {
     // may move after that.
     match /trip_tickets/{ticketId} {
       allow read: if isTicketStakeholder()
-        || (signedIn() && resource.data.driverId == request.auth.uid);
+        || (signedIn() && resource.data.driverId == request.auth.uid)
+        // The guide's list shows every plate's ticket state, and the guide is
+        // not the driver the ticket names, so crew read the roster's tickets.
+        || isCrew();
       allow create: if isIswim()
         && request.resource.data.status == 'issued'
         && request.resource.data.code is string

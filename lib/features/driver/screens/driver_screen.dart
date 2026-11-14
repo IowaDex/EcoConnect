@@ -105,7 +105,7 @@ class _DriverScreenState extends State<DriverScreen> {
     if (!mounted) return;
 
     final account = context.read<AuthProvider>().currentUser;
-    final role = trucks.resolveRole(account?.crewRole ?? TruckCrewRole.driver);
+    final role = account?.crewRole ?? TruckCrewRole.driver;
 
     if (role == TruckCrewRole.driver) {
       // The registry first: Iswim may have added or re-plated the truck since
@@ -455,7 +455,7 @@ class _DriverScreenState extends State<DriverScreen> {
     try {
       final trucks = context.read<TruckProvider>();
       final truck = trucks.selectedTruck;
-      final role = trucks.resolveRole(user.crewRole);
+      final role = user.crewRole;
 
       // The radius is measured from the assigned zone centre. A crew testing
       // far from Batasan would trip the alarm before moving, so the start
@@ -801,6 +801,15 @@ class _DriverScreenState extends State<DriverScreen> {
       );
   }
 
+  /// Back to the truck list, so the crew can switch plates without signing out.
+  void _back() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/driver-trucks');
+    }
+  }
+
   Future<void> _logout() async {
     final confirmed = await confirmLogout(
       context,
@@ -835,6 +844,10 @@ class _DriverScreenState extends State<DriverScreen> {
     final trucks = context.watch<TruckProvider>();
     final truck = trucks.selectedTruck;
     final user = auth.currentUser;
+    final role = user?.crewRole ?? TruckCrewRole.driver;
+    // The guide picks the plate, so only the guide gets a way back to the list.
+    // A driver is already on the truck the barangay assigned them.
+    final showBack = role == TruckCrewRole.guide;
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
@@ -846,6 +859,21 @@ class _DriverScreenState extends State<DriverScreen> {
             children: [
               Row(
                 children: [
+                  if (showBack) ...[
+                    InkWell(
+                      onTap: _back,
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 16,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   const BrandWordmark(fontSize: 10.5),
                   const Spacer(),
                   const NotificationBell(
@@ -864,22 +892,48 @@ class _DriverScreenState extends State<DriverScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              Text(
-                trucks.resolveRole(user?.crewRole ?? TruckCrewRole.driver).label,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
-                  color: AppColors.moss,
-                ),
+              const SizedBox(height: 16),
+              // Who is holding the device. Both roles run the same dashboard,
+              // so the pill and the account under it are the only difference.
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.mint,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          role.icon,
+                          size: 13,
+                          color: AppColors.forest,
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          role.label,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.forest,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 6),
               Text(
-                user?.displayName ?? 'Collector',
+                user?.email ?? user?.displayName ?? 'Collector',
                 style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               if (_ticket != null) ...[
                 TicketCard(
                   ticket: _ticket!,
@@ -936,9 +990,7 @@ class _DriverScreenState extends State<DriverScreen> {
               if (truck != null)
                 TruckTripHeader(
                   truck: truck,
-                  role: trucks.resolveRole(
-                    user?.crewRole ?? TruckCrewRole.driver,
-                  ),
+                  role: role,
                   status: _status,
                   startedAt: _startedAt,
                   busy: _busy,
@@ -948,7 +1000,7 @@ class _DriverScreenState extends State<DriverScreen> {
                   onPause: _pauseRoute,
                   onResume: _resumeRoute,
                   onEnd: _endRoute,
-                  onChangeTruck: () => context.go('/driver-trucks'),
+                  canStart: _ticket != null,
                 ),
               const SizedBox(height: 14),
               if (_serviceUnavailable) ...[

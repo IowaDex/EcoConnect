@@ -8,17 +8,27 @@ import '../../../core/widgets/confirm_logout.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../../location/providers/location_provider.dart';
+import '../../notifications/models/app_notification.dart';
+import '../../notifications/services/notification_service.dart';
 import '../../notifications/widgets/notification_bell.dart';
+import '../../route/models/collection_route.dart';
+import '../../route/services/route_service.dart';
+import '../../tickets/models/trip_ticket.dart';
+import '../../tickets/services/ticket_service.dart';
 import '../models/garbage_truck.dart';
 import '../models/truck_crew_role.dart';
+import '../models/truck_status.dart';
 import '../providers/truck_provider.dart';
+import '../widgets/driver_nav_bar.dart';
+import '../widgets/truck_card.dart';
 
 /// First screen after a driver or guide signs in.
 ///
 /// The barangay assigns the truck, so the crew does not type anything: they
 /// pick their plate from the fleet list and the dashboard opens for that
-/// vehicle. Both crew roles see the same list — the guide is the alternative
-/// for a driver without a phone.
+/// vehicle. Each card carries the truck's status, so the guide can see at a
+/// glance which plates have a ticket waiting, which are on the road and which
+/// are parked without a driver.
 class TruckPickerScreen extends StatefulWidget {
   const TruckPickerScreen({super.key});
 
@@ -27,16 +37,56 @@ class TruckPickerScreen extends StatefulWidget {
 }
 
 class _TruckPickerScreenState extends State<TruckPickerScreen> {
+  // Three sources, one listener each: the roster, the trucks reporting a live
+  // position, and the tickets that make a truck ready to run.
+  late final Stream<List<GarbageTruck>> _fleet;
+  late final Stream<List<CollectionRoute>> _liveRoutes;
+  late final Stream<List<TripTicket>> _tickets;
+
   @override
   void initState() {
     super.initState();
+    _fleet = FleetService().watchTrucks();
+    _liveRoutes = RouteService().watchLiveRoutes();
+    _tickets = TicketService().watchAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TruckProvider>().restore();
     });
   }
 
   Future<void> _open(GarbageTruck truck) async {
-    await context.read<TruckProvider>().select(truck);
+    final trucks = context.read<TruckProvider>();
+    final user = context.read<AuthProvider>().currentUser;
+    final role = user?.crewRole ?? TruckCrewRole.driver;
+    // Re-opening the truck already on this phone must not page the driver
+    // again, so the notice only goes out when the plate actually changes.
+    final switching = trucks.selectedTruck?.id != truck.id;
+
+    await trucks.select(truck);
+
+    // A guide holds the device for a driver who has no phone, so the driver
+    // only learns he has company if we tell him.
+    if (switching && role == TruckCrewRole.guide && user != null) {
+      final driverId = truck.driverAccountId;
+      if (driverId != null && driverId.isNotEmpty && driverId != user.uid) {
+        await NotificationService().push(
+          userId: driverId,
+          title: 'You have a truck guide',
+          body: '${user.displayName ?? 'Your guide'} is your truck guide for '
+              '${truck.plateNumber}.',
+          // Drivers may only send route or collection alerts; a guide shares
+          // the driver role, so this keeps the write inside the rules.
+          type: AppNotificationType.route,
+          data: {
+            'kind': 'truckGuide',
+            'truckId': truck.id,
+            'plateNumber': truck.plateNumber,
+            'guideUid': user.uid,
+          },
+        );
+      }
+    }
+
     if (!mounted) return;
     context.go('/driver');
   }
@@ -61,7 +111,7 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
     final auth = context.watch<AuthProvider>();
     final trucks = context.watch<TruckProvider>();
     final user = auth.currentUser;
-    final role = trucks.resolveRole(user?.crewRole ?? TruckCrewRole.driver);
+    final role = user?.crewRole ?? TruckCrewRole.driver;
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
@@ -92,70 +142,96 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
               ),
             ),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
-                children: [
-                  _RoleBadge(role: role),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Select your truck',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // The registry Iswim maintains, so a plate added this
-                  // morning shows up here without a rebuild.
-                  StreamBuilder<List<GarbageTruck>>(
-                    stream: FleetService().watchTrucks(),
-                    builder: (context, snapshot) {
-                      final fleet = snapshot.data ?? const <GarbageTruck>[];
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            '${fleet.length} trucks assigned by Barangay '
-                            'Batasan Hills. Tap your plate to open the trip '
-                            'dashboard.',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              height: 1.5,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          for (final truck in fleet) ...[
-                            _TruckCard(
-                              truck: truck,
-                              selected: trucks.selectedTruck?.id == truck.id,
-                              onTap: () => _open(truck),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ],
+              child: StreamBuilder<List<GarbageTruck>>(
+                stream: _fleet,
+                builder: (context, fleetSnap) {
+                  final fleet = fleetSnap.data ?? const <GarbageTruck>[];
+                  return StreamBuilder<List<CollectionRoute>>(
+                    stream: _liveRoutes,
+                    builder: (context, liveSnap) {
+                      final moving = _platesOnTheRoad(liveSnap.data);
+                      return StreamBuilder<List<TripTicket>>(
+                        stream: _tickets,
+                        builder: (context, ticketSnap) {
+                          final ready = _trucksWithTickets(ticketSnap.data);
+                          return ListView(
+                            padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
+                            children: [
+                              _RoleBadge(role: role),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Select your truck',
+                                style: TextStyle(
+                                  fontSize: 30,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.6,
+                                  color: AppColors.forest,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${fleet.length} trucks assigned by Barangay '
+                                'Batasan Hills. Tap your plate to open the trip '
+                                'dashboard.',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.5,
+                                  color: AppColors.inkMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              for (final truck in fleet) ...[
+                                TruckCard(
+                                  truck: truck,
+                                  selected: trucks.selectedTruck?.id == truck.id,
+                                  status: TruckStatusX.resolve(
+                                    truck: truck,
+                                    inTransit: moving.contains(truck.plateNumber),
+                                    hasTicket: ready.contains(truck.id),
+                                  ),
+                                  onTap: () => _open(truck),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                            ],
+                          );
+                        },
                       );
                     },
-                  ),
-                  const SizedBox(height: 6),
-                  _RolePreviewSwitch(
-                    role: role,
-                    onChanged: (next) async {
-                      final provider = context.read<TruckProvider>();
-                      final accountRole = user?.crewRole ?? TruckCrewRole.driver;
-                      await provider.setRoleOverride(
-                        next == accountRole ? null : next,
-                      );
-                    },
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ],
         ),
       ),
+      bottomNavigationBar: const DriverNavBar(currentIndex: 0),
     );
+  }
+
+  /// Plates that are reporting a live position. A run whose phone went silent
+  /// is left out: the truck is not on the move, it is just stale.
+  static Set<String> _platesOnTheRoad(List<CollectionRoute>? routes) {
+    if (routes == null) return const {};
+    return {
+      for (final route in routes)
+        if (!route.isStale && (route.truckPlate ?? '').isNotEmpty)
+          route.truckPlate!,
+    };
+  }
+
+  /// Truck ids with a ticket the crew can act on: issued, accepted or already
+  /// running. Finished paperwork does not keep a plate "ready".
+  static Set<String> _trucksWithTickets(List<TripTicket>? tickets) {
+    if (tickets == null) return const {};
+    return {
+      for (final ticket in tickets)
+        if (ticket.status == TicketStatus.issued ||
+            ticket.status == TicketStatus.accepted ||
+            ticket.status == TicketStatus.running)
+          ticket.truckId,
+    };
   }
 }
 
@@ -168,216 +244,22 @@ class _RoleBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: AppColors.mint,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppColors.sage),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.9)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(role.icon, size: 14, color: AppColors.forest),
-          const SizedBox(width: 7),
+          Icon(role.icon, size: 15, color: AppColors.forest),
+          const SizedBox(width: 9),
           Text(
             role.label,
             style: const TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               color: AppColors.forest,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TruckCard extends StatelessWidget {
-  const _TruckCard({
-    required this.truck,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final GarbageTruck truck;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.mint : Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.sage,
-              width: selected ? 1.4 : 1,
-            ),
-            boxShadow: AppColors.cardShadow,
-          ),
-          child: Row(
-            children: [
-              Container(
-                height: 42,
-                width: 42,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.primary : AppColors.cream,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.local_shipping_rounded,
-                  size: 20,
-                  color: selected ? Colors.white : AppColors.forest,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          truck.plateNumber,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.4,
-                            color: AppColors.forest,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.cream,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            truck.wheelerLabel,
-                            style: const TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      truck.description,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      truck.areaLabel,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.moss,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: AppColors.moss,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Lets one account preview both crew views until the barangay console issues
-/// separate driver and guide logins.
-class _RolePreviewSwitch extends StatelessWidget {
-  const _RolePreviewSwitch({required this.role, required this.onChanged});
-
-  final TruckCrewRole role;
-  final ValueChanged<TruckCrewRole> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.sage),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Signed in as',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: AppColors.inkMuted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              for (final option in TruckCrewRole.values) ...[
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => onChanged(option),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: option == role
-                            ? AppColors.forest
-                            : AppColors.cream,
-                        borderRadius: BorderRadius.circular(11),
-                      ),
-                      child: Text(
-                        option.label,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: option == role
-                              ? Colors.white
-                              : AppColors.inkMuted,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                if (option != TruckCrewRole.values.last)
-                  const SizedBox(width: 8),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            role.blurb,
-            style: const TextStyle(
-              fontSize: 9,
-              height: 1.4,
-              color: AppColors.inkMuted,
             ),
           ),
         ],

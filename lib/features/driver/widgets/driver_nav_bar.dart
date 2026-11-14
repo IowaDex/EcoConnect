@@ -3,7 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 
-/// Bottom navigation for the driver side: Home, Routes, Completed, Profile.
+/// Bottom navigation for the driver side: Home, Trip tickets, Completed,
+/// Profile.
 class DriverNavBar extends StatelessWidget {
   const DriverNavBar({super.key, required this.currentIndex});
 
@@ -11,7 +12,11 @@ class DriverNavBar extends StatelessWidget {
 
   static const _items = <({IconData icon, String label, String route})>[
     (icon: Icons.home_rounded, label: 'Home', route: '/driver'),
-    (icon: Icons.route_rounded, label: 'Routes', route: '/driver-routes'),
+    (
+      icon: Icons.confirmation_number_outlined,
+      label: 'Trip tickets',
+      route: '/driver-tickets'
+    ),
     (
       icon: Icons.check_circle_outline_rounded,
       label: 'Completed',

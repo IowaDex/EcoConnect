@@ -151,11 +151,29 @@ class _LandingScreenState extends State<LandingScreen>
                         // Takes whatever the bottom row leaves, so the scene
                         // is always anchored above it.
                         Expanded(
-                          child: _Illustration(
-                            drift: _drift,
-                            metrics: metrics,
-                            width: constraints.maxWidth,
-                            share: ready ? 1.0 : _bootArtShare,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: _Illustration(
+                                  drift: _drift,
+                                  metrics: metrics,
+                                  width: constraints.maxWidth,
+                                  share: ready ? 1.0 : _bootArtShare,
+                                ),
+                              ),
+                              // The sheet has no hard top edge: the bottom of
+                              // the artwork dissolves into the panel colour
+                              // before the panel starts, so the two surfaces
+                              // meet as one gradient instead of a seam.
+                              if (ready)
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  height: metrics.scale(44, 70),
+                                  child: const _PanelFade(),
+                                ),
+                            ],
                           ),
                         ),
                         // Animating this row's height is what lifts the
@@ -163,16 +181,20 @@ class _LandingScreenState extends State<LandingScreen>
                         // The panel stays fully opaque — the growing window is
                         // what reveals it, so it reads as sliding up from
                         // under the fold rather than fading through the scene.
-                        AnimatedSize(
-                          duration: _artGrow,
-                          curve: Curves.easeOutCubic,
-                          alignment: Alignment.bottomCenter,
-                          child: ready
-                              ? _EntryPanel(
-                                  intro: _intro,
-                                  metrics: metrics,
-                                )
-                              : const SizedBox.shrink(),
+                        //
+                        // Capped at the window height: a resize that shrinks
+                        // the window past the panel's current size would
+                        // otherwise leave the column taller than the screen.
+                        ConstrainedBox(
+                          constraints: BoxConstraints(maxHeight: height),
+                          child: AnimatedSize(
+                            duration: _artGrow,
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.bottomCenter,
+                            child: ready
+                                ? _EntryPanel(intro: _intro, metrics: metrics)
+                                : const SizedBox.shrink(),
+                          ),
                         ),
                       ],
                     ),
@@ -206,7 +228,8 @@ class _LandingScreenState extends State<LandingScreen>
                         curve: Curves.easeOutCubic,
                         // Clears the notch / status bar on every device.
                         padding: EdgeInsets.only(
-                          top: (ready ? 6 : height * 0.11) + metrics.padding.top,
+                          top:
+                              (ready ? 6 : height * 0.11) + metrics.padding.top,
                         ),
                         child: _Header(intro: _intro, metrics: metrics),
                       ),
@@ -232,8 +255,10 @@ class _LandingScreenState extends State<LandingScreen>
                                 // ~0.24 of the width renders the truck at the
                                 // reference's ~17% of the screen.
                                 EcoTruckArt(
-                                  width: (constraints.maxWidth * 0.24)
-                                      .clamp(80.0, 200.0),
+                                  width: (constraints.maxWidth * 0.24).clamp(
+                                    80.0,
+                                    200.0,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
@@ -290,7 +315,7 @@ class _Header extends StatelessWidget {
               child: _Wordmark(
                 fontSize: compact
                     ? metrics.scale(24, 30)
-                    : metrics.scale(46, 58),
+                    : metrics.scale(50, 64),
               ),
             ),
           ),
@@ -303,8 +328,9 @@ class _Header extends StatelessWidget {
               'Know When, Know Where!',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize:
-                    compact ? metrics.scale(12, 14) : metrics.scale(14, 17),
+                fontSize: compact
+                    ? metrics.scale(12, 14)
+                    : metrics.scale(16, 20),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF1C4A24),
               ),
@@ -317,8 +343,9 @@ class _Header extends StatelessWidget {
               start: 0.28,
               end: 0.66,
               child: Padding(
-                padding:
-                    EdgeInsets.symmetric(horizontal: metrics.scale(10, 30)),
+                padding: EdgeInsets.symmetric(
+                  horizontal: metrics.scale(22, 52),
+                ),
                 child: Text(
                   'Real-time garbage truck tracking and timely notifications, '
                   'making waste disposal easier and more convenient.',
@@ -338,8 +365,9 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// "EC⬡ / CONNECT" — the hex-leaf mark stands in for the O in ECO, sitting on
-/// the text baseline the way a round letter would.
+/// "EC⬡ / CONNECT" — the hex-leaf mark stands in for the O in ECO. The row is
+/// baseline-aligned so the mark's bottom sits on the same line as the letters,
+/// whatever font the platform hands us.
 class _Wordmark extends StatelessWidget {
   const _Wordmark({required this.fontSize});
 
@@ -359,21 +387,27 @@ class _Wordmark extends StatelessWidget {
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
             Text('EC', style: style),
-            // Bottom padding equal to the font's descent drops the hexagon
-            // onto the baseline, so it reads as the O in ECO.
+            // The mark is sized to the letters' cap height: its outline reaches
+            // 1.03x the box top to bottom, so 0.72 of the font size draws a
+            // hexagon as tall as the E and C. A painted box reports no baseline
+            // of its own, so the row can't line it up with the letters. The
+            // letters' baseline sits about 0.92 of the font size below the top
+            // of their line box, so a 0.20 drop lands the bottom of the stroke
+            // on the same line as the bottom of the E and C.
             Padding(
-              padding: EdgeInsets.only(
-                left: fontSize * 0.125,
-                bottom: fontSize * 0.19,
-              ),
-              child: HexLeafLogo(
-                size: fontSize * 0.8,
-                color: const Color(0xFF14501C),
-                leafColor: const Color(0xFF4CAF50),
-                strokeWidth: fontSize * 0.8 * 0.11,
+              padding: EdgeInsets.only(left: fontSize * 0.13),
+              child: Transform.translate(
+                offset: Offset(0, fontSize * 0.203),
+                child: HexLeafLogo(
+                  size: fontSize * 0.72,
+                  color: const Color(0xFF14501C),
+                  leafColor: const Color(0xFF4CAF50),
+                  strokeWidth: fontSize * 0.72 * 0.11,
+                ),
               ),
             ),
           ],
@@ -501,12 +535,32 @@ class _Illustration extends StatelessWidget {
   }
 }
 
+/// Soft top edge for the sheet: opaque panel green at the bottom, fully clear
+/// at the top, with the same corner radius as the panel underneath. It sits on
+/// the last few points of the artwork, so the scene fades into the sheet.
+class _PanelFade extends StatelessWidget {
+  const _PanelFade();
+
+  @override
+  Widget build(BuildContext context) {
+    return const IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x005DA45F), _panelGreenTop],
+          ),
+          borderRadius: BorderRadius.vertical(top: _panelRadius),
+        ),
+      ),
+    );
+  }
+}
+
 /// Green panel with the value proposition and the two entry points.
 class _EntryPanel extends StatelessWidget {
-  const _EntryPanel({
-    required this.intro,
-    required this.metrics,
-  });
+  const _EntryPanel({required this.intro, required this.metrics});
 
   final Animation<double> intro;
   final ScreenMetrics metrics;
@@ -551,98 +605,117 @@ class _EntryPanel extends StatelessWidget {
         ),
         child: SafeArea(
           top: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Reveal(
-                    intro: intro,
-                    start: 0.46,
-                    end: 0.78,
-                    child: Text(
-                      'Smarter waste collection\nfor every barangay',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: compact
-                            ? metrics.scale(16, 18)
-                            : metrics.scale(21, 26),
-                        height: 1.3,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: compact ? 6 : metrics.scale(8, 10)),
-                  _Reveal(
-                    intro: intro,
-                    start: 0.55,
-                    end: 0.85,
-                    child: Text(
-                      'Connecting Communities for a Cleaner and Greener '
-                      'Tomorrow.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: compact
-                            ? metrics.scale(10, 11)
-                            : metrics.scale(11, 13),
-                        height: 1.4,
-                        color: const Color(0xFFE8F5E9),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: compact ? 12 : metrics.scale(20, 26)),
-                  SizedBox(
-                    height: compact ? 42 : metrics.scale(52, 58),
-                    child: FilledButton(
-                      onPressed: () => context.go('/signup'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1B5E20),
-                        elevation: 0,
-                        shape: const StadiumBorder(),
-                        textStyle: TextStyle(
+          // When the window is too short for the full panel, the copy is laid
+          // out at its natural height and clipped by the sheet instead of
+          // throwing an overflow while the panel animates down to size.
+          // It stays content-sized whenever the copy does fit.
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Reveal(
+                      intro: intro,
+                      start: 0.46,
+                      end: 0.78,
+                      child: Text(
+                        'Smarter waste collection\nfor every barangay',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
                           fontSize: compact
-                              ? metrics.scale(12, 13)
-                              : metrics.scale(13.5, 15.5),
-                          fontWeight: FontWeight.w700,
+                              ? metrics.scale(16, 18)
+                              : metrics.scale(25, 31),
+                          height: 1.15,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('Get Started'),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.arrow_forward_rounded,
-                            size: compact ? 16 : metrics.scale(18, 20),
+                    ),
+                    SizedBox(height: compact ? 6 : metrics.scale(8, 10)),
+                    _Reveal(
+                      intro: intro,
+                      start: 0.55,
+                      end: 0.85,
+                      child: Align(
+                        child: ConstrainedBox(
+                          // A narrower measure, as in the mockup: the promise
+                          // reads as two balanced lines instead of one long one.
+                          constraints: BoxConstraints(
+                            maxWidth: metrics.scale(300, 420),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: compact ? 8 : 12),
-                  SizedBox(
-                    height: compact ? 40 : metrics.scale(48, 54),
-                    child: OutlinedButton(
-                      onPressed: () => context.go('/login'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white, width: 1.4),
-                        shape: const StadiumBorder(),
-                        textStyle: TextStyle(
-                          fontSize: compact
-                              ? metrics.scale(11, 12.5)
-                              : metrics.scale(12.5, 14.5),
-                          fontWeight: FontWeight.w600,
+                          child: Text(
+                            'Connecting Communities for a Cleaner and Greener '
+                            'Tomorrow.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: compact
+                                  ? metrics.scale(10, 11)
+                                  : metrics.scale(12, 14),
+                              height: 1.4,
+                              color: const Color(0xFFE8F5E9),
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text('I already have an account'),
                     ),
-                  ),
-                ],
+                    SizedBox(height: compact ? 12 : metrics.scale(20, 26)),
+                    SizedBox(
+                      height: compact ? 42 : metrics.scale(58, 66),
+                      child: FilledButton(
+                        onPressed: () => context.go('/signup'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF1B5E20),
+                          elevation: 0,
+                          shape: const StadiumBorder(),
+                          textStyle: TextStyle(
+                            fontSize: compact
+                                ? metrics.scale(12, 13)
+                                : metrics.scale(13.5, 15.5),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('Get Started'),
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              size: compact ? 16 : metrics.scale(18, 20),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: compact ? 8 : 12),
+                    SizedBox(
+                      height: compact ? 40 : metrics.scale(54, 62),
+                      child: OutlinedButton(
+                        onPressed: () => context.go('/login'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(
+                            color: Colors.white,
+                            width: 1.4,
+                          ),
+                          shape: const StadiumBorder(),
+                          textStyle: TextStyle(
+                            fontSize: compact
+                                ? metrics.scale(11, 12.5)
+                                : metrics.scale(12.5, 14.5),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('I already have an account'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
