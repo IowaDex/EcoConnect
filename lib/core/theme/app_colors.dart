@@ -95,4 +95,14 @@ abstract final class AppColors {
           offset: const Offset(0, 6),
         ),
       ];
+
+  /// Deeper elevation for a card under the pointer. The extra blur and offset
+  /// read as the surface rising off the page.
+  static List<BoxShadow> get cardShadowHover => [
+        BoxShadow(
+          color: darkGreen.withValues(alpha: 0.13),
+          blurRadius: 28,
+          offset: const Offset(0, 12),
+        ),
+      ];
 }

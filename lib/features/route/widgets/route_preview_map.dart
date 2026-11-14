@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../models/route_plan.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 
 /// Read-only preview of a collection route: the planned stops joined in
 /// order, plus the truck's last known position when available.
@@ -52,25 +53,14 @@ class RoutePreviewMap extends StatelessWidget {
       child: SizedBox(
         height: height,
         child: FlutterMap(
-          options: MapOptions(
-            initialCenter: all.first,
-            initialZoom: 15,
-            initialCameraFit: all.length > 1
-                ? CameraFit.bounds(
-                    bounds: LatLngBounds.fromPoints(all),
-                    padding: const EdgeInsets.all(30),
-                  )
-                : null,
-            interactionOptions:
-                const InteractionOptions(flags: InteractiveFlag.none),
+          options: BatasanHills.options(
+            center: all.first,
+            fit: all.length > 1 ? LatLngBounds.fromPoints(all) : null,
+            fitPadding: const EdgeInsets.all(30),
+            interactive: false,
           ),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.ecoconnect',
-              maxZoom: 19,
-              tileProvider: tileProvider,
-            ),
+            BatasanHills.tiles(tileProvider: tileProvider),
             if (points.length > 1)
               PolylineLayer(
                 polylines: [
@@ -100,6 +90,7 @@ class RoutePreviewMap extends StatelessWidget {
                   ),
               ],
             ),
+            const OsmAttribution(),
           ],
         ),
       ),

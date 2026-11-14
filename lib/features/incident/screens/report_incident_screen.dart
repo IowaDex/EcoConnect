@@ -63,7 +63,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Report sent to your barangay. Salamat!'),
+            content: Text('Report sent to your barangay. Thank you!'),
           ),
         );
       context.go('/user');

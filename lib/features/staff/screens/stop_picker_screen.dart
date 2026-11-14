@@ -7,6 +7,7 @@ import '../../route/models/route_plan.dart';
 import '../../location/providers/location_provider.dart';
 import '../../location/services/geocoding_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/primary_button.dart';
 
 /// Lets staff lay out the collection route by tapping the map. Each tap adds
@@ -26,7 +27,7 @@ class StopPickerScreen extends StatefulWidget {
 }
 
 class _StopPickerScreenState extends State<StopPickerScreen> {
-  static const _fallback = LatLng(14.5995, 120.9842);
+  static const _fallback = BatasanHills.center;
 
   final _mapController = MapController();
   final _searchController = TextEditingController();
@@ -238,20 +239,12 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                   Positioned.fill(
                     child: FlutterMap(
                       mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: mapped.isEmpty ? _fallback : mapped.first,
-                        initialZoom: 15,
-                        minZoom: 5,
-                        maxZoom: 19,
+                      options: BatasanHills.options(
+                        center: mapped.isEmpty ? _fallback : mapped.first,
                         onTap: (_, point) => _addStop(point),
                       ),
                       children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.example.ecoconnect',
-                          maxZoom: 19,
-                        ),
+                        BatasanHills.tiles(),
                         if (mapped.length > 1)
                           PolylineLayer(
                             polylines: [
@@ -275,6 +268,8 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                                 ),
                           ],
                         ),
+                        // The action bar sits along the bottom edge.
+                        const OsmAttribution(alignment: Alignment.centerRight),
                       ],
                     ),
                   ),

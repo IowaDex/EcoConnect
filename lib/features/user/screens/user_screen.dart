@@ -8,8 +8,10 @@ import '../../location/widgets/location_controls.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/models/account_type.dart';
 import '../../announcements/models/announcement.dart';
@@ -53,6 +55,26 @@ class _UserScreenState extends State<UserScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
               children: [
+                if (user?.needsRegistrationDecision == true) ...[
+                  const _RegistrationDecisionCard(),
+                  const SizedBox(height: 18),
+                ] else if (user?.registrationPending == true) ...[
+                  const EcoBanner(
+                    message:
+                        'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
+                    icon: Icons.hourglass_top_rounded,
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(height: 18),
+                ] else if (user?.registrationDeclined == true) ...[
+                  const EcoBanner(
+                    message:
+                        'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
+                    icon: Icons.info_outline_rounded,
+                    color: AppColors.inkMuted,
+                  ),
+                  const SizedBox(height: 18),
+                ],
                 if (user?.isGovernment == true &&
                     !user!.isVerifiedGovernment) ...[
                   _VerificationNotice(user: user),
@@ -78,11 +100,19 @@ class _UserScreenState extends State<UserScreen> {
                 const SizedBox(height: 10),
                 const _LatestAnnouncements(),
                 const SizedBox(height: 20),
-                _TrackPrompt(onTap: () => context.go('/tracking')),
+                HoverLift(
+                  child: _TrackPrompt(onTap: () => context.go('/tracking')),
+                ),
                 const SizedBox(height: 12),
-                _ReportPrompt(onTap: () => context.go('/report-incident')),
+                HoverLift(
+                  child: _ReportPrompt(
+                    onTap: () => context.go('/report-incident'),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                _WalletPrompt(onTap: () => context.go('/wallet')),
+                HoverLift(
+                  child: _WalletPrompt(onTap: () => context.go('/wallet')),
+                ),
                 const SizedBox(height: 18),
                 const LocationControls(),
               ],
@@ -199,14 +229,18 @@ class _Hero extends StatelessWidget {
           Row(
             children: [
               Flexible(
-                child: _HeroPill(
-                  label: hasAddress ? address : 'No address yet',
-                  icon: Icons.location_on_outlined,
-                  onTap: onEditProfile,
+                child: HoverLift(
+                  child: _HeroPill(
+                    label: hasAddress ? address : 'No address yet',
+                    icon: Icons.location_on_outlined,
+                    onTap: onEditProfile,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
-              _HeroPill(label: 'Edit profile', onTap: onEditProfile),
+              HoverLift(
+                child: _HeroPill(label: 'Edit profile', onTap: onEditProfile),
+              ),
             ],
           ),
         ],
@@ -477,6 +511,134 @@ class _TrackPrompt extends StatelessWidget {
   }
 }
 
+/// The resident's answer to the barangay's registration approval.
+///
+/// The answer is stored with the date and time, and the barangay desk is told
+/// so a declined registration can be closed in the records.
+class _RegistrationDecisionCard extends StatefulWidget {
+  const _RegistrationDecisionCard();
+
+  @override
+  State<_RegistrationDecisionCard> createState() =>
+      _RegistrationDecisionCardState();
+}
+
+class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
+  bool _busy = false;
+
+  Future<void> _answer(bool accepted) async {
+    if (!accepted) {
+      final ok = await AppFeedback.confirm(
+        context,
+        title: 'Decline the approval?',
+        message: 'Your registration will be withdrawn and barangay staff '
+            'will be told. Contact them if you want to restart it.',
+        confirmLabel: 'Decline',
+        icon: Icons.info_outline_rounded,
+      );
+      if (!ok || !mounted) return;
+    }
+    setState(() => _busy = true);
+    final error =
+        await context.read<AuthProvider>().answerRegistration(accepted: accepted);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      AppFeedback.error(context, error);
+      return;
+    }
+    AppFeedback.success(
+      context,
+      accepted ? 'Registration accepted' : 'Registration declined',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return EcoCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 36,
+                width: 36,
+                decoration: const BoxDecoration(
+                  color: AppColors.mint,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.how_to_reg_rounded,
+                    size: 18, color: AppColors.forest),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Text(
+                  'Barangay approved your registration',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.forest,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Accept to confirm you are a resident of this barangay. Decline if '
+            'the approval was sent to the wrong person or you are not a '
+            'resident. Your answer is recorded with the date and time.',
+            style: TextStyle(
+              fontSize: 9.5,
+              height: 1.5,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : () => _answer(false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      side: const BorderSide(color: AppColors.danger),
+                    ),
+                    child: const Text('Decline'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: FilledButton(
+                    onPressed: _busy ? null : () => _answer(true),
+                    child: _busy
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Accept'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Government personnel see their verification state on the dashboard so a
 /// pending ID never looks like a broken feature.
 class _VerificationNotice extends StatelessWidget {
@@ -542,6 +704,12 @@ class _ResidentQuickActions extends StatelessWidget {
       route: '/announcements',
       color: Color(0xFF558B2F),
     ),
+    (
+      label: 'Complaints',
+      icon: Icons.report_outlined,
+      route: '/my-complaints',
+      color: Color(0xFFD32F2F),
+    ),
   ];
 
   @override
@@ -554,52 +722,58 @@ class _ResidentQuickActions extends StatelessWidget {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final action in _actions)
+            for (var i = 0; i < _actions.length; i++)
               SizedBox(
                 width: width,
-                child: InkWell(
-                  onTap: () => context.push(action.route),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 13,
-                      horizontal: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
+                child: FadeSlideIn(
+                  index: i,
+                  offset: 10,
+                  child: HoverLift(
+                    child: InkWell(
+                      onTap: () => context.push(_actions[i].route),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: AppColors.sage.withValues(alpha: 0.75),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 13,
+                          horizontal: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.sage.withValues(alpha: 0.75),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Container(
+                              height: 34,
+                              width: 34,
+                              decoration: BoxDecoration(
+                                color: _actions[i].color.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _actions[i].icon,
+                                size: 17,
+                                color: _actions[i].color,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              _actions[i].label,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          height: 34,
-                          width: 34,
-                          decoration: BoxDecoration(
-                            color: action.color.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            action.icon,
-                            size: 17,
-                            color: action.color,
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          action.label,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          style: const TextStyle(
-                            fontSize: 9,
-                            height: 1.25,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),

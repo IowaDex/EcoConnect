@@ -30,6 +30,21 @@ service cloud.firestore {
       return signedIn() && profile(request.auth.uid).role == 'admin';
     }
 
+    // Iswim owns the fleet and issues the trip tickets.
+    function isIswim() {
+      return signedIn() && profile(request.auth.uid).role == 'iswim';
+    }
+
+    // City Hall is the DSQC: the super admin that provisions accounts.
+    function isCityHall() {
+      return signedIn() && profile(request.auth.uid).role == 'cityHall';
+    }
+
+    // Everyone who touches a trip ticket.
+    function isTicketStakeholder() {
+      return isAdmin() || isIswim() || isCityHall();
+    }
+
     // A deleted user keeps their login, so access also requires a profile.
     function hasProfile(uid) {
       return exists(/databases/$(database)/documents/users/$(uid));
@@ -53,6 +68,17 @@ service cloud.firestore {
     function photoOk(data) {
       return !('photoUrl' in data) || data.photoUrl == null
         || (data.photoUrl is string && data.photoUrl.size() < 150000);
+    }
+
+    // The resident answers the barangay's registration approval. Either the
+    // fields are untouched, or the write is exactly the one allowed transition
+    // (approved -> accepted / declined) stamped with the server time.
+    function residentAnswer() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['registrationStatus', 'registrationDecidedAt'])
+        || (resource.data.get('registrationStatus', 'accepted') == 'approved'
+            && request.resource.data.registrationStatus in ['accepted', 'declined']
+            && request.resource.data.registrationDecidedAt == request.time);
     }
 
     // Inline uploads (images / PDFs) are capped below Firestore's 1 MiB limit.
@@ -108,11 +134,19 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSelf(userId) || isAdmin();
-      allow create: if isSelf(userId)
+      // Iswim needs the driver directory to issue tickets; City Hall needs it
+      // to provision the accounts Iswim asks for.
+      allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
+      // Three ways a profile is born:
+      //  1. self sign-up — residents go active, drivers wait for approval, and
+      //     nobody self-credits points or self-verifies a government account;
+      //  2. City Hall provisions a government login. The crew never signs
+      //     itself up: the login is made on a secondary app, so the profile is
+      //     written by the desk and arrives already active;
+      //  3. the barangay desk makes its own crews — but it cannot mint another
+      //     super admin or an Iswim account.
+      allow create: if (isSelf(userId)
         && !isRemoved(userId)
-        // Drivers start 'pending' until an admin approves; nobody self-credits
-        // points or self-verifies a government account.
         && ((request.resource.data.role == 'user'
               && request.resource.data.accountStatus == 'active')
             || (request.resource.data.role == 'driver'
@@ -125,14 +159,30 @@ service cloud.firestore {
                       ? 'pending'
                       : 'unverified'))
         && !('points' in request.resource.data)
-        && photoOk(request.resource.data);
+        && photoOk(request.resource.data))
+        || (isCityHall()
+          && !isRemoved(userId)
+          && request.resource.data.role in ['iswim', 'driver', 'admin', 'cityHall']
+          && request.resource.data.accountStatus == 'active'
+          && (!('accountType' in request.resource.data)
+              || request.resource.data.accountType in ['resident', 'government'])
+          && !('points' in request.resource.data)
+          && photoOk(request.resource.data))
+        || (isAdmin()
+          && !isRemoved(userId)
+          && request.resource.data.role in ['driver', 'admin']
+          && request.resource.data.accountStatus == 'active'
+          && !('points' in request.resource.data)
+          && photoOk(request.resource.data));
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
                          'accountType', 'verificationStatus', 'verifiedBy',
-                         'verificationDate', 'rejectionReason', 'approvedAt'])
+                         'verificationDate', 'rejectionReason', 'approvedAt',
+                         'registrationApprovedAt'])
+          && residentAnswer()
           && photoOk(request.resource.data))
-        || isAdmin();
+        || isAdmin() || isCityHall();
       // Not their own profile: that would lock the admin out for good.
       allow delete: if isAdmin() && request.auth.uid != userId;
 
@@ -160,6 +210,55 @@ service cloud.firestore {
         && request.resource.data.sessionId.size() >= 16
         && request.resource.data.sessionId.size() <= 64;
       allow delete: if isAdmin();
+    }
+
+    // Trip tickets. Iswim issues them, the driver accepts and runs them, then
+    // Barangay -> Iswim -> City Hall sign in that order. Content is frozen the
+    // moment the first signature lands; only the signature map and the status
+    // may move after that.
+    match /trip_tickets/{ticketId} {
+      allow read: if isTicketStakeholder()
+        || (signedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isIswim()
+        && request.resource.data.status == 'issued'
+        && request.resource.data.code is string
+        && request.resource.data.plateNumber is string;
+      allow update: if (isTicketStakeholder()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['signatures', 'status', 'pendingSigner', 'completedAt',
+                         'history', 'revisionReason', 'rejectionReason']))
+        || (isSelf(resource.data.driverId)
+          && isActive()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'pendingSigner', 'acceptedAt', 'startedAt',
+                         'submittedAt', 'declineReason', 'history'])
+          && request.resource.data.status in
+               ['accepted', 'declined', 'running', 'submitted']);
+      allow delete: if isCityHall();
+    }
+
+    // Per-year ticket counters. Only Iswim issues tickets, so only Iswim moves
+    // the counter.
+    match /counters/{counterId} {
+      allow read: if isTicketStakeholder();
+      allow write: if isIswim() || isCityHall();
+    }
+
+    // The barangay fleet. Iswim registers the plates and pairs each one with a
+    // named driver; City Hall links the login. A truck is never saved without
+    // a driver, and every signed-in member may read the roster: a driver needs
+    // his own truck, a resident needs the plate on the map.
+    match /trucks/{truckId} {
+      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow create, update: if (isIswim() || isCityHall())
+        && request.resource.data.plateNumber is string
+        && request.resource.data.plateNumber.size() > 0
+        && request.resource.data.driverName is string
+        && request.resource.data.driverName.size() > 0
+        && request.resource.data.wheelers is int
+        && request.resource.data.centerLatitude is number
+        && request.resource.data.centerLongitude is number;
+      allow delete: if isCityHall();
     }
 
     // Written by an admin when deleting a user; blocks re-creating the profile.
@@ -211,7 +310,11 @@ service cloud.firestore {
                'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
                'phone', 'zone', 'pausedAt', 'resumedAt', 'completedAt',
                'pauseReason', 'locationState', 'locationUpdatedAt',
-               'lastKnownLat', 'lastKnownLng'
+               'lastKnownLat', 'lastKnownLng',
+               // trip guard + fleet identity written at activation
+               'truckPlate', 'truckWheelers', 'crewRole', 'connectionState',
+               'geofenceState', 'geofenceMeters', 'geofenceLat', 'geofenceLng',
+               'geofenceRadius'
              ])
           && request.resource.data.status in
                ['inTransit', 'delayed', 'paused', 'completed', 'idle']
@@ -237,8 +340,10 @@ service cloud.firestore {
 
     // Incident reports: residents create and read their own, staff see all.
     match /incidents/{incidentId} {
+      // Residents see their own report; the barangay sees a copy; City Hall is
+      // the desk that actually works them.
       allow read: if signedIn()
-        && (isAdmin() || resource.data.residentId == request.auth.uid);
+        && (isAdmin() || isCityHall() || resource.data.residentId == request.auth.uid);
       allow create: if isSelf(request.resource.data.residentId);
       allow update, delete: if isAdmin();
     }
@@ -368,6 +473,7 @@ service cloud.firestore {
     match /collectionRequests/{requestId} {
       allow read: if signedIn() && (
         isAdmin()
+        || isCityHall()
         || resource.data.requesterId == request.auth.uid
         || resource.data.assignedDriverId == request.auth.uid
       );
@@ -387,6 +493,7 @@ service cloud.firestore {
       // Staff drive the workflow; the assigned driver may only advance their
       // own job to inProgress/collected.
       allow update: if isAdmin()
+        || isCityHall()
         || (isSelf(resource.data.assignedDriverId)
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'updatedAt', 'history'])
@@ -422,16 +529,26 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // In-app notifications. Residents may notify themselves or the shared staff
-    // channel; only staff and drivers (truck proximity alerts) may notify other
-    // users. Only the recipient (or staff) can read a notification.
+    // In-app notifications. Residents may notify themselves or the City Hall
+    // desk; only staff, Iswim and City Hall may notify other users. Each desk
+    // reads its own shared channel: `staff`, `cityHall` or `iswim`.
     match /notifications/{notificationId} {
-      allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow read: if signedIn() && (
+        isAdmin()
+        || resource.data.userId == request.auth.uid
+        || (resource.data.userId == 'cityHall' && isCityHall())
+        || (resource.data.userId == 'iswim' && isIswim())
+      );
       allow create: if isActive()
         && request.resource.data.userId is string
         && (request.resource.data.userId == request.auth.uid
             || request.resource.data.userId == 'staff'
+            || request.resource.data.userId == 'cityHall'
+            || (request.resource.data.userId == 'iswim'
+                && (isIswim() || isCityHall() || isAdmin()))
             || profile(request.auth.uid).role == 'admin'
+            || profile(request.auth.uid).role == 'iswim'
+            || profile(request.auth.uid).role == 'cityHall'
             // Drivers send truck alerts and job updates, nothing else.
             || (profile(request.auth.uid).role == 'driver'
                 && request.resource.data.get('type', '') in ['route', 'request']))
@@ -443,9 +560,16 @@ service cloud.firestore {
       allow update: if (signedIn()
           && resource.data.userId == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
-        || isAdmin();
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
+        || ((resource.data.userId == 'cityHall' && isCityHall()
+              || resource.data.userId == 'iswim' && isIswim())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
       allow delete: if signedIn()
-        && (resource.data.userId == request.auth.uid || isAdmin());
+        && (resource.data.userId == request.auth.uid
+            || isAdmin()
+            || (resource.data.userId == 'cityHall' && isCityHall())
+            || (resource.data.userId == 'iswim' && isIswim()));
     }
 
     // Community feed. Any active member may post; neighbours may react and
@@ -480,6 +604,114 @@ service cloud.firestore {
 
     // Who changed roles, approved or deleted accounts. Append-only: admins can
     // add entries naming themselves, and nobody can edit or delete them.
+    // Delay reports: Iswim files, DSQC pushes to the district officer, the
+    // barangay keeps the copy.
+    match /delay_reports/{reportId} {
+      allow read: if isTicketStakeholder();
+      allow create: if isIswim()
+        && request.resource.data.stage == 'dsqc'
+        && request.resource.data.minutesLate is int;
+      allow update: if isCityHall() || isAdmin();
+      allow delete: if isCityHall();
+    }
+
+    // Memos, endorsements, announcements and manual requests between City
+    // Hall, Iswim and the barangay.
+    match /memos/{memoId} {
+      allow read: if isTicketStakeholder();
+      allow create: if isTicketStakeholder()
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 4000
+        && uploadOk(request.resource.data, 'photo');
+      allow update, delete: if isCityHall();
+    }
+
+    // Outgoing mail to the district officer. No SMTP: this is the record.
+    match /email_log/{entryId} {
+      allow read: if isCityHall() || isAdmin();
+      allow create: if isIswim();
+      allow update, delete: if isCityHall();
+    }
+
+    // Controlled manuals. The direct Iswim -> City Hall workflow is enforced
+    // here: only those two roles can read, and only City Hall can acknowledge.
+    match /manuals/{manualId} {
+      allow read: if isIswim() || isCityHall();
+      allow create: if isIswim()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.summary is string
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.version == 1
+        && uploadOk(request.resource.data, 'file');
+      allow update: if (isIswim()
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.status in ['draft', 'submitted']
+          && uploadOk(request.resource.data, 'file'))
+        || (isCityHall()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'acknowledgedAt', 'acknowledgedByName']));
+      allow delete: if isIswim();
+
+      // Version history is append-only.
+      match /versions/{versionId} {
+        allow read: if isIswim() || isCityHall();
+        allow create: if isIswim()
+          && request.resource.data.version is int
+          && request.resource.data.version > 0
+          && request.resource.data.notes is string
+          && uploadOk(request.resource.data, 'file');
+        allow update, delete: if false;
+      }
+    }
+
+    // City Hall requests a manual from Iswim; Iswim links the submission.
+    match /manual_requests/{requestId} {
+      allow read: if isIswim() || isCityHall();
+      allow create: if isCityHall()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.code is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200;
+      allow update: if isIswim() || isCityHall();
+      allow delete: if isCityHall();
+    }
+
+    // Resident complaints go straight to DSQC / City Hall. The barangay is
+    // deliberately not a reader here.
+    match /complaints/{complaintId} {
+      allow read: if isCityHall()
+        || (signedIn() && resource.data.residentId == request.auth.uid);
+      allow create: if isActive()
+        && profile(request.auth.uid).role == 'user'
+        && request.resource.data.residentId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.referenceNo is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 4000
+        && uploadListOk(request.resource.data, 'images');
+      allow update: if isCityHall();
+      allow delete: if isCityHall();
+    }
+
+    // Immutable points ledger. Staff credit through the waste validation
+    // transaction; residents can only read their own rows.
+    match /points_transactions/{entryId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.residentId == request.auth.uid);
+      allow create: if isAdmin()
+        && request.resource.data.residentId is string
+        && request.resource.data.points is int
+        && request.resource.data.points > 0
+        && request.resource.data.reason is string;
+      allow update, delete: if false;
+    }
+
     match /admin_audit/{entryId} {
       allow read: if isAdmin();
       allow create: if isAdmin() && request.resource.data.actorUid == request.auth.uid;

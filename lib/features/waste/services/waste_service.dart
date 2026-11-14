@@ -72,18 +72,75 @@ class WasteService {
     return ref.id;
   }
 
-  Future<void> validate({
+  /// Validates a submission. Approving with [points] credits the resident in
+  /// the same transaction and writes an immutable ledger row keyed by the
+  /// submission id, so a double tap or a second reviewer cannot pay twice.
+  Future<int> validate({
     required WasteSubmission submission,
     required WasteStatus status,
+    required String actorId,
     required String actorName,
     String? remarks,
+    int points = 0,
   }) async {
-    await _col.doc(submission.id).update({
-      'status': status.name,
-      'remarks': remarks?.trim(),
-      'validatedBy': actorName,
-      'validatedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+    final award = status == WasteStatus.approved && points > 0 ? points : 0;
+    final ledgerRef = _db
+        .collection('points_transactions')
+        .doc('waste_${submission.id}');
+    final userRef = _db.collection('users').doc(submission.userId);
+
+    await _db.runTransaction((tx) async {
+      final wasteRef = _col.doc(submission.id);
+      final wasteSnap = await tx.get(wasteRef);
+      if (!wasteSnap.exists) {
+        throw const WasteException('Submission not found.');
+      }
+      final current = WasteStatusX.fromName(
+        wasteSnap.data()?['status'] as String?,
+      );
+      if (current != WasteStatus.pending) {
+        throw const WasteException(
+          'This submission was already reviewed. Pull to refresh.',
+        );
+      }
+
+      if (award > 0) {
+        final ledgerSnap = await tx.get(ledgerRef);
+        if (ledgerSnap.exists) {
+          throw const WasteException(
+            'Points were already credited for this submission.',
+          );
+        }
+        final userSnap = await tx.get(userRef);
+        if (!userSnap.exists) {
+          throw const WasteException('Resident account no longer exists.');
+        }
+        tx.set(ledgerRef, {
+          'residentId': submission.userId,
+          'residentName': submission.userName,
+          'points': award,
+          'reason': 'Waste validation · ${submission.category.label}',
+          'sourceType': 'wasteSubmission',
+          'sourceId': submission.id,
+          'byUid': actorId,
+          'byName': actorName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        tx.update(userRef, {
+          'points': FieldValue.increment(award),
+          'pointsUpdatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      tx.update(wasteRef, {
+        'status': status.name,
+        'remarks': remarks?.trim(),
+        'validatedBy': actorName,
+        'validatedById': actorId,
+        'validatedAt': FieldValue.serverTimestamp(),
+        'pointsAwarded': award,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
 
     await _notifications.push(
@@ -95,11 +152,28 @@ class WasteService {
           ? remarks!.trim()
           : status == WasteStatus.rejected
               ? 'Your waste upload did not pass validation. Please review the segregation guidelines.'
-              : 'Your waste upload was validated by barangay staff.',
-      type: AppNotificationType.waste,
-      data: {'wasteId': submission.id},
+              : award > 0
+                  ? 'Your waste upload was validated. +$award points credited.'
+                  : 'Your waste upload was validated by barangay staff.',
+      type: award > 0
+          ? AppNotificationType.points
+          : AppNotificationType.waste,
+      data: {
+        'wasteId': submission.id,
+        if (award > 0) 'points': award,
+      },
     );
+
+    return award;
   }
 
   Future<void> delete(String id) => _col.doc(id).delete();
+}
+
+class WasteException implements Exception {
+  const WasteException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }

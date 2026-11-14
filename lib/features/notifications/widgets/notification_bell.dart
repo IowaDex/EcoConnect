@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/motion.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../services/notification_service.dart';
 
@@ -38,16 +39,26 @@ class _NotificationBellState extends State<NotificationBell> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final user = context.watch<AuthProvider>().currentUser;
-    final staff = user?.role == UserRole.admin;
-    final key = user == null ? null : '${user.uid}:$staff';
+    final role = user?.role;
+    final key = user == null ? null : '${user.uid}:${role?.name}';
     if (key == _streamKey) return;
     _streamKey = key;
     // Kept in state so a rebuild never resubscribes to Firestore.
     _stream = user == null
         ? null
-        : staff
-            ? NotificationService().watchUnreadCountForStaff(user.uid)
-            : NotificationService().watchUnreadCount(user.uid);
+        : switch (role) {
+            UserRole.admin =>
+              NotificationService().watchUnreadCountForStaff(user.uid),
+            UserRole.cityHall => NotificationService().watchUnreadCountForDesk(
+                user.uid,
+                NotificationService.cityHallChannel,
+              ),
+            UserRole.iswim => NotificationService().watchUnreadCountForDesk(
+                user.uid,
+                NotificationService.iswimChannel,
+              ),
+            _ => NotificationService().watchUnreadCount(user.uid),
+          };
   }
 
   @override
@@ -85,15 +96,17 @@ class _NotificationBellState extends State<NotificationBell> {
             icon: icon,
           );
         }
-        return InkWell(
-          onTap: open,
-          customBorder: const CircleBorder(),
-          child: Container(
-            height: widget.circleSize,
-            width: widget.circleSize,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: circle, shape: BoxShape.circle),
-            child: icon,
+        return HoverLift(
+          child: InkWell(
+            onTap: open,
+            customBorder: const CircleBorder(),
+            child: Container(
+              height: widget.circleSize,
+              width: widget.circleSize,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: circle, shape: BoxShape.circle),
+              child: icon,
+            ),
           ),
         );
       },
@@ -108,21 +121,28 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 14),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.6, end: 1),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 14),
       padding: const EdgeInsets.symmetric(horizontal: 3.5, vertical: 1),
       decoration: BoxDecoration(
         color: AppColors.error,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        count > 9 ? '9+' : '$count',
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 8,
-          height: 1.2,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
+        child: Text(
+          count > 9 ? '9+' : '$count',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 8,
+            height: 1.2,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
         ),
       ),
     );

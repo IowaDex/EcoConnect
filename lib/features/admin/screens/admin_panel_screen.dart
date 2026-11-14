@@ -126,6 +126,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         UserRole.admin => 'Barangay staff',
         UserRole.driver => 'Driver',
         UserRole.user => 'Resident',
+        UserRole.iswim => 'Iswim',
+        UserRole.cityHall => 'City Hall (DSQC)',
       };
 
   @override

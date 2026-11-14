@@ -26,10 +26,10 @@ void main() {
           title: 'Your route map',
           tileProvider: _BlankTileProvider(),
           stops: const [
-            RouteStop(name: 'Stop 1', latitude: 14.6, longitude: 121.0),
-            RouteStop(name: 'Stop 2', latitude: 14.61, longitude: 121.01),
+            RouteStop(name: 'Stop 1', latitude: 14.6836, longitude: 121.0970),
+            RouteStop(name: 'Stop 2', latitude: 14.6850, longitude: 121.0990),
           ],
-          truck: const LatLng(14.605, 121.005),
+          truck: const LatLng(14.6840, 121.0960),
         ),
       ),
     );

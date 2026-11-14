@@ -127,6 +127,10 @@ class AuthProvider extends ChangeNotifier {
             'Your account is waiting for barangay staff approval. '
             'Please try again once you are approved.',
           );
+        case AuthErrorType.accountSuspended:
+          _setError(
+            'This account is suspended. Ask City Hall to restore your access.',
+          );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
       }
@@ -152,6 +156,23 @@ class AuthProvider extends ChangeNotifier {
       _authService.getPendingAccounts();
 
   Future<void> approveAccount(String uid) => _authService.approveAccount(uid);
+
+  /// The resident accepts or declines the barangay's registration approval.
+  /// Returns an error message, or null on success.
+  Future<String?> answerRegistration({required bool accepted}) async {
+    final user = _currentUser;
+    if (user == null) return 'You are not signed in.';
+    try {
+      await _authService.answerRegistration(uid: user.uid, accepted: accepted);
+      _currentUser =
+          user.copyWith(registrationStatus: accepted ? 'accepted' : 'declined');
+      notifyListeners();
+      return null;
+    } catch (e) {
+      AppLogger.error('Registration answer failed', e);
+      return e is StateError ? e.message : 'Could not save your answer.';
+    }
+  }
 
   Future<List<Map<String, dynamic>>> getAllUsers() => _authService.getAllUsers();
 

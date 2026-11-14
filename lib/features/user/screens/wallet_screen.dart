@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../recycling/models/drop_off.dart';
+import '../../recycling/models/points_transaction.dart';
+import '../../../core/widgets/motion.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../recycling/services/recycling_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -129,6 +131,61 @@ class _WalletScreenState extends State<WalletScreen> {
                         );
                       },
                     ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    'Points ledger',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Every credit, including validated waste submissions.',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (uid == null)
+                    const _EmptyHistory(message: 'Sign in to see your ledger.')
+                  else
+                    StreamBuilder<List<PointsTransaction>>(
+                      stream: _service.watchResidentTransactions(uid),
+                      builder: (context, snapshot) {
+                        final items =
+                            snapshot.data ?? const <PointsTransaction>[];
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            items.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 18),
+                            child: Center(
+                              child: SizedBox(
+                                height: 18,
+                                width: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          );
+                        }
+                        if (items.isEmpty) {
+                          return const _EmptyHistory(
+                            message: 'No ledger entries yet. Points appear '
+                                'here after a drop-off or a validated upload.',
+                          );
+                        }
+                        return Column(
+                          children: [
+                            for (final item in items)
+                              _LedgerTile(transaction: item),
+                          ],
+                        );
+                      },
+                    ),
                 ],
               ),
             ),
@@ -194,8 +251,8 @@ class _BalanceCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                points.toString(),
+              CountUpText(
+                points,
                 style: const TextStyle(
                   fontSize: 40,
                   height: 1,
@@ -353,6 +410,84 @@ class _HistoryTile extends StatelessWidget {
           ),
           Text(
             '+${item.points}',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.moss,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerTile extends StatelessWidget {
+  const _LedgerTile({required this.transaction});
+
+  final PointsTransaction transaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final created = transaction.createdAt;
+    final date = created == null
+        ? 'Just now'
+        : '${_months[created.month - 1]} ${created.day}, '
+            '${created.hour % 12 == 0 ? 12 : created.hour % 12}:'
+            '${created.minute.toString().padLeft(2, '0')}'
+            '${created.hour < 12 ? ' AM' : ' PM'}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: AppColors.creamBright,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.9)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.stars_rounded,
+              size: 16,
+              color: AppColors.warning,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  transaction.reason,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.forest,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${transaction.byName ?? 'Barangay'} · $date',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '+${transaction.points}',
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
 import '../models/drop_off.dart';
+import '../models/points_transaction.dart';
 
 class RecyclingException implements Exception {
   const RecyclingException(this.message);
@@ -125,6 +126,25 @@ class RecyclingService {
     return _users.doc(uid).snapshots().map((snap) {
       final raw = snap.data()?['points'];
       return raw is num ? raw.toInt() : 0;
+    });
+  }
+
+  /// Every ledger row for one resident, newest first. This includes station
+  /// drop-offs and validated waste submissions.
+  Stream<List<PointsTransaction>> watchResidentTransactions(String uid) {
+    return _db
+        .collection('points_transactions')
+        .where('residentId', isEqualTo: uid)
+        .limit(60)
+        .snapshots()
+        .map((snap) {
+      final items = snap.docs
+          .map((doc) => PointsTransaction.fromDoc(doc.id, doc.data()))
+          .whereType<PointsTransaction>()
+          .toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(2000))
+            .compareTo(a.createdAt ?? DateTime(2000)));
+      return items;
     });
   }
 

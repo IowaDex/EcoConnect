@@ -60,8 +60,11 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     await setDoc(doc(db, 'users/alice'), {name: 'Alice', role: 'user'});
+    await setDoc(doc(db, 'users/bob'), {name: 'Bob', role: 'user'});
     await setDoc(doc(db, 'users/dan'), {name: 'Dan', role: 'driver'});
     await setDoc(doc(db, 'users/root'), {name: 'Root', role: 'admin'});
+    await setDoc(doc(db, 'users/ivy'), {name: 'Ivy', role: 'iswim'});
+    await setDoc(doc(db, 'users/carl'), {name: 'Carl', role: 'cityHall'});
     await setDoc(doc(db, 'users/alice/locations/l1'), {latitude: 1});
     await setDoc(doc(db, 'shared_locations/dan'), shared('driver'));
     await setDoc(doc(db, 'shared_locations/alice'), shared('user'));
@@ -477,4 +480,229 @@ test('a user being deleted cannot write while the delete is still running', asyn
   });
   const alice = as('alice');
   await assertFails(setDoc(doc(alice, 'users/alice/locations/x'), {latitude: 1}));
+});
+
+// --- Manuals: Iswim -> City Hall only ---------------------------------------
+
+const manual = (overrides = {}) => ({
+  title: 'Collection SOP',
+  category: 'collection',
+  summary: 'How a route is run',
+  version: 1,
+  status: 'submitted',
+  createdBy: 'ivy',
+  createdByName: 'Ivy',
+  currentNotes: 'First issue',
+  file: {
+    dataUrl: 'data:image/png;base64,AA==',
+    fileName: 'sop.png',
+    mimeType: 'image/png',
+    bytes: 2,
+  },
+  ...overrides,
+});
+
+test('manuals are written by Iswim and read only by Iswim and City Hall', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'manuals/m1'), manual()));
+  await assertFails(setDoc(doc(as('carl'), 'manuals/m2'), manual()));
+  await assertFails(setDoc(doc(as('root'), 'manuals/m3'), manual()));
+
+  await assertSucceeds(getDoc(doc(as('ivy'), 'manuals/m1')));
+  await assertSucceeds(getDoc(doc(as('carl'), 'manuals/m1')));
+  await assertFails(getDoc(doc(as('root'), 'manuals/m1')));
+  await assertFails(getDoc(doc(as('alice'), 'manuals/m1')));
+});
+
+test('City Hall can acknowledge a manual but cannot rewrite it', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'manuals/m1'), manual()));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'manuals/m1'), {
+    status: 'acknowledged',
+    acknowledgedAt: Timestamp.now(),
+    acknowledgedByName: 'Carl',
+  }));
+  await assertFails(updateDoc(doc(as('carl'), 'manuals/m1'), {title: 'Hijacked'}));
+});
+
+test('manual version history is append-only and Iswim-only', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'manuals/m1'), manual()));
+  await assertSucceeds(setDoc(doc(as('ivy'), 'manuals/m1/versions/v1'), {
+    version: 1,
+    notes: 'First',
+    file: manual().file,
+    submittedBy: 'ivy',
+    submittedByName: 'Ivy',
+    submittedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(doc(as('carl'), 'manuals/m1/versions/v1')));
+  await assertFails(setDoc(doc(as('carl'), 'manuals/m1/versions/v2'), {
+    version: 2,
+    notes: 'Fake',
+    file: manual().file,
+  }));
+  await assertFails(updateDoc(doc(as('ivy'), 'manuals/m1/versions/v1'), {notes: 'Edited'}));
+});
+
+test('City Hall requests a manual and Iswim fulfils it', async () => {
+  const request = {
+    code: 'MR-2026-0001',
+    title: 'Flood response manual',
+    details: 'Needed for the rainy season',
+    requestedByName: 'Carl',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(as('carl'), 'manual_requests/r1'), request));
+  await assertFails(setDoc(doc(as('ivy'), 'manual_requests/r2'), request));
+  await assertSucceeds(updateDoc(doc(as('ivy'), 'manual_requests/r1'), {
+    status: 'fulfilled',
+    fulfilledAt: serverTimestamp(),
+    fulfilledByName: 'Ivy',
+  }));
+  await assertSucceeds(getDoc(doc(as('carl'), 'manual_requests/r1')));
+  await assertFails(getDoc(doc(as('alice'), 'manual_requests/r1')));
+});
+
+// --- Complaints: resident -> DSQC / City Hall only -------------------------
+
+const complaint = (overrides = {}) => ({
+  referenceNo: 'CMP-2026-000001',
+  residentId: 'alice',
+  residentName: 'Alice',
+  title: 'Missed pickup',
+  description: 'The truck skipped our street for two weeks.',
+  category: 'missedCollection',
+  status: 'pending',
+  images: [],
+  createdAt: serverTimestamp(),
+  ...overrides,
+});
+
+test('a resident files a complaint and reads only their own thread', async () => {
+  await assertSucceeds(setDoc(doc(as('alice'), 'complaints/c1'), complaint()));
+  await assertFails(setDoc(doc(as('dan'), 'complaints/c2'), complaint({residentId: 'dan'})));
+  await assertSucceeds(getDoc(doc(as('alice'), 'complaints/c1')));
+  await assertFails(getDoc(doc(as('bob'), 'complaints/c1')));
+});
+
+test('City Hall works complaints; the barangay and admin do not', async () => {
+  await assertSucceeds(setDoc(doc(as('alice'), 'complaints/c1'), complaint()));
+  await assertSucceeds(getDoc(doc(as('carl'), 'complaints/c1')));
+  await assertFails(getDoc(doc(as('root'), 'complaints/c1')));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'complaints/c1'), {
+    status: 'underReview',
+    responses: arrayUnion({message: 'Checking with the crew', byName: 'Carl', byRole: 'cityHall', at: Timestamp.now()}),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'complaints/c1'), {status: 'resolved'}));
+});
+
+// --- Points ledger ----------------------------------------------------------
+
+test('points ledger rows are written by staff and read by their owner', async () => {
+  const row = {
+    residentId: 'alice',
+    residentName: 'Alice',
+    points: 10,
+    reason: 'Waste validation · Recyclable',
+    sourceType: 'wasteSubmission',
+    sourceId: 'w1',
+    byUid: 'root',
+    byName: 'Root',
+    createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(as('root'), 'points_transactions/p1'), row));
+  await assertSucceeds(getDoc(doc(as('alice'), 'points_transactions/p1')));
+  await assertFails(getDoc(doc(as('bob'), 'points_transactions/p1')));
+  await assertFails(setDoc(doc(as('alice'), 'points_transactions/p2'), {...row, byUid: 'alice'}));
+  await assertFails(updateDoc(doc(as('root'), 'points_transactions/p1'), {points: 999}));
+});
+
+// --- Desk notification channels -------------------------------------------
+
+test('City Hall and Iswim read their own desk channel', async () => {
+  await assertSucceeds(setDoc(doc(as('alice'), 'notifications/n20'), note('cityHall')));
+  await assertSucceeds(getDoc(doc(as('carl'), 'notifications/n20')));
+  await assertFails(getDoc(doc(as('ivy'), 'notifications/n20')));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'notifications/n20'), {read: true}));
+
+  await assertSucceeds(setDoc(doc(as('carl'), 'notifications/n21'), note('iswim')));
+  await assertSucceeds(getDoc(doc(as('ivy'), 'notifications/n21')));
+  await assertFails(getDoc(doc(as('carl'), 'notifications/n21')));
+});
+
+// --- Trip ticket audit trail ----------------------------------------------
+
+test('a driver may append an audit entry when accepting a ticket', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'trip_tickets/t1'), {
+    code: 'TT-2026-0001',
+    plateNumber: 'ABC 123',
+    driverId: 'dan',
+    driverName: 'Dan',
+    status: 'issued',
+    createdBy: 'ivy',
+    createdAt: serverTimestamp(),
+    signatures: {},
+    history: [],
+  }));
+  await assertSucceeds(updateDoc(doc(as('dan'), 'trip_tickets/t1'), {
+    status: 'accepted',
+    acceptedAt: Timestamp.now(),
+    history: arrayUnion({
+      status: 'accepted',
+      previousStatus: 'issued',
+      byUid: 'dan',
+      byName: 'Dan',
+      note: 'Ticket received',
+      at: Timestamp.now(),
+    }),
+  }));
+  await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t1'), {
+    plateNumber: 'FORGED',
+  }));
+});
+
+// --- Resident registration decision ---------------------------------------
+
+test('a resident answers only an approval the barangay already gave', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users/alice'), {
+      name: 'Alice', role: 'user', registrationStatus: 'approved',
+    });
+    await setDoc(doc(db, 'users/bob'), {
+      name: 'Bob', role: 'user', registrationStatus: 'pending',
+    });
+  });
+
+  // A pending registration has no approval to answer.
+  await assertFails(updateDoc(doc(as('bob'), 'users/bob'), {
+    registrationStatus: 'accepted',
+    registrationDecidedAt: serverTimestamp(),
+  }));
+  // The resident cannot approve themselves.
+  await assertFails(updateDoc(doc(as('bob'), 'users/bob'), {
+    registrationStatus: 'approved',
+  }));
+  // The barangay's approval timestamp is not the resident's to write.
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {
+    registrationApprovedAt: serverTimestamp(),
+  }));
+
+  await assertSucceeds(updateDoc(doc(as('alice'), 'users/alice'), {
+    registrationStatus: 'accepted',
+    registrationDecidedAt: serverTimestamp(),
+  }));
+  // The decision is final from the resident side.
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {
+    registrationStatus: 'declined',
+    registrationDecidedAt: serverTimestamp(),
+  }));
+});
+
+test('barangay staff approve a registration without touching the resident answer', async () => {
+  await assertSucceeds(updateDoc(doc(as('root'), 'users/alice'), {
+    verificationStatus: 'verified',
+    registrationStatus: 'approved',
+    registrationApprovedAt: serverTimestamp(),
+  }));
 });

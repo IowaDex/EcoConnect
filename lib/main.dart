@@ -8,6 +8,7 @@ import './firebase_options.dart';
 import './core/boot/boot_progress.dart';
 import './core/network/network_status.dart';
 import './features/auth/providers/auth_provider.dart';
+import './features/driver/providers/truck_provider.dart';
 import './features/location/providers/location_provider.dart';
 import './core/database/database_initializer.dart';
 import './app.dart';
@@ -44,6 +45,9 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => LocationProvider()),
+        // Which garbage truck the crew is on. Chosen on the truck list and
+        // remembered on this device.
+        ChangeNotifierProvider(create: (_) => TruckProvider()..restore()),
         // Drives the app-wide truck loading screen when the link drops.
         ChangeNotifierProvider(create: (_) => NetworkStatus()..start()),
       ],

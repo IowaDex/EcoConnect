@@ -37,13 +37,33 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/routes'), isNull);
   });
 
-  test('a role cannot open another role\'s pages by typing the URL', () {
-    expect(authRedirect(initialized: true, role: UserRole.user, location: '/incidents'), '/user');
+  test('a role cannot open another role\'s pages by typing the URL', () {    expect(authRedirect(initialized: true, role: UserRole.user, location: '/incidents'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/admin'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/user'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/pending-accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/wallet'), '/admin-dashboard');
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/staff-requests'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/verification'), '/driver');
+  });
+
+  test('a crew starts on the truck list and may open the dashboard', () {
+    // The dashboard needs a truck, so the fleet list is the landing page.
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/splash'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
+  });
+
+  test('city hall keeps the fleet and account desks to itself', () {
+    // City Hall registers the trucks and provisions every government login.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), isNull);
+    // Iswim owns the fleet but never creates accounts.
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/fleet'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), '/iswim');
+    // The barangay desk may make its own crews, but not Iswim's.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), isNull);
+    // A crew member can never reach either desk.
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/fleet'), '/driver');
   });
 }

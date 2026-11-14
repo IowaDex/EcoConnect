@@ -45,6 +45,16 @@ abstract final class AppTheme {
       textTheme: text,
       splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.standard,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: EcoPageTransitionsBuilder(),
+          TargetPlatform.iOS: EcoPageTransitionsBuilder(),
+          TargetPlatform.windows: EcoPageTransitionsBuilder(),
+          TargetPlatform.macOS: EcoPageTransitionsBuilder(),
+          TargetPlatform.linux: EcoPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: EcoPageTransitionsBuilder(),
+        },
+      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.background,
         surfaceTintColor: Colors.transparent,
@@ -177,6 +187,42 @@ abstract final class AppTheme {
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.primary,
         linearTrackColor: AppColors.lightGreen,
+      ),
+    );
+  }
+}
+
+/// Route transition shared by every platform: the new page fades in while
+/// rising a few pixels, so navigation feels continuous instead of a hard cut.
+///
+/// The same builder is used on mobile and web so the app behaves the same in
+/// a browser and on a phone.
+class EcoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const EcoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (route.settings.name == Navigator.defaultRouteName) return child;
+
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.02),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
       ),
     );
   }
