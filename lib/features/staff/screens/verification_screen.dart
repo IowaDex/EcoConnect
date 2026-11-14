@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -15,6 +12,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../verification/services/verification_service.dart';
+import '../widgets/resident_review_sheet.dart';
 import '../../notifications/widgets/notification_bell.dart';
 
 /// Resident validation desk: the barangay checks residents only. Drivers,
@@ -47,52 +45,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
             const Expanded(child: _ResidentsTab()),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _DocumentPreview extends StatelessWidget {
-  const _DocumentPreview({required this.document});
-
-  final UploadPayload document;
-
-  @override
-  Widget build(BuildContext context) {
-    final isPdf = document.isPdf;
-    if (isPdf) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.picture_as_pdf_rounded,
-                size: 26, color: AppColors.error),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                document.fileName,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.memory(
-        _bytes(document.dataUrl),
-        height: 160,
-        width: double.infinity,
-        fit: BoxFit.cover,
       ),
     );
   }
@@ -149,26 +101,9 @@ class _ResidentsTabState extends State<_ResidentsTab> {
     setState(() => _future = _load());
   }
 
-  /// Shows the ID the resident uploaded at sign-up.
+  /// The resident's details and ID, with Approve / Reject.
   Future<void> _viewId(Map<String, dynamic> user) async {
-    final request = await _service.fetchForUser(user['uid'] as String);
-    if (!mounted) return;
-    final document = request?.document;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('ID · ${(user['name'] as String?) ?? 'Resident'}'),
-        content: document == null
-            ? const Text('This resident has not uploaded an ID.')
-            : _DocumentPreview(document: document),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+    if (await showResidentReview(context, user) && mounted) _reload();
   }
 
   Future<void> _set(
@@ -270,6 +205,7 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             final awaitingEmail = user['accountStatus'] == 'pending' &&
                 user['emailVerified'] != true;
             return EcoCard(
+              onTap: () => _viewId(user),
               child: Row(
                 children: [
                   CircleAvatar(
@@ -386,10 +322,4 @@ class _ResidentsTabState extends State<_ResidentsTab> {
       },
     );
   }
-}
-
-Uint8List _bytes(String dataUrl) {
-  final comma = dataUrl.indexOf(',');
-  if (comma < 0) return Uint8List(0);
-  return base64Decode(dataUrl.substring(comma + 1));
 }
