@@ -21,16 +21,17 @@ class PendingAccountsScreen extends StatefulWidget {
 }
 
 class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
-  late Future<List<Map<String, dynamic>>> _future = _load();
+  late Stream<List<Map<String, dynamic>>> _stream = _watch();
 
-  Future<List<Map<String, dynamic>>> _load() async {
-    final all = await context.read<AuthProvider>().getPendingAccounts();
-    return all
-        .where((a) => ((a['role'] as String?) ?? 'user') == 'user')
-        .toList(growable: false);
+  Stream<List<Map<String, dynamic>>> _watch() {
+    return context.read<AuthProvider>().watchPendingAccounts().map(
+      (all) => all
+          .where((a) => ((a['role'] as String?) ?? 'user') == 'user')
+          .toList(growable: false),
+    );
   }
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => setState(() => _stream = _watch());
 
   Future<void> _openDetails(Map<String, dynamic> account) async {
     if (await showResidentReview(context, account) && mounted) _reload();
@@ -88,8 +89,8 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
               ),
             ),
             Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: _future,
+              child: StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _stream,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const EcoLoadingView(label: 'Loading sign-ups');
@@ -216,4 +217,3 @@ String _initial(Object? name) {
   final text = (name as String?)?.trim() ?? '';
   return text.isEmpty ? 'R' : text.substring(0, 1).toUpperCase();
 }
-

@@ -5,7 +5,7 @@ import 'account_type.dart';
 ///
 /// [admin] is the barangay (mini admin), [cityHall] is the DSQC super admin,
 /// and [iswim] is the collection partner that owns the trucks and drivers.
-enum UserRole { user, driver, admin, iswim, cityHall }
+enum UserRole { user, driver, admin, iswim, cityHall, auditor }
 
 extension UserRoleX on UserRole {
   /// Name shown on badges and the staff console.
@@ -15,6 +15,7 @@ extension UserRoleX on UserRole {
         UserRole.admin => 'Barangay admin',
         UserRole.iswim => 'Iswim',
         UserRole.cityHall => 'City Hall · DSQC',
+        UserRole.auditor => 'Audit viewer',
       };
 
   /// True for every role that signs a trip ticket.

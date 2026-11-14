@@ -93,3 +93,12 @@ coverage/
 node_modules/
 # Widget Preview related
 .widget_preview/
+
+# Local tools, not part of the app
+.mcp.json
+agent-monitor/
+
+# Firebase service-account keys and seeded test credentials (never commit)
+*firebase-adminsdk*.json
+service-account*.json
+ecoconnect-test-accounts.txt

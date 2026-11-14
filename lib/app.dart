@@ -23,7 +23,6 @@ import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/alerts/screens/alerts_screen.dart';
 import 'features/community/screens/community_screen.dart';
 import 'features/community/screens/post_detail_screen.dart';
-import 'features/incident/screens/report_incident_screen.dart';
 import 'features/staff/screens/drop_off_station_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
 import 'features/staff/screens/pending_accounts_screen.dart';
@@ -67,6 +66,7 @@ import 'features/complaints/screens/complaint_form_screen.dart';
 import 'features/complaints/screens/my_complaints_screen.dart';
 import 'features/complaints/screens/complaint_desk_screen.dart';
 import 'features/cityhall/screens/cityhall_requests_screen.dart';
+import 'features/audit/screens/audit_log_screen.dart';
 
 const _publicRoutes = {
   '/splash',
@@ -88,6 +88,7 @@ const _sharedRoutes = {
 const _residentRoutes = {
   '/user',
   '/tracking',
+  // Keep old links working, but send them to the resident complaints inbox.
   '/report-incident',
   '/wallet',
   '/community',
@@ -144,8 +145,11 @@ const _cityHallRoutes = {
   '/cityhall-requests',
   '/manuals',
   '/manual-requests',
+  '/audit-log',
   ..._sharedRoutes,
 };
+
+const _auditorRoutes = {'/audit-log'};
 
 const _staffRoutes = {
   '/admin-dashboard',
@@ -166,6 +170,7 @@ const _staffRoutes = {
   '/memos',
   '/wave2',
   '/wave2/pass',
+  '/audit-log',
   ..._ticketRoutes,
   ..._sharedRoutes,
 };
@@ -179,6 +184,7 @@ String _homeFor(UserRole role) => switch (role) {
       UserRole.iswim => '/iswim',
       UserRole.cityHall => '/cityhall',
       UserRole.user => '/user',
+      UserRole.auditor => '/audit-log',
     };
 
 Set<String> _allowedFor(UserRole role) => switch (role) {
@@ -187,6 +193,7 @@ Set<String> _allowedFor(UserRole role) => switch (role) {
       UserRole.iswim => _iswimRoutes,
       UserRole.cityHall => _cityHallRoutes,
       UserRole.user => _residentRoutes,
+      UserRole.auditor => _auditorRoutes,
     };
 
 /// Detail screens live under a collection path (`/community-post/{id}`), so a
@@ -370,6 +377,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (_, __) => const AdminDashboardScreen(),
         ),
         GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
+        GoRoute(
+          path: '/audit-log',
+          builder: (_, __) => const AuditLogScreen(),
+        ),
         GoRoute(path: '/tracking', builder: (_, __) => const TrackingScreen()),
         GoRoute(
           path: '/live-routes',
@@ -377,7 +388,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/report-incident',
-          builder: (_, __) => const ReportIncidentScreen(),
+          redirect: (_, __) => '/my-complaints',
         ),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
         GoRoute(path: '/community', builder: (_, __) => const CommunityScreen()),

@@ -44,6 +44,7 @@ class NotificationsScreen extends StatelessWidget {
                   UserRole.user => '/user',
                   UserRole.iswim => '/iswim',
                   UserRole.cityHall => '/cityhall',
+                  UserRole.auditor => '/audit-log',
                 },
               ),
               actions: [

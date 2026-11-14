@@ -210,6 +210,9 @@ class AuthProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getPendingAccounts() =>
       _authService.getPendingAccounts();
 
+  Stream<List<Map<String, dynamic>>> watchPendingAccounts() =>
+      _authService.watchPendingAccounts();
+
   Future<void> approveAccount(String uid) => _authService.approveAccount(uid);
 
   /// The resident accepts or declines the barangay's registration approval.

@@ -105,12 +105,6 @@ class _UserScreenState extends State<UserScreen> {
                 ),
                 const SizedBox(height: 12),
                 HoverLift(
-                  child: _ReportPrompt(
-                    onTap: () => context.go('/report-incident'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                HoverLift(
                   child: _WalletPrompt(onTap: () => context.go('/wallet')),
                 ),
                 const SizedBox(height: 18),
@@ -330,65 +324,6 @@ class _SectionLabel extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _ReportPrompt extends StatelessWidget {
-  const _ReportPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.cream,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 38,
-              width: 38,
-              decoration: const BoxDecoration(
-                color: AppColors.mint,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.report_outlined,
-                  size: 18, color: AppColors.forest),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Report an incident',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Missed pickup, dumping or a full bin',
-                    style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.moss),
-          ],
-        ),
-      ),
     );
   }
 }

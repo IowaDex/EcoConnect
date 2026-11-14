@@ -78,7 +78,10 @@ class ProvisioningService {
   /// Every account City Hall (or the barangay desk) is responsible for.
   Stream<List<ProvisionedAccount>> watchAccounts() {
     return _users
-        .where('role', whereIn: ['iswim', 'driver', 'admin', 'cityHall'])
+        .where(
+          'role',
+          whereIn: ['iswim', 'driver', 'admin', 'cityHall', 'auditor'],
+        )
         .snapshots()
         .map((snap) {
       final accounts = snap.docs.map((doc) {
@@ -107,8 +110,9 @@ class ProvisioningService {
             UserRole.cityHall => 0,
             UserRole.iswim => 1,
             UserRole.admin => 2,
-            UserRole.driver => 3,
-            UserRole.user => 4,
+            UserRole.auditor => 3,
+            UserRole.driver => 4,
+            UserRole.user => 5,
           };
       accounts.sort((a, b) {
         final byRole = rank(a.role).compareTo(rank(b.role));

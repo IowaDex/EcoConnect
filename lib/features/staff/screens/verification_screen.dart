@@ -98,7 +98,9 @@ class _ResidentsTabState extends State<_ResidentsTab> {
   }
 
   void _reload() {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
   }
 
   /// The resident's details and ID, with Approve / Reject.

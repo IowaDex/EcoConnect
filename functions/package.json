@@ -1,0 +1,16 @@
+{
+  "name": "ecoconnect-audit-functions",
+  "private": true,
+  "description": "Trusted Firestore audit log triggers for EcoConnect",
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.1",
+    "firebase-functions": "^7.4.0"
+  }
+}

@@ -40,6 +40,13 @@ service cloud.firestore {
       return signedIn() && profile(request.auth.uid).role == 'cityHall';
     }
 
+    function isAuditViewer() {
+      return signedIn()
+        && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role == 'auditor'
+        && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
+    }
+
     // Everyone who touches a trip ticket.
     function isTicketStakeholder() {
       return isAdmin() || isIswim() || isCityHall();
@@ -54,6 +61,7 @@ service cloud.firestore {
     // before approval existed have no field and count as active.
     function isActive() {
       return signedIn() && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).role != 'auditor'
         && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
     }
 
@@ -120,16 +128,16 @@ service cloud.firestore {
       return after is list
         && (after == before
             || (after.size() == before.size() + 1
-                && after[0:before.size()] == before
+                // An empty slice raises an index error, so a post's first
+                // reply skips the history check.
+                && (before.size() == 0 || after[0:before.size()] == before)
                 && after[before.size()].keys()
                      .hasOnly(['id', 'authorId', 'authorName', 'body', 'createdAt'])
                 && after[before.size()].authorId == uid
                 && after[before.size()].authorName is string
                 && after[before.size()].authorName.size() <= 80
-                // The sign-in token carries the Auth display name once it has
-                // refreshed; a brand-new token has none, so only pin when set.
                 && after[before.size()].authorName
-                     == request.auth.token.get('name', after[before.size()].authorName)
+                     == profile(uid).get('name', after[before.size()].authorName)
                 && after[before.size()].body is string
                 && after[before.size()].body.size() <= 1000));
     }
@@ -166,7 +174,8 @@ service cloud.firestore {
         && photoOk(request.resource.data))
         || (isCityHall()
           && !isRemoved(userId)
-          && request.resource.data.role in ['iswim', 'driver', 'admin', 'cityHall']
+          && request.resource.data.role in
+               ['iswim', 'driver', 'admin', 'cityHall', 'auditor']
           && request.resource.data.accountStatus == 'active'
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
@@ -205,7 +214,7 @@ service cloud.firestore {
     match /sessions/{userId} {
       allow read: if isSelf(userId);
       allow create, update: if isSelf(userId)
-        && isActive()
+        && (isActive() || isAuditViewer())
         && !isRemoved(userId)
         && request.resource.data.keys().hasOnly(['sessionId', 'startedAt', 'platform', 'authTime'])
         && request.resource.data.authTime == request.auth.token.get('auth_time', -1)
@@ -252,7 +261,8 @@ service cloud.firestore {
     // a driver, and every signed-in member may read the roster: a driver needs
     // his own truck, a resident needs the plate on the map.
     match /trucks/{truckId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create, update: if (isIswim() || isCityHall())
         && request.resource.data.plateNumber is string
         && request.resource.data.plateNumber.size() > 0
@@ -284,6 +294,7 @@ service cloud.firestore {
       // show the same stops the driver sees. Finished and scheduled plans stay
       // private to the driver and staff.
       allow read: if signedIn()
+        && !isAuditViewer()
         && (isAdmin()
             || resource.data.driverId == request.auth.uid
             || resource.data.status == 'active');
@@ -304,7 +315,7 @@ service cloud.firestore {
     // Live driver locations: any signed-in user can watch, only the driver
     // (or an admin) can publish. Drivers cannot rewrite identity fields.
     match /routes/{driverId} {
-      allow read: if signedIn();
+      allow read: if signedIn() && !isAuditViewer();
       allow create: if (isSelf(driverId) && isActive()) || isAdmin();
       allow update: if (isSelf(driverId)
           && isActive()
@@ -341,19 +352,18 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Incident reports: residents create and read their own, staff see all.
+    // Keep historical incident reports available to staff; new resident
+    // reports now go through complaints or collection requests.
     match /incidents/{incidentId} {
-      // Residents see their own report; the barangay sees a copy; City Hall is
-      // the desk that actually works them.
-      allow read: if signedIn()
-        && (isAdmin() || isCityHall() || resource.data.residentId == request.auth.uid);
-      allow create: if isSelf(request.resource.data.residentId);
+      allow read: if isAdmin() || isCityHall();
+      allow create: if false;
       allow update, delete: if isAdmin();
     }
 
     // Barangay announcements. Residents read published posts, staff manage all.
     match /announcements/{announcementId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer()
         && (isAdmin() || resource.data.status == 'published');
       allow create, update: if isAdmin()
         && request.resource.data.title is string
@@ -401,6 +411,7 @@ service cloud.firestore {
     // Community events.
     match /events/{eventId} {
       allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer()
         && (isAdmin() || resource.data.status == 'published');
       allow create, update: if isAdmin()
         && request.resource.data.title is string
@@ -448,7 +459,8 @@ service cloud.firestore {
       // their own single place, in the same write as their sign-up row; staff
       // can repair the counters.
       match /streets/{bucket} {
-        allow read: if signedIn() && hasProfile(request.auth.uid);
+        allow read: if signedIn() && hasProfile(request.auth.uid)
+          && !isAuditViewer();
         allow create: if isActive()
           && !isRemoved(request.auth.uid)
           && request.resource.data.keys().hasOnly(['label', 'count'])
@@ -474,7 +486,7 @@ service cloud.firestore {
     // Collection requests. Special requests require a verified government
     // profile; that check is repeated here so hiding the UI is not enough.
     match /collectionRequests/{requestId} {
-      allow read: if signedIn() && (
+      allow read: if signedIn() && !isAuditViewer() && (
         isAdmin()
         || isCityHall()
         || resource.data.requesterId == request.auth.uid
@@ -540,7 +552,7 @@ service cloud.firestore {
     // desk; only staff, Iswim and City Hall may notify other users. Each desk
     // reads its own shared channel: `staff`, `cityHall` or `iswim`.
     match /notifications/{notificationId} {
-      allow read: if signedIn() && (
+      allow read: if signedIn() && !isAuditViewer() && (
         isAdmin()
         || resource.data.userId == request.auth.uid
         || (resource.data.userId == 'cityHall' && isCityHall())
@@ -583,7 +595,8 @@ service cloud.firestore {
     // Community feed. Any active member may post; neighbours may react and
     // reply, while only the author or an admin may delete.
     match /communityPosts/{postId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create: if isActive()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.body is string
@@ -601,7 +614,8 @@ service cloud.firestore {
 
     // Designated collection points.
     match /collectionPoints/{pointId} {
-      allow read: if signedIn() && hasProfile(request.auth.uid);
+      allow read: if signedIn() && hasProfile(request.auth.uid)
+        && !isAuditViewer();
       allow create, update: if isAdmin()
         && request.resource.data.name is string
         && request.resource.data.lat is number
@@ -610,8 +624,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Who changed roles, approved or deleted accounts. Append-only: admins can
-    // add entries naming themselves, and nobody can edit or delete them.
     // Delay reports: Iswim files, DSQC pushes to the district officer, the
     // barangay keeps the copy.
     match /delay_reports/{reportId} {
@@ -762,10 +774,10 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Trusted Cloud Functions append audit entries; clients cannot write them.
     match /admin_audit/{entryId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && request.resource.data.actorUid == request.auth.uid;
-      allow update, delete: if false;
+      allow read: if isAdmin() || isCityHall() || isAuditViewer();
+      allow create, update, delete: if false;
     }
   }
 }

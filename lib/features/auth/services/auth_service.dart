@@ -65,7 +65,9 @@ class AuthService {
     return AppUser(
       uid: firebaseUser.uid,
       email: firebaseUser.email,
-      displayName: firebaseUser.displayName ?? firebaseUser.email?.split('@').first,
+      displayName: data['name'] as String? ??
+          firebaseUser.displayName ??
+          firebaseUser.email?.split('@').first,
       emailVerified: firebaseUser.emailVerified,
       role: UserRole.values.firstWhere(
         (e) => e.name == roleStr,
@@ -352,17 +354,6 @@ class AuthService {
     AppLogger.info('Verification email resent');
   }
 
-  // Append-only record of admin actions. Written before the action, so a failed
-  // log stops the change instead of leaving it untracked.
-  Future<void> _audit(String action, String targetUid) {
-    return _firestore.collection('admin_audit').add({
-      'action': action,
-      'targetUid': targetUid,
-      'actorUid': _auth.currentUser?.uid,
-      'at': FieldValue.serverTimestamp(),
-    });
-  }
-
   // Persist profile edits made from the profile sheet.
   Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
     await _firestore.collection('users').doc(uid).update(data);
@@ -377,9 +368,20 @@ class AuthService {
     return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
   }
 
+  Stream<List<Map<String, dynamic>>> watchPendingAccounts() {
+    return _firestore
+        .collection('users')
+        .where('accountStatus', isEqualTo: 'pending')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => {'uid': doc.id, ...doc.data()})
+              .toList(growable: false),
+        );
+  }
+
   // Approve a driver / staff account
   Future<void> approveAccount(String uid) async {
-    await _audit('approve', uid);
     await _firestore.collection('users').doc(uid).update({
       'accountStatus': 'active',
       'approvedAt': FieldValue.serverTimestamp(),
@@ -445,7 +447,6 @@ class AuthService {
 
   // Update user role (for admin)
   Future<void> updateUserRole(String uid, UserRole role) async {
-    await _audit('role:${role.name}', uid);
     await _firestore.collection('users').doc(uid).update({
       'role': role.name,
     });
@@ -459,7 +460,6 @@ class AuthService {
     String uid, {
     required Future<void> Function() deleteLocationData,
   }) async {
-    await _audit('delete', uid);
     // Tombstone first: the rules then refuse to let them re-create a profile.
     await _firestore.collection('removed_users').doc(uid).set({
       'removedAt': FieldValue.serverTimestamp(),

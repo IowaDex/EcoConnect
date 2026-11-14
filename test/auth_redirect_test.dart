@@ -68,4 +68,13 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/fleet'), '/driver');
   });
+
+  test('auditors are limited to the audit log', () {
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/splash'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/audit-log'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/accounts'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.auditor, location: '/admin-dashboard'), '/audit-log');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/audit-log'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/audit-log'), isNull);
+  });
 }
