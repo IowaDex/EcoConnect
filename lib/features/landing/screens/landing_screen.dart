@@ -18,6 +18,18 @@ const Color _pageBg = Color(0xFFE9F4E1);
 /// foreground grass.
 const Color _panelGreen = Color(0xFF3E8E41);
 
+/// Lighter and deeper ends of the panel gradient, so the sheet reads as a
+/// soft surface instead of a flat block butted against the artwork.
+const Color _panelGreenTop = Color(0xFF5DA45F);
+const Color _panelGreenBottom = Color(0xFF2E6B32);
+
+/// Top corners of the entry panel. Rounded so the sheet meets the illustration
+/// with a soft edge rather than a hard seam.
+const Radius _panelRadius = Radius.circular(30);
+
+/// How long the panel takes to fade and lift into place.
+const Duration _panelEntrance = Duration(milliseconds: 700);
+
 /// How long the copy takes to rise into place.
 const Duration _introDuration = Duration(milliseconds: 1100);
 
@@ -506,107 +518,132 @@ class _EntryPanel extends StatelessWidget {
     // the illustration, so the panel tightens up rather than crowding it out.
     final compact = metrics.isShort;
 
-    return Container(
-      width: double.infinity,
-      color: _panelGreen,
-      padding: EdgeInsets.fromLTRB(
-        hPad,
-        compact ? 14 : 28,
-        hPad,
-        compact ? 12 : 20,
+    return TweenAnimationBuilder<double>(
+      // The AnimatedSize above reveals the sheet by growing its window; this
+      // fades and lifts the sheet itself, so the panel arrives softly instead
+      // of snapping up against the artwork.
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: _panelEntrance,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * 26),
+          child: child,
+        ),
       ),
-      child: SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Reveal(
-                  intro: intro,
-                  start: 0.46,
-                  end: 0.78,
-                  child: Text(
-                    'Smarter waste collection\nfor every barangay',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize:
-                          compact ? metrics.scale(16, 18) : metrics.scale(21, 26),
-                      height: 1.3,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                SizedBox(height: compact ? 6 : metrics.scale(8, 10)),
-                _Reveal(
-                  intro: intro,
-                  start: 0.55,
-                  end: 0.85,
-                  child: Text(
-                    'Connecting Communities for a Cleaner and Greener '
-                    'Tomorrow.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize:
-                          compact ? metrics.scale(10, 11) : metrics.scale(11, 13),
-                      height: 1.4,
-                      color: const Color(0xFFE8F5E9),
-                    ),
-                  ),
-                ),
-                SizedBox(height: compact ? 12 : metrics.scale(20, 26)),
-                SizedBox(
-                  height: compact ? 42 : metrics.scale(52, 58),
-                  child: FilledButton(
-                    onPressed: () => context.go('/signup'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF1B5E20),
-                      elevation: 0,
-                      shape: const StadiumBorder(),
-                      textStyle: TextStyle(
+      child: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_panelGreenTop, _panelGreen, _panelGreenBottom],
+            stops: [0.0, 0.45, 1.0],
+          ),
+          borderRadius: BorderRadius.vertical(top: _panelRadius),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          hPad,
+          compact ? 14 : 28,
+          hPad,
+          compact ? 12 : 20,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Reveal(
+                    intro: intro,
+                    start: 0.46,
+                    end: 0.78,
+                    child: Text(
+                      'Smarter waste collection\nfor every barangay',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
                         fontSize: compact
-                            ? metrics.scale(12, 13)
-                            : metrics.scale(13.5, 15.5),
-                        fontWeight: FontWeight.w700,
+                            ? metrics.scale(16, 18)
+                            : metrics.scale(21, 26),
+                        height: 1.3,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('Get Started'),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.arrow_forward_rounded,
-                          size: compact ? 16 : metrics.scale(18, 20),
+                  ),
+                  SizedBox(height: compact ? 6 : metrics.scale(8, 10)),
+                  _Reveal(
+                    intro: intro,
+                    start: 0.55,
+                    end: 0.85,
+                    child: Text(
+                      'Connecting Communities for a Cleaner and Greener '
+                      'Tomorrow.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: compact
+                            ? metrics.scale(10, 11)
+                            : metrics.scale(11, 13),
+                        height: 1.4,
+                        color: const Color(0xFFE8F5E9),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 12 : metrics.scale(20, 26)),
+                  SizedBox(
+                    height: compact ? 42 : metrics.scale(52, 58),
+                    child: FilledButton(
+                      onPressed: () => context.go('/signup'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF1B5E20),
+                        elevation: 0,
+                        shape: const StadiumBorder(),
+                        textStyle: TextStyle(
+                          fontSize: compact
+                              ? metrics.scale(12, 13)
+                              : metrics.scale(13.5, 15.5),
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(height: compact ? 8 : 12),
-                SizedBox(
-                  height: compact ? 40 : metrics.scale(48, 54),
-                  child: OutlinedButton(
-                    onPressed: () => context.go('/login'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white, width: 1.4),
-                      shape: const StadiumBorder(),
-                      textStyle: TextStyle(
-                        fontSize: compact
-                            ? metrics.scale(11, 12.5)
-                            : metrics.scale(12.5, 14.5),
-                        fontWeight: FontWeight.w600,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('Get Started'),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: compact ? 16 : metrics.scale(18, 20),
+                          ),
+                        ],
                       ),
                     ),
-                    child: const Text('I already have an account'),
                   ),
-                ),
-              ],
+                  SizedBox(height: compact ? 8 : 12),
+                  SizedBox(
+                    height: compact ? 40 : metrics.scale(48, 54),
+                    child: OutlinedButton(
+                      onPressed: () => context.go('/login'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white, width: 1.4),
+                        shape: const StadiumBorder(),
+                        textStyle: TextStyle(
+                          fontSize: compact
+                              ? metrics.scale(11, 12.5)
+                              : metrics.scale(12.5, 14.5),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      child: const Text('I already have an account'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
