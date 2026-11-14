@@ -624,13 +624,54 @@ service cloud.firestore {
     // Hall, Iswim and the barangay.
     match /memos/{memoId} {
       allow read: if isTicketStakeholder();
+
+      // The author files it against a desk they do not belong to. `photo` is
+      // still accepted so records written before attachments were typed keep
+      // validating if they are ever re-created by a migration.
       allow create: if isTicketStakeholder()
         && request.resource.data.subject is string
         && request.resource.data.subject.size() <= 200
         && request.resource.data.body is string
         && request.resource.data.body.size() <= 4000
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toChannel in ['iswim', 'barangay', 'cityHall']
+        && request.resource.data.fromRole != request.resource.data.toChannel
+        && request.resource.data.status == 'sent'
+        && uploadOk(request.resource.data, 'attachment')
         && uploadOk(request.resource.data, 'photo');
-      allow update, delete: if isCityHall();
+
+      // A signed memo is final: no edit and no delete once acknowledged.
+      allow update: if resource.data.get('status', 'sent') != 'acknowledged' && (
+        // The recipient desk opens it, once.
+        (request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'receivedAt'])
+         && request.resource.data.status == 'received'
+         && resource.data.get('status', 'sent') == 'sent'
+         && ((resource.data.toChannel == 'cityHall' && isCityHall())
+             || (resource.data.toChannel == 'iswim' && isIswim())
+             || (resource.data.toChannel == 'barangay' && isAdmin())))
+        // City Hall signs the memo addressed to it, in its own name.
+        || (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'acknowledgedAt', 'acknowledgedByUid',
+                        'acknowledgedByName', 'acknowledgementSignature'])
+            && request.resource.data.status == 'acknowledged'
+            && resource.data.toChannel == 'cityHall'
+            && isCityHall()
+            && request.resource.data.acknowledgedByUid == request.auth.uid)
+        // The author corrects their own memo before it is received.
+        || (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['subject', 'body', 'attachment', 'editedAt'])
+            && resource.data.get('status', 'sent') == 'sent'
+            && resource.data.fromUid == request.auth.uid
+            && request.resource.data.subject is string
+            && request.resource.data.subject.size() <= 200
+            && request.resource.data.body is string
+            && request.resource.data.body.size() <= 4000
+            && uploadOk(request.resource.data, 'attachment'))
+      );
+
+      allow delete: if isCityHall()
+        && resource.data.get('status', 'sent') != 'acknowledged';
     }
 
     // Outgoing mail to the district officer. No SMTP: this is the record.

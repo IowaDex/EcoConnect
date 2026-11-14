@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/utils/image_payload.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
 
@@ -27,10 +28,38 @@ extension MemoKindX on MemoKind {
       );
 }
 
+/// Where a memo is in its life.
+///
+/// `sent` — the author submitted it and the recipient has not opened it yet.
+/// `received` — the recipient desk opened it.
+/// `acknowledged` — the recipient signed it; the record is final.
+enum MemoStatus { sent, received, acknowledged }
+
+extension MemoStatusX on MemoStatus {
+  String get wireName => switch (this) {
+        MemoStatus.sent => 'sent',
+        MemoStatus.received => 'received',
+        MemoStatus.acknowledged => 'acknowledged',
+      };
+
+  String get label => switch (this) {
+        MemoStatus.sent => 'Sent',
+        MemoStatus.received => 'Received',
+        MemoStatus.acknowledged => 'Signed',
+      };
+
+  bool get isFinal => this == MemoStatus.acknowledged;
+
+  static MemoStatus fromName(String? name) => MemoStatus.values.firstWhere(
+        (s) => s.wireName == name,
+        orElse: () => MemoStatus.sent,
+      );
+}
+
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
 
 /// A memo, endorsement, announcement or manual request between City Hall,
-/// Iswim and the barangay. Text plus an optional photo, nothing printed.
+/// Iswim and the barangay. Text plus an optional attachment (photo or PDF).
 class Memo {
   const Memo({
     required this.id,
@@ -41,8 +70,15 @@ class Memo {
     required this.fromRole,
     required this.fromUid,
     required this.toChannel,
-    this.photo,
+    this.attachment,
+    this.status = MemoStatus.sent,
     this.createdAt,
+    this.receivedAt,
+    this.acknowledgedAt,
+    this.acknowledgedByUid,
+    this.acknowledgedByName,
+    this.acknowledgementSignature,
+    this.editedAt,
   });
 
   final String id;
@@ -55,8 +91,31 @@ class Memo {
 
   /// `iswim`, `barangay` or `cityHall`.
   final String toChannel;
-  final String? photo;
+  final UploadPayload? attachment;
+
+  final MemoStatus status;
   final DateTime? createdAt;
+  final DateTime? receivedAt;
+  final DateTime? acknowledgedAt;
+  final String? acknowledgedByUid;
+  final String? acknowledgedByName;
+
+  /// Base64 PNG of the recipient's drawn signature, captured by
+  /// `showSignatureSheet`.
+  final String? acknowledgementSignature;
+
+  final DateTime? editedAt;
+
+  bool get isSigned => status == MemoStatus.acknowledged;
+
+  /// True while the recipient can still edit the text.
+  bool get isEditable => status == MemoStatus.sent;
+
+  String get recipientLabel => switch (toChannel) {
+        'iswim' => 'Iswim',
+        'barangay' => 'Barangay',
+        _ => 'City Hall',
+      };
 
   Map<String, dynamic> toMap() => {
         'kind': kind.wireName,
@@ -66,7 +125,8 @@ class Memo {
         'fromRole': fromRole,
         'fromUid': fromUid,
         'toChannel': toChannel,
-        if (photo != null) 'photo': photo,
+        'status': MemoStatus.sent.wireName,
+        if (attachment != null) 'attachment': attachment!.toMap(),
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -79,9 +139,37 @@ class Memo {
         fromRole: data['fromRole'] as String? ?? '',
         fromUid: data['fromUid'] as String? ?? '',
         toChannel: data['toChannel'] as String? ?? 'cityHall',
-        photo: data['photo'] as String?,
+        // Records written before attachments were typed stored a bare data URL
+        // in `photo`; read it as an image so old memos keep their file.
+        attachment: UploadPayload.fromMap(data['attachment']) ??
+            _legacyPhoto(data['photo']),
+        status: MemoStatusX.fromName(data['status'] as String?),
         createdAt: _asDate(data['createdAt']),
+        receivedAt: _asDate(data['receivedAt']),
+        acknowledgedAt: _asDate(data['acknowledgedAt']),
+        acknowledgedByUid: data['acknowledgedByUid'] as String?,
+        acknowledgedByName: data['acknowledgedByName'] as String?,
+        acknowledgementSignature:
+            data['acknowledgementSignature'] as String?,
+        editedAt: _asDate(data['editedAt']),
       );
+
+  static UploadPayload? _legacyPhoto(dynamic raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    return UploadPayload(
+      dataUrl: raw,
+      fileName: 'attachment.jpg',
+      mimeType: 'image/jpeg',
+      bytes: 0,
+    );
+  }
+}
+
+class MemoException implements Exception {
+  const MemoException(this.message);
+  final String message;
+  @override
+  String toString() => message;
 }
 
 /// One entry in the outgoing email log.
@@ -127,8 +215,27 @@ class MemoService {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('memos');
 
-  Stream<List<Memo>> watchForChannel(String channel) => _col
+  /// Memos addressed to one desk, newest first.
+  Stream<List<Memo>> watchForChannel(String channel, {int limit = 60}) => _col
       .where('toChannel', isEqualTo: channel)
+      .limit(limit)
+      .snapshots()
+      .map((snap) {
+        final memos = snap.docs
+            .map((doc) => Memo.fromDoc(doc.id, doc.data()))
+            .whereType<Memo>()
+            .toList();
+        memos.sort(_newestFirst);
+        return memos;
+      });
+
+  /// Memos sent from one desk, so the office can track their status.
+  ///
+  /// A desk can have more than one account (for example two City Hall
+  /// officers), and the sent history belongs to the office, not to whoever
+  /// happened to press Send.
+  Stream<List<Memo>> watchSentByDesk(String fromRole) => _col
+      .where('fromRole', isEqualTo: fromRole)
       .limit(60)
       .snapshots()
       .map((snap) {
@@ -136,13 +243,13 @@ class MemoService {
             .map((doc) => Memo.fromDoc(doc.id, doc.data()))
             .whereType<Memo>()
             .toList();
-        memos.sort((a, b) {
-          final left = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final right = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return right.compareTo(left);
-        });
+        memos.sort(_newestFirst);
         return memos;
       });
+
+  Stream<Memo?> watchOne(String id) => _col.doc(id).snapshots().map(
+        (doc) => doc.exists ? Memo.fromDoc(doc.id, doc.data()!) : null,
+      );
 
   Stream<List<EmailLogEntry>> watchEmailLog() => _db
       .collection('email_log')
@@ -154,7 +261,9 @@ class MemoService {
           .whereType<EmailLogEntry>()
           .toList());
 
-  Future<void> send({
+  /// Writes the memo, then alerts the desk it was addressed to. Returns the new
+  /// document id so the caller can open the record it just created.
+  Future<String> send({
     required MemoKind kind,
     required String subject,
     required String body,
@@ -162,9 +271,15 @@ class MemoService {
     required String fromName,
     required String fromRole,
     required String toChannel,
-    String? photo,
+    UploadPayload? attachment,
   }) async {
-    await _col.add(
+    if (toChannel == fromRole) {
+      throw const MemoException(
+        'A memo cannot be addressed to the office that wrote it.',
+      );
+    }
+
+    final doc = await _col.add(
       Memo(
         id: '',
         kind: kind,
@@ -174,7 +289,7 @@ class MemoService {
         fromRole: fromRole,
         fromUid: fromUid,
         toChannel: toChannel,
-        photo: photo,
+        attachment: attachment,
       ).toMap(),
     );
 
@@ -189,11 +304,125 @@ class MemoService {
       });
     }
 
-    await _notifications.notifyStaff(
+    await _notifyRecipient(
+      toChannel: toChannel,
       title: '${kind.label} from $fromName',
       body: subject,
-      type: AppNotificationType.system,
-      data: {'kind': 'memo', 'toChannel': toChannel},
+      memoId: doc.id,
     );
+    return doc.id;
+  }
+
+  /// The recipient desk opened the memo. A signed memo keeps its final state.
+  Future<void> markReceived(String id) async {
+    final doc = await _col.doc(id).get();
+    final data = doc.data();
+    if (data == null) throw const MemoException('This memo no longer exists.');
+    if (data['status'] == MemoStatus.acknowledged.wireName) return;
+    if (data['status'] == MemoStatus.received.wireName) return;
+    await _col.doc(id).update({
+      'status': MemoStatus.received.wireName,
+      'receivedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// City Hall signs the memo. The drawn signature, the signer and the time
+  /// are stored on the memo itself, so reopening it shows the same record.
+  Future<void> acknowledge({
+    required String id,
+    required String byUid,
+    required String byName,
+    required String signature,
+  }) async {
+    final doc = await _col.doc(id).get();
+    final data = doc.data();
+    if (data == null) throw const MemoException('This memo no longer exists.');
+    if (data['status'] == MemoStatus.acknowledged.wireName) {
+      throw const MemoException('This memo has already been signed.');
+    }
+    if (data['toChannel'] != 'cityHall') {
+      throw const MemoException('Only City Hall memos are signed at this desk.');
+    }
+
+    await _col.doc(id).update({
+      'status': MemoStatus.acknowledged.wireName,
+      'acknowledgedAt': FieldValue.serverTimestamp(),
+      'acknowledgedByUid': byUid,
+      'acknowledgedByName': byName,
+      'acknowledgementSignature': signature,
+    });
+
+    final sender = data['fromUid'] as String? ?? '';
+    if (sender.isNotEmpty) {
+      await _notifications.push(
+        userId: sender,
+        title: 'Memo signed by City Hall',
+        body: '${data['subject'] ?? 'Your memo'} was signed by $byName.',
+        type: AppNotificationType.account,
+        data: {'kind': 'memo', 'memoId': id},
+      );
+    }
+  }
+
+  /// The author corrects a memo that has not been received yet.
+  Future<void> updateContent({
+    required String id,
+    required String subject,
+    required String body,
+    UploadPayload? attachment,
+  }) async {
+    final doc = await _col.doc(id).get();
+    final data = doc.data();
+    if (data == null) throw const MemoException('This memo no longer exists.');
+    if (data['status'] != null &&
+        data['status'] != MemoStatus.sent.wireName) {
+      throw const MemoException(
+        'This memo has already been received and can no longer be edited.',
+      );
+    }
+    await _col.doc(id).update({
+      'subject': subject,
+      'body': body,
+      'attachment': attachment?.toMap(),
+      'editedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _notifyRecipient({
+    required String toChannel,
+    required String title,
+    required String body,
+    required String memoId,
+  }) async {
+    final data = {'kind': 'memo', 'memoId': memoId};
+    switch (toChannel) {
+      case 'iswim':
+        await _notifications.notifyIswim(
+          title: title,
+          body: body,
+          type: AppNotificationType.system,
+          data: data,
+        );
+      case 'barangay':
+        await _notifications.notifyStaff(
+          title: title,
+          body: body,
+          type: AppNotificationType.system,
+          data: data,
+        );
+      default:
+        await _notifications.notifyCityHall(
+          title: title,
+          body: body,
+          type: AppNotificationType.system,
+          data: data,
+        );
+    }
+  }
+
+  static int _newestFirst(Memo a, Memo b) {
+    final left = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final right = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    return right.compareTo(left);
   }
 }

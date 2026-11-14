@@ -42,9 +42,12 @@ class TicketService {
       .map(_parse);
 
   /// Everything Iswim has issued, newest first.
-  Stream<List<TripTicket>> watchAll() => _col
+  ///
+  /// The desk dashboard raises [limit] so it can search a full year of
+  /// records; the smaller default keeps the mobile lists light.
+  Stream<List<TripTicket>> watchAll({int limit = 100}) => _col
       .orderBy('createdAt', descending: true)
-      .limit(100)
+      .limit(limit)
       .snapshots()
       .map(_parse);
 

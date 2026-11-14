@@ -706,3 +706,143 @@ test('barangay staff approve a registration without touching the resident answer
     registrationApprovedAt: serverTimestamp(),
   }));
 });
+
+// --- Memos: Iswim <-> City Hall, with real attachments, status and signature.
+
+const memoDoc = (overrides = {}) => ({
+  kind: 'memo',
+  subject: 'Collection schedule for wave 3',
+  body: 'Please review the attached schedule before Friday.',
+  fromName: 'Ivy',
+  fromRole: 'iswim',
+  fromUid: 'ivy',
+  toChannel: 'cityHall',
+  status: 'sent',
+  createdAt: Timestamp.now(),
+  ...overrides,
+});
+
+const png = {
+  dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+  fileName: 'schedule.png',
+  mimeType: 'image/png',
+  bytes: 12,
+};
+
+test('Iswim files a memo to City Hall with an attachment; City Hall reads it', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'memos/m1'), memoDoc({attachment: png})));
+  await assertSucceeds(getDoc(doc(as('carl'), 'memos/m1')));
+  await assertSucceeds(getDoc(doc(as('root'), 'memos/m1')));
+  // Residents and drivers have no business in the memo channel.
+  await assertFails(getDoc(doc(as('alice'), 'memos/m1')));
+  await assertFails(getDoc(doc(as('dan'), 'memos/m1')));
+});
+
+test('a memo cannot be spoofed, self-addressed or malformed', async () => {
+  // Someone else's name on the sender.
+  await assertFails(setDoc(doc(as('ivy'), 'memos/m2'), memoDoc({fromUid: 'root'})));
+  // Addressed to the office that writes it.
+  await assertFails(setDoc(doc(as('ivy'), 'memos/m3'), memoDoc({toChannel: 'iswim'})));
+  // A made-up destination.
+  await assertFails(setDoc(doc(as('ivy'), 'memos/m4'), memoDoc({toChannel: 'district'})));
+  // Already signed on creation.
+  await assertFails(setDoc(doc(as('ivy'), 'memos/m5'), memoDoc({status: 'acknowledged'})));
+  // Oversized subject.
+  await assertFails(setDoc(doc(as('ivy'), 'memos/m6'), memoDoc({subject: 'x'.repeat(201)})));
+  // A resident cannot use the government channel at all.
+  await assertFails(setDoc(doc(as('alice'), 'memos/m7'), memoDoc({fromUid: 'alice', fromRole: 'barangay'})));
+});
+
+test('the addressed desk marks a memo received, once, and nobody else can', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'memos/m1'), memoDoc());
+  });
+  // The author is not the recipient.
+  await assertFails(updateDoc(doc(as('ivy'), 'memos/m1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+  // The barangay is not the recipient either.
+  await assertFails(updateDoc(doc(as('root'), 'memos/m1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'memos/m1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+  // Received is not a state City Hall can walk back or extend.
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m1'), {
+    status: 'sent', receivedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m1'), {
+    status: 'received', receivedAt: serverTimestamp(), subject: 'Rewritten',
+  }));
+});
+
+test('City Hall files a memo to the barangay and only staff mark it received', async () => {
+  const fromCityHall = memoDoc({
+    fromUid: 'carl',
+    fromName: 'Carl',
+    fromRole: 'cityHall',
+    toChannel: 'barangay',
+  });
+  await assertSucceeds(setDoc(doc(as('carl'), 'memos/b1'), fromCityHall));
+  // The barangay desk reads it; Iswim has no claim on this one.
+  await assertSucceeds(getDoc(doc(as('root'), 'memos/b1')));
+  await assertFails(updateDoc(doc(as('ivy'), 'memos/b1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(as('root'), 'memos/b1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+});
+
+test('City Hall signs a memo addressed to it, in its own name, and it is final', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    // One Firestore handle per context: a second context.firestore() call
+    // would try to reconfigure an instance that has already started.
+    const db = context.firestore();
+    await setDoc(doc(db, 'memos/m1'), memoDoc());
+    await setDoc(doc(db, 'memos/m2'), memoDoc({toChannel: 'barangay'}));
+  });
+  const sign = (uid, overrides = {}) => ({
+    status: 'acknowledged',
+    acknowledgedAt: serverTimestamp(),
+    acknowledgedByUid: uid,
+    acknowledgedByName: 'Carl',
+    acknowledgementSignature: 'data:image/png;base64,iVBORw0KGgo=',
+    ...overrides,
+  });
+
+  // The author cannot sign their own memo.
+  await assertFails(updateDoc(doc(as('ivy'), 'memos/m1'), sign('ivy')));
+  // City Hall cannot sign under someone else's identity.
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m1'), sign('root')));
+  // A memo addressed to the barangay is not City Hall's to sign.
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m2'), sign('carl')));
+
+  await assertSucceeds(updateDoc(doc(as('carl'), 'memos/m1'), sign('carl')));
+  // Signed is final: no re-sign, no edit, no delete.
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m1'), sign('carl', {acknowledgedByName: 'Other'})));
+  await assertFails(updateDoc(doc(as('ivy'), 'memos/m1'), {subject: 'Changed'}));
+  await assertFails(deleteDoc(doc(as('carl'), 'memos/m1')));
+});
+
+test('the author corrects a memo only before it is received', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'memos/m1'), memoDoc());
+  });
+  await assertFails(updateDoc(doc(as('carl'), 'memos/m1'), {subject: 'City Hall rewrites'}));
+  await assertSucceeds(updateDoc(doc(as('ivy'), 'memos/m1'), {
+    subject: 'Corrected schedule',
+    body: 'Friday moved to Saturday.',
+    editedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'memos/m1'), {
+    status: 'received', receivedAt: serverTimestamp(),
+  }));
+  // Once received, the text is frozen for the author too.
+  await assertFails(updateDoc(doc(as('ivy'), 'memos/m1'), {
+    subject: 'Too late', body: 'Too late.', editedAt: serverTimestamp(),
+  }));
+  // City Hall may still remove an unsigned memo.
+  await assertSucceeds(deleteDoc(doc(as('carl'), 'memos/m1')));
+});

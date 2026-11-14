@@ -6,6 +6,7 @@ import '../../route/models/collection_route.dart';
 import '../../incident/models/incident.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
+import '../../memos/services/memo_service.dart';
 import '../../notifications/widgets/notification_bell.dart';
 import '../../../core/widgets/motion.dart';
 import '../../incident/services/incident_service.dart';
@@ -115,6 +116,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         onAccounts: () => context.go('/accounts'),
                         onTickets: () => context.go('/ticket-signatures'),
                         onWave2: () => context.go('/wave2/pass'),
+                        onMemos: () => context.go('/memos/barangay'),
                       );
                     },
                   ),
@@ -559,6 +561,7 @@ class _QuickActions extends StatelessWidget {
     required this.onAccounts,
     required this.onTickets,
     required this.onWave2,
+    required this.onMemos,
   });
 
   final int incidentBadge;
@@ -576,6 +579,7 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onParticipation;
   final VoidCallback onTickets;
   final VoidCallback onWave2;
+  final VoidCallback onMemos;
 
   @override
   Widget build(BuildContext context) {
@@ -590,6 +594,7 @@ class _QuickActions extends StatelessWidget {
         label: 'Wave 2',
         onTap: onWave2,
       ),
+      _MemoTile(onTap: onMemos),
       _QuickTile(
         icon: Icons.error_outline_rounded,
         label: 'Incidents',
@@ -669,6 +674,41 @@ class _QuickActions extends StatelessWidget {
             child: HoverLift(child: items[i]),
           ),
       ],
+    );
+  }
+}
+
+/// Memos addressed to the barangay, with a live count of the unopened ones.
+class _MemoTile extends StatefulWidget {
+  const _MemoTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_MemoTile> createState() => _MemoTileState();
+}
+
+class _MemoTileState extends State<_MemoTile> {
+  // Held in state: the quick-action grid rebuilds on every incident update,
+  // and a fresh stream each time would resubscribe to Firestore.
+  final Stream<List<Memo>> _stream =
+      MemoService().watchForChannel('barangay');
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Memo>>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        final unread = (snapshot.data ?? const <Memo>[])
+            .where((m) => m.status == MemoStatus.sent)
+            .length;
+        return _QuickTile(
+          icon: Icons.mail_outline_rounded,
+          label: 'Memos',
+          badge: unread,
+          onTap: widget.onTap,
+        );
+      },
     );
   }
 }
