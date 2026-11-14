@@ -226,6 +226,8 @@ class NotificationsScreen extends StatelessWidget {
         // Residents see the balance and history in their wallet.
         if (!isStaff) context.push('/wallet');
       case AppNotificationType.account:
+        // "New resident registration" and other account notices.
+        if (isStaff) context.push('/pending-accounts');
       case AppNotificationType.system:
       case AppNotificationType.complaint:
         break;

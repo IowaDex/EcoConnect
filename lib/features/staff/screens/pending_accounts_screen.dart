@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +10,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_loading.dart';
+import '../../auth/models/account_type.dart';
+import '../../verification/services/verification_service.dart';
 
 class PendingAccountsScreen extends StatefulWidget {
   const PendingAccountsScreen({super.key});
@@ -27,6 +32,114 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
 
   void _reload() {
     setState(() => _future = _auth.getPendingAccounts());
+  }
+
+  final _verification = VerificationService();
+
+  void _snack(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: error ? AppColors.danger : null,
+        ),
+      );
+  }
+
+  /// A resident sign-up: approving checks their ID and lets them sign in;
+  /// rejecting keeps them out and shows the reason at login. The same decision
+  /// as Verification -> Residents.
+  Future<void> _reviewResident(
+    Map<String, dynamic> account, {
+    required bool approve,
+  }) async {
+    final staff = context.read<AuthProvider>().currentUser;
+    if (staff == null) return;
+    String? reason;
+    if (!approve) {
+      final controller = TextEditingController();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Reject this registration?'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Reason (shown to the resident)',
+              hintText: 'e.g. The ID is unreadable / not a Batasan Hills address',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              child: const Text('Reject'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      reason = controller.text.trim();
+      if (reason.isEmpty) {
+        _snack('Give the resident a reason.', error: true);
+        return;
+      }
+    }
+    try {
+      await _verification.setUserVerification(
+        userId: account['uid'] as String,
+        status:
+            approve ? VerificationStatus.verified : VerificationStatus.rejected,
+        reviewerId: staff.uid,
+        reviewerName: staff.displayName ?? 'Barangay staff',
+        reason: reason,
+      );
+      if (!mounted) return;
+      final name = account['name'] ?? 'Resident';
+      _snack(approve
+          ? '$name approved. They can now sign in.'
+          : '$name rejected.');
+      _reload();
+    } catch (e) {
+      if (mounted) _snack('Could not save the decision: $e', error: true);
+    }
+  }
+
+  Future<void> _viewId(Map<String, dynamic> account) async {
+    final request = await _verification.fetchForUser(account['uid'] as String);
+    if (!mounted) return;
+    final dataUrl = request?.document?.dataUrl;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ID · ${account['name'] ?? 'Resident'}'),
+        content: dataUrl == null
+            ? const Text('This resident has not uploaded an ID.')
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(_bytes(dataUrl), fit: BoxFit.contain),
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Uint8List _bytes(String dataUrl) {
+    final comma = dataUrl.indexOf(',');
+    if (comma < 0) return Uint8List(0);
+    return base64Decode(dataUrl.substring(comma + 1));
   }
 
   Future<void> _approve(Map<String, dynamic> account) async {
@@ -88,7 +201,8 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
             const Padding(
               padding: EdgeInsets.fromLTRB(22, 6, 22, 14),
               child: Text(
-                'Drivers and staff cannot sign in until you approve them.',
+                'New residents, drivers and staff cannot sign in until '
+                'you approve them. Check each resident ID first.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
               ),
             ),
@@ -132,6 +246,11 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
                     itemBuilder: (context, i) {
                       final account = accounts[i];
                       final role = (account['role'] as String?) ?? 'driver';
+                      final isResident = role == 'user';
+                      // Residents confirm their email before the
+                      // barangay can approve them.
+                      final emailConfirmed =
+                          account['emailVerified'] == true;
                       return Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -154,19 +273,66 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
                             const SizedBox(height: 3),
                             Text(
                               '${(account['email'] as String?) ?? ''} · '
-                              '${role == 'admin' ? 'Barangay staff' : 'Driver'}',
+                              '${isResident ? 'Resident' : role == 'admin' ? 'Barangay staff' : 'Driver'}',
                               style: const TextStyle(
                                   fontSize: 10, color: AppColors.inkMuted),
                             ),
                             const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 38,
-                              child: FilledButton(
-                                onPressed: () => _approve(account),
-                                child: const Text('Approve'),
+                            if (isResident) ...[
+                              if (!emailConfirmed)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    'Waiting for the resident to confirm their '
+                                    'email before you can approve.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.warning,
+                                    ),
+                                  ),
+                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _viewId(account),
+                                      icon: const Icon(Icons.badge_outlined,
+                                          size: 16),
+                                      label: const Text('View ID'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => _reviewResident(account,
+                                          approve: false),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.danger,
+                                      ),
+                                      child: const Text('Reject'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: FilledButton(
+                                      onPressed: emailConfirmed
+                                          ? () => _reviewResident(account,
+                                              approve: true)
+                                          : null,
+                                      child: const Text('Approve'),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                            ] else
+                              SizedBox(
+                                width: double.infinity,
+                                height: 38,
+                                child: FilledButton(
+                                  onPressed: () => _approve(account),
+                                  child: const Text('Approve'),
+                                ),
+                              ),
                           ],
                         ),
                       );
