@@ -197,7 +197,9 @@ class NotificationsScreen extends StatelessWidget {
       case AppNotificationType.verification:
         context.push(isStaff ? '/verification' : '/user');
       case AppNotificationType.route:
-        context.push(isStaff ? '/live-routes' : '/driver');
+        // The barangay no longer dispatches or watches routes; Iswim and City
+        // Hall do. A stale notification just lands on their desk.
+        context.push(isStaff ? '/admin-dashboard' : '/driver');
       case AppNotificationType.announcement:
         context.push('/announcements');
       case AppNotificationType.event:

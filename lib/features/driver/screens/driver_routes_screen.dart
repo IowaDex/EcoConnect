@@ -77,7 +77,7 @@ class DriverRoutesScreen extends StatelessWidget {
                           title: 'No route assigned today',
                           message:
                               'Start an ad-hoc route from the Home tab, or wait for '
-                              'barangay staff to schedule one.',
+                              'Iswim to assign one.',
                           compact: true,
                         )
                       else

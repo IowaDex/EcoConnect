@@ -2,14 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../route/models/collection_route.dart';
-import '../../incident/models/incident.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../notifications/widgets/notification_bell.dart';
 import '../../../core/widgets/motion.dart';
-import '../../incident/services/incident_service.dart';
-import '../../route/services/route_service.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -24,20 +20,14 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  final _incidentService = IncidentService();
-  final _routeService = RouteService();
   AuthProvider get _auth => context.read<AuthProvider>();
 
-  late final Stream<List<Incident>> _incidentStream;
-  late final Stream<CollectionRoute?> _routeStream;
   late Future<List<Map<String, dynamic>>> _pendingFuture;
 
   @override
   void initState() {
     super.initState();
-    _incidentStream = _incidentService.watchAll();
-    _routeStream = _routeService.watchActiveRoute();
-    _pendingFuture = _auth.getPendingAccounts();
+    _pendingFuture = _auth.getPendingRegistrations();
   }
 
   Future<void> _logout() async {
@@ -61,10 +51,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             _Hero(
               name: user?.displayName ?? 'Staff',
-              routeStream: _routeStream,
+              pendingFuture: _pendingFuture,
               onLogout: _logout,
-              onAssign: () => context.go('/routes'),
-              onOpenMap: () => context.push('/live-routes'),
+              onReview: () => context.go('/verification'),
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
@@ -78,45 +67,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   const _SectionLabel('NEEDS ATTENTION'),
                   const SizedBox(height: 12),
-                  FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _pendingFuture,
-                    builder: (context, snapshot) {
-                      final count = snapshot.data?.length ?? 0;
-                      return _PendingCard(
-                        count: count,
-                        loading:
-                            snapshot.connectionState == ConnectionState.waiting,
-                        onTap: () => context.go('/pending-accounts'),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
+                  // The approval queue already sits in the hero above.
                   const _RequestsCard(),
                   const SizedBox(height: 22),
-                  StreamBuilder<List<Incident>>(
-                    stream: _incidentStream,
-                    builder: (context, snapshot) {
-                      final pending = (snapshot.data ?? const <Incident>[])
-                          .where((i) => i.status == IncidentStatus.pending)
-                          .length;
-                      return _QuickActions(
-                        incidentBadge: pending,
-                        onIncidents: () => context.go('/incidents'),
-                        onRequests: () => context.go('/staff-requests'),
-                        onRoutes: () => context.go('/routes'),
-                        onVerification: () => context.go('/verification'),
-                        onWaste: () => context.go('/waste-validation'),
-                        onPoints: () => context.go('/collection-points'),
-                        onAnnouncements: () => context.go('/announcements'),
-                        onEvents: () => context.go('/events'),
-                        onParticipation: () => context.go('/event-participation'),
-                        onRecycling: () => context.go('/dropoff'),
-                        onUsers: () => context.go('/admin'),
-                        onAccounts: () => context.go('/accounts'),
-                        onTickets: () => context.go('/ticket-signatures'),
-                        onWave2: () => context.go('/wave2/pass'),
-                      );
-                    },
+                  _QuickActions(
+                    onRequests: () => context.go('/staff-requests'),
+                    onVerification: () => context.go('/verification'),
+                    onWaste: () => context.go('/waste-validation'),
+                    onPoints: () => context.go('/collection-points'),
+                    onAnnouncements: () => context.go('/announcements'),
+                    onMemos: () => context.push('/memos/barangay'),
+                    onEvents: () => context.go('/events'),
+                    onParticipation: () => context.go('/event-participation'),
+                    onRecycling: () => context.go('/dropoff'),
+                    onTickets: () => context.go('/ticket-signatures'),
+                    onWave2: () => context.go('/wave2/pass'),
                   ),
                 ],
               ),
@@ -128,21 +93,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-/// Dark hero: wordmark, sign-out, title and the live-route card.
+/// Dark hero: wordmark, sign-out, title and the approval queue.
 class _Hero extends StatelessWidget {
   const _Hero({
     required this.name,
-    required this.routeStream,
+    required this.pendingFuture,
     required this.onLogout,
-    required this.onAssign,
-    required this.onOpenMap,
+    required this.onReview,
   });
 
   final String name;
-  final Stream<CollectionRoute?> routeStream;
+  final Future<List<Map<String, dynamic>>> pendingFuture;
   final VoidCallback onLogout;
-  final VoidCallback onAssign;
-  final VoidCallback onOpenMap;
+  final VoidCallback onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -206,216 +169,94 @@ class _Hero extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          _LiveRoutesCard(
-            routeStream: routeStream,
-            onAssign: onAssign,
-            onOpenMap: onOpenMap,
-          ),
+          _ApprovalCard(pendingFuture: pendingFuture, onTap: onReview),
         ],
       ),
     );
   }
 }
 
-class _LiveRoutesCard extends StatelessWidget {
-  const _LiveRoutesCard({
-    required this.routeStream,
-    required this.onAssign,
-    required this.onOpenMap,
-  });
+/// The barangay's own queue, in the hero: accounts waiting for review.
+class _ApprovalCard extends StatelessWidget {
+  const _ApprovalCard({required this.pendingFuture, required this.onTap});
 
-  final Stream<CollectionRoute?> routeStream;
-  final VoidCallback onAssign;
-  final VoidCallback onOpenMap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: AppColors.creamBright,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 92,
-            child: GestureDetector(
-              onTap: onOpenMap,
-              behavior: HitTestBehavior.opaque,
-              child: const _MapPreview(),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: StreamBuilder<CollectionRoute?>(
-              stream: routeStream,
-              builder: (context, snapshot) {
-                final route = snapshot.data;
-                final subtitle = route == null
-                    ? 'No driver is collecting right now'
-                    : '${route.driverName} · ${route.isStale ? 'signal lost' : route.status.label}';
-
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Live routes',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _AssignButton(onTap: onAssign),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AssignButton extends StatelessWidget {
-  const _AssignButton({required this.onTap});
-
+  final Future<List<Map<String, dynamic>>> pendingFuture;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.forest,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'Assign runs',
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w700,
-            color: AppColors.creamBright,
-          ),
-        ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.creamBright,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: pendingFuture,
+        builder: (context, snapshot) {
+          final count = snapshot.data?.length ?? 0;
+          final waiting = snapshot.connectionState == ConnectionState.waiting;
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Resident applications',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      waiting
+                          ? 'Checking the list…'
+                          : count == 0
+                              ? 'No one is waiting right now'
+                              : '$count resident'
+                                  '${count == 1 ? '' : 's'} waiting · check the ID',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.forest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'Review',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.creamBright,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
-}
-
-/// Stylised map tile behind the live-route summary.
-class _MapPreview extends StatelessWidget {
-  const _MapPreview();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomPaint(
-      painter: _MapPainter(),
-      child: SizedBox.expand(),
-    );
-  }
-}
-
-class _MapPainter extends CustomPainter {
-  const _MapPainter();
-
-  static const _ground = Color(0xFFE9F3DD);
-  static const _dash = Color(0xFFCBD9BC);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    canvas.drawRect(Offset.zero & size, Paint()..color = _ground);
-
-    final road = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    // Main avenue across the tile.
-    road.strokeWidth = 15;
-    canvas.drawLine(Offset(-4, h * 0.34), Offset(w + 4, h * 0.58), road);
-
-    // Cross street.
-    road.strokeWidth = 11;
-    canvas.drawLine(Offset(w * 0.3, -4), Offset(w * 0.36, h + 4), road);
-
-    // Side street near the bottom.
-    road.strokeWidth = 7;
-    canvas.drawLine(Offset(-4, h * 0.9), Offset(w + 4, h * 0.78), road);
-
-    final dash = Paint()
-      ..color = _dash
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-
-    _dashed(canvas, Offset(-4, h * 0.34), Offset(w + 4, h * 0.58), dash);
-    _dashed(canvas, Offset(w * 0.3, -4), Offset(w * 0.36, h + 4), dash);
-
-    // Location pin.
-    final centre = Offset(w * 0.55, h * 0.46);
-    canvas.drawCircle(
-      centre,
-      13,
-      Paint()..color = AppColors.forest.withValues(alpha: 0.16),
-    );
-    canvas.drawCircle(centre, 7.5, Paint()..color = Colors.white);
-    canvas.drawCircle(
-      centre,
-      7.5,
-      Paint()
-        ..color = AppColors.forest
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.4,
-    );
-    canvas.drawCircle(centre, 2.4, Paint()..color = AppColors.forest);
-  }
-
-  void _dashed(Canvas canvas, Offset from, Offset to, Paint paint) {
-    const dash = 6.0;
-    const gap = 6.0;
-    final total = (to - from).distance;
-    if (total == 0) return;
-    final step = (to - from) / total;
-
-    var travelled = 0.0;
-    while (travelled < total) {
-      final end = (travelled + dash).clamp(0.0, total);
-      canvas.drawLine(
-        from + step * travelled,
-        from + step * end,
-        paint,
-      );
-      travelled += dash + gap;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_MapPainter oldDelegate) => false;
 }
 
 class _SectionLabel extends StatelessWidget {
@@ -437,142 +278,29 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _PendingCard extends StatelessWidget {
-  const _PendingCard({
-    required this.count,
-    required this.loading,
-    required this.onTap,
-  });
-
-  final int count;
-  final bool loading;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitle = loading
-        ? 'Loading accounts…'
-        : count.toString() +
-            (count == 1
-                ? ' account awaiting approval'
-                : ' accounts awaiting approval');
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        decoration: BoxDecoration(
-          color: AppColors.creamBright,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.forest.withValues(alpha: 0.45),
-            width: 1.2,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 38,
-              width: 38,
-              decoration: const BoxDecoration(
-                color: AppColors.mint,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.person_add_alt_1_rounded,
-                size: 18,
-                color: AppColors.forest,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Pending accounts',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                height: 22,
-                width: 22,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.danger,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  count.toString(),
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(width: 2),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: AppColors.moss,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _QuickActions extends StatelessWidget {
   const _QuickActions({
-    required this.incidentBadge,
-    required this.onIncidents,
     required this.onRequests,
-    required this.onRoutes,
     required this.onVerification,
     required this.onWaste,
     required this.onPoints,
     required this.onAnnouncements,
+    required this.onMemos,
     required this.onEvents,
     required this.onParticipation,
     required this.onRecycling,
-    required this.onUsers,
-    required this.onAccounts,
     required this.onTickets,
     required this.onWave2,
   });
 
-  final int incidentBadge;
-  final VoidCallback onIncidents;
   final VoidCallback onRequests;
-  final VoidCallback onRoutes;
   final VoidCallback onVerification;
   final VoidCallback onWaste;
   final VoidCallback onPoints;
   final VoidCallback onAnnouncements;
+  final VoidCallback onMemos;
   final VoidCallback onEvents;
   final VoidCallback onRecycling;
-  final VoidCallback onUsers;
-  final VoidCallback onAccounts;
   final VoidCallback onParticipation;
   final VoidCallback onTickets;
   final VoidCallback onWave2;
@@ -585,26 +313,11 @@ class _QuickActions extends StatelessWidget {
         label: 'Trip tickets',
         onTap: onTickets,
       ),
-      _QuickTile(
-        icon: Icons.layers_outlined,
-        label: 'Wave 2',
-        onTap: onWave2,
-      ),
-      _QuickTile(
-        icon: Icons.error_outline_rounded,
-        label: 'Incidents',
-        badge: incidentBadge,
-        onTap: onIncidents,
-      ),
+      _QuickTile(icon: Icons.layers_outlined, label: 'Wave 2', onTap: onWave2),
       _QuickTile(
         icon: Icons.assignment_outlined,
         label: 'Requests',
         onTap: onRequests,
-      ),
-      _QuickTile(
-        icon: Icons.route_rounded,
-        label: 'Routes',
-        onTap: onRoutes,
       ),
       _QuickTile(
         icon: Icons.verified_user_outlined,
@@ -626,6 +339,12 @@ class _QuickActions extends StatelessWidget {
         label: 'Notices',
         onTap: onAnnouncements,
       ),
+      // Memos and endorsements City Hall sends to this barangay.
+      _QuickTile(
+        icon: Icons.mail_outline_rounded,
+        label: 'Memos',
+        onTap: onMemos,
+      ),
       _QuickTile(
         icon: Icons.event_available_outlined,
         label: 'Events',
@@ -640,17 +359,6 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.recycling_rounded,
         label: 'Recycling',
         onTap: onRecycling,
-      ),
-      _QuickTile(
-        icon: Icons.person_add_alt_1_rounded,
-        label: 'Users',
-        onTap: onUsers,
-      ),
-      // Driver and guide logins are made here, not by the crew itself.
-      _QuickTile(
-        icon: Icons.badge_outlined,
-        label: 'Accounts',
-        onTap: onAccounts,
       ),
     ];
 
@@ -678,13 +386,11 @@ class _QuickTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.badge = 0,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final int badge;
 
   @override
   Widget build(BuildContext context) {
@@ -713,29 +419,6 @@ class _QuickTile extends StatelessWidget {
                         child: Icon(icon, size: 20, color: AppColors.forest),
                       ),
                     ),
-                    if (badge > 0)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          height: 14,
-                          constraints: const BoxConstraints(minWidth: 14),
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          alignment: Alignment.center,
-                          decoration: const BoxDecoration(
-                            color: AppColors.danger,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text(
-                            badge > 9 ? '9+' : badge.toString(),
-                            style: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -770,13 +453,16 @@ class _RequestsCard extends StatelessWidget {
       builder: (context, snapshot) {
         final all = snapshot.data ?? const <CollectionRequest>[];
         final open = all
-            .where((r) =>
-                r.status == RequestStatus.pending ||
-                r.status == RequestStatus.underReview ||
-                r.status == RequestStatus.approved)
+            .where(
+              (r) =>
+                  r.status == RequestStatus.pending ||
+                  r.status == RequestStatus.underReview ||
+                  r.status == RequestStatus.approved,
+            )
             .toList(growable: false);
-        final pending =
-            open.where((r) => r.status == RequestStatus.pending).length;
+        final pending = open
+            .where((r) => r.status == RequestStatus.pending)
+            .length;
 
         return InkWell(
           onTap: () => context.go('/staff-requests'),
@@ -805,8 +491,11 @@ class _RequestsCard extends StatelessWidget {
                         color: AppColors.mint,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.assignment_outlined,
-                          size: 17, color: AppColors.forest),
+                      child: const Icon(
+                        Icons.assignment_outlined,
+                        size: 17,
+                        color: AppColors.forest,
+                      ),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -826,8 +515,8 @@ class _RequestsCard extends StatelessWidget {
                             open.isEmpty
                                 ? 'Nothing waiting for review'
                                 : pending == 0
-                                    ? '${open.length} in progress with staff'
-                                    : '$pending waiting for review · ${open.length} open',
+                                ? '${open.length} in progress with staff'
+                                : '$pending waiting for review · ${open.length} open',
                             style: const TextStyle(
                               fontSize: 9,
                               color: AppColors.inkMuted,
@@ -856,8 +545,11 @@ class _RequestsCard extends StatelessWidget {
                         ),
                       ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right_rounded,
-                        size: 20, color: AppColors.moss),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: AppColors.moss,
+                    ),
                   ],
                 ),
                 if (open.isNotEmpty) ...[

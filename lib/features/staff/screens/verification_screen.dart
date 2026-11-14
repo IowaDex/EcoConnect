@@ -30,7 +30,7 @@ class VerificationScreen extends StatefulWidget {
 
 class _VerificationScreenState extends State<VerificationScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 2, vsync: this);
 
   @override
   void dispose() {
@@ -46,8 +46,9 @@ class _VerificationScreenState extends State<VerificationScreen>
         child: Column(
           children: [
             AppPageHeader(
-              title: 'User validation',
-              subtitle: 'Verify accounts before they unlock barangay services.',
+              title: 'Resident applications',
+              subtitle:
+                  'Accept the residents of Batasan Hills and check their IDs.',
               onBack: () => context.go('/admin-dashboard'),
               actions: const [NotificationBell()],
             ),
@@ -74,9 +75,8 @@ class _VerificationScreenState extends State<VerificationScreen>
                   fontWeight: FontWeight.w600,
                 ),
                 tabs: const [
-                  Tab(text: 'Accounts', height: 34),
-                  Tab(text: 'Government IDs', height: 34),
                   Tab(text: 'Residents', height: 34),
+                  Tab(text: 'Government IDs', height: 34),
                 ],
               ),
             ),
@@ -84,172 +84,12 @@ class _VerificationScreenState extends State<VerificationScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabs,
-                children: const [
-                  _PendingAccountsTab(),
-                  _GovernmentIdsTab(),
-                  _ResidentsTab(),
-                ],
+                children: const [_ResidentsTab(), _GovernmentIdsTab()],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _PendingAccountsTab extends StatefulWidget {
-  const _PendingAccountsTab();
-
-  @override
-  State<_PendingAccountsTab> createState() => _PendingAccountsTabState();
-}
-
-class _PendingAccountsTabState extends State<_PendingAccountsTab> {
-  late Future<List<Map<String, dynamic>>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = context.read<AuthProvider>().getPendingAccounts();
-  }
-
-  void _reload() {
-    setState(() {
-      _future = context.read<AuthProvider>().getPendingAccounts();
-    });
-  }
-
-  Future<void> _approve(Map<String, dynamic> account) async {
-    try {
-      await context.read<AuthProvider>().approveAccount(account['uid'] as String);
-      if (!mounted) return;
-      AppFeedback.success(
-        context,
-        '${(account['name'] as String?) ?? 'Account'} approved',
-      );
-      _reload();
-    } catch (e) {
-      if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingView(label: 'Loading accounts');
-        }
-        if (snapshot.hasError) {
-          return ErrorView(message: AppFeedback.describe(snapshot.error!));
-        }
-        final accounts = snapshot.data ?? const [];
-        if (accounts.isEmpty) {
-          return const EmptyState(
-            icon: Icons.how_to_reg_outlined,
-            title: 'No accounts waiting',
-            message:
-                'New driver and staff registrations appear here for approval.',
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-          itemCount: accounts.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, i) {
-            final account = accounts[i];
-            final role = (account['role'] as String?) ?? 'driver';
-            return EcoCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: AppColors.lightGreen,
-                        child: Icon(
-                          role == 'driver'
-                              ? Icons.local_shipping_outlined
-                              : Icons.admin_panel_settings_outlined,
-                          size: 19,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (account['name'] as String?) ?? 'Unnamed account',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            Text(
-                              (account['email'] as String?) ?? '',
-                              style: const TextStyle(
-                                fontSize: 9.5,
-                                color: AppColors.inkMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      StatusBadge(
-                        label: role == 'driver' ? 'Driver' : 'Barangay staff',
-                        color: AppColors.primary,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.place_outlined,
-                          size: 13, color: AppColors.inkMuted),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          (account['barangay'] as String?) ?? 'Barangay not set',
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        timeAgo(
-                          (account['createdAt'] as dynamic) is DateTime
-                              ? account['createdAt'] as DateTime
-                              : null,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 42,
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () => _approve(account),
-                      child: const Text('Approve account'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }
@@ -535,8 +375,11 @@ class _DocumentPreview extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.picture_as_pdf_rounded,
-                size: 26, color: AppColors.error),
+            const Icon(
+              Icons.picture_as_pdf_rounded,
+              size: 26,
+              color: AppColors.error,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -573,18 +416,18 @@ enum _ResidentAction {
 }
 
 String _registrationLabel(String status) => switch (status) {
-      'pending' => 'Registration pending',
-      'approved' => 'Awaiting resident',
-      'declined' => 'Resident declined',
-      _ => 'Registration accepted',
-    };
+  'pending' => 'Registration pending',
+  'approved' => 'Awaiting resident',
+  'declined' => 'Resident declined',
+  _ => 'Registration accepted',
+};
 
 Color _registrationColor(String status) => switch (status) {
-      'pending' => AppColors.warning,
-      'approved' => const Color(0xFF1565C0),
-      'declined' => AppColors.error,
-      _ => AppColors.primary,
-    };
+  'pending' => AppColors.warning,
+  'approved' => const Color(0xFF1565C0),
+  'declined' => AppColors.error,
+  _ => AppColors.primary,
+};
 
 class _ResidentsTab extends StatefulWidget {
   const _ResidentsTab();
@@ -605,11 +448,32 @@ class _ResidentsTabState extends State<_ResidentsTab> {
 
   Future<List<Map<String, dynamic>>> _load() async {
     final users = await context.read<AuthProvider>().getAllUsers();
-    return users.where((u) => (u['role'] ?? 'user') == 'user').toList();
+    final residents =
+        users.where((u) => (u['role'] ?? 'user') == 'user').toList();
+    // Applications waiting for the desk come first, then the rest by name, so
+    // the person reviewing always sees the queue at the top.
+    String registration(Map<String, dynamic> u) =>
+        (u['registrationStatus'] as String?) ?? 'accepted';
+    // A rejected application has already been answered by the desk, so it drops
+    // out of the queue instead of sitting on top without any action to take.
+    bool needsDesk(Map<String, dynamic> u) =>
+        registration(u) == 'pending' &&
+        (u['verificationStatus'] ?? 'unverified') != 'rejected';
+    residents.sort((a, b) {
+      final aPending = needsDesk(a);
+      final bPending = needsDesk(b);
+      if (aPending != bPending) return aPending ? -1 : 1;
+      return ((a['name'] as String?) ?? '')
+          .toLowerCase()
+          .compareTo(((b['name'] as String?) ?? '').toLowerCase());
+    });
+    return residents;
   }
 
   void _reload() {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
   }
 
   Future<void> _set(
@@ -689,7 +553,9 @@ class _ResidentsTabState extends State<_ResidentsTab> {
           return const EmptyState(
             icon: Icons.people_outline_rounded,
             title: 'No residents yet',
-            message: 'Registered residents appear here for validation.',
+            message:
+                'Everyone who signs up appears here. Only residents apply — '
+                'driver and guide logins come from City Hall.',
           );
         }
         return ListView.separated(
@@ -706,104 +572,196 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             );
             final registration =
                 (user['registrationStatus'] as String?) ?? 'accepted';
+            // Once the desk rejects the application the decision buttons are
+            // done: the card goes quiet until the resident resubmits. Staff can
+            // still undo from the overflow menu.
+            final rejected = status == VerificationStatus.rejected;
+            final awaitingDecision = registration == 'pending' && !rejected;
             return EcoCard(
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CircleAvatar(
-                    radius: 19,
-                    backgroundColor: AppColors.lightGreen,
-                    child: Text(
-                      ((user['name'] as String?) ?? 'R')
-                          .substring(0, 1)
-                          .toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 19,
+                        backgroundColor: AppColors.lightGreen,
+                        child: Text(
+                          ((user['name'] as String?) ?? 'R')
+                              .substring(0, 1)
+                              .toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (user['name'] as String?) ?? 'Resident',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        Text(
-                          '${accountType.shortLabel} · ${(user['barangay'] as String?) ?? 'No barangay'}',
-                          style: const TextStyle(
-                            fontSize: 9,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            StatusBadge(
-                              label: status.label,
-                              color: status.color,
-                              icon: status.icon,
-                              compact: true,
+                            Text(
+                              (user['name'] as String?) ?? 'Resident',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textDark,
+                              ),
                             ),
-                            StatusBadge(
-                              label: _registrationLabel(registration),
-                              color: _registrationColor(registration),
-                              compact: true,
+                            Text(
+                              '${accountType.shortLabel} · ${(user['barangay'] as String?) ?? 'No barangay'}',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                color: AppColors.inkMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                StatusBadge(
+                                  label: status.label,
+                                  color: status.color,
+                                  icon: status.icon,
+                                  compact: true,
+                                ),
+                                // A rejected application would otherwise read
+                                // "Rejected" next to "Registration pending",
+                                // which is exactly what confused the desk.
+                                if (!rejected)
+                                  StatusBadge(
+                                    label: _registrationLabel(registration),
+                                    color: _registrationColor(registration),
+                                    compact: true,
+                                  ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  PopupMenuButton<_ResidentAction>(
-                    icon: const Icon(Icons.more_vert_rounded,
-                        size: 18, color: AppColors.inkMuted),
-                    onSelected: (value) => switch (value) {
-                      _ResidentAction.approveRegistration =>
-                        _set(user, VerificationStatus.verified),
-                      _ResidentAction.rejectRegistration =>
-                        _set(user, VerificationStatus.rejected),
-                      _ResidentAction.verify =>
-                        _set(user, VerificationStatus.verified),
-                      _ResidentAction.reject => _set(user, VerificationStatus.rejected),
-                      _ResidentAction.reset =>
-                        _set(user, VerificationStatus.unverified),
-                    },
-                    itemBuilder: (_) => [
-                      if (registration == 'pending') ...[
-                        const PopupMenuItem(
-                          value: _ResidentAction.approveRegistration,
-                          child: Text('Approve registration'),
+                      ),
+                      PopupMenuButton<_ResidentAction>(
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          size: 18,
+                          color: AppColors.inkMuted,
                         ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.rejectRegistration,
-                          child: Text('Reject registration'),
-                        ),
-                      ] else ...[
-                        const PopupMenuItem(
-                          value: _ResidentAction.verify,
-                          child: Text('Mark verified'),
-                        ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.reject,
-                          child: Text('Reject'),
-                        ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.reset,
-                          child: Text('Reset to unverified'),
-                        ),
-                      ],
+                        onSelected: (value) => switch (value) {
+                          _ResidentAction.approveRegistration => _set(
+                            user,
+                            VerificationStatus.verified,
+                          ),
+                          _ResidentAction.rejectRegistration => _set(
+                            user,
+                            VerificationStatus.rejected,
+                          ),
+                          _ResidentAction.verify => _set(
+                            user,
+                            VerificationStatus.verified,
+                          ),
+                          _ResidentAction.reject => _set(
+                            user,
+                            VerificationStatus.rejected,
+                          ),
+                          _ResidentAction.reset => _set(
+                            user,
+                            VerificationStatus.unverified,
+                          ),
+                        },
+                        itemBuilder: (_) => [
+                          if (awaitingDecision) ...[
+                            const PopupMenuItem(
+                              value: _ResidentAction.approveRegistration,
+                              child: Text('Approve registration'),
+                            ),
+                            const PopupMenuItem(
+                              value: _ResidentAction.rejectRegistration,
+                              child: Text('Reject registration'),
+                            ),
+                          ] else ...[
+                            const PopupMenuItem(
+                              value: _ResidentAction.verify,
+                              child: Text('Mark verified'),
+                            ),
+                            const PopupMenuItem(
+                              value: _ResidentAction.reject,
+                              child: Text('Reject'),
+                            ),
+                            const PopupMenuItem(
+                              value: _ResidentAction.reset,
+                              child: Text('Reset to unverified'),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
+                  // The application itself: accept or decline the resident.
+                  if (awaitingDecision)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 40,
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    _set(user, VerificationStatus.rejected),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.error,
+                                  side: const BorderSide(
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Reject',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            flex: 2,
+                            child: SizedBox(
+                              height: 40,
+                              child: FilledButton(
+                                onPressed: () =>
+                                    _set(user, VerificationStatus.verified),
+                                child: const Text('Accept resident'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  // Rejected: the buttons are gone on purpose, so say why.
+                  else if (rejected && registration == 'pending')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 13,
+                            color: AppColors.inkMuted,
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Rejected — waiting for the resident to resubmit.',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: AppColors.inkMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             );

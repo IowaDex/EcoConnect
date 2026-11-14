@@ -66,7 +66,6 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
-    required UserRole role,
     Map<String, dynamic>? profile,
     AccountType accountType = AccountType.resident,
     UploadPayload? verificationDocument,
@@ -79,7 +78,6 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
         name: name,
-        role: role,
         profile: profile,
         accountType: accountType,
         verificationDocument: verificationDocument,
@@ -131,6 +129,11 @@ class AuthProvider extends ChangeNotifier {
           _setError(
             'This account is suspended. Ask City Hall to restore your access.',
           );
+        case AuthErrorType.accountRejected:
+          _setError(
+            'Your registration was declined by the barangay. Visit the '
+            'barangay hall if you think this is a mistake.',
+          );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
       }
@@ -152,11 +155,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // Staff-facing account lists, so screens never talk to AuthService directly.
-  Future<List<Map<String, dynamic>>> getPendingAccounts() =>
-      _authService.getPendingAccounts();
-
-  Future<void> approveAccount(String uid) => _authService.approveAccount(uid);
-
   /// The resident accepts or declines the barangay's registration approval.
   /// Returns an error message, or null on success.
   Future<String?> answerRegistration({required bool accepted}) async {
@@ -177,6 +175,10 @@ class AuthProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getAllUsers() => _authService.getAllUsers();
 
   Future<List<Map<String, dynamic>>> getDrivers() => _authService.getDrivers();
+
+  /// Residents waiting for the barangay's registration decision.
+  Future<List<Map<String, dynamic>>> getPendingRegistrations() =>
+      _authService.getPendingRegistrations();
 
   Future<void> updateUserRole(String uid, UserRole role) =>
       _authService.updateUserRole(uid, role);

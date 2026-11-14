@@ -18,6 +18,7 @@ enum AuthErrorType {
   accountRemoved,
   accountPending,
   accountSuspended,
+  accountRejected,
 }
 
 class AuthException implements Exception {
@@ -98,16 +99,15 @@ class AuthService {
     return _getAppUser(user);
   }
 
-  // Sign up with email and password and role
+  // Resident sign-up. Drivers and guides never register themselves: City Hall
+  // provisions those logins, so the role is fixed here.
   Future<void> signUp({
     required String email,
     required String password,
     required String name,
-    required UserRole role,
     Map<String, dynamic>? profile,
     AccountType accountType = AccountType.resident,
     UploadPayload? verificationDocument,
-    TruckCrewRole crewRole = TruckCrewRole.driver,
   }) async {
     // Government personnel must supply an ID before the account is created;
     // otherwise the Firestore rules would reject the follow-up write and
@@ -135,22 +135,18 @@ class AuthService {
     await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
-      'role': role.name,
+      'role': UserRole.user.name,
       'createdAt': FieldValue.serverTimestamp(),
       'emailVerified': false,
-      // Drivers and barangay staff need approval before they can sign in.
-      'accountStatus': role == UserRole.user ? 'active' : 'pending',
-      // Residents can use the app while the barangay reviews their
+      // A resident can use the app while the barangay reviews the
       // registration; the decision only changes the registration state.
-      if (role == UserRole.user) 'registrationStatus': 'pending',
+      'accountStatus': 'active',
+      'registrationStatus': 'pending',
       'accountType': accountType.name,
       // Government personnel stay unverified until staff review their ID.
       'verificationStatus': isGovernment
           ? VerificationStatus.pending.name
           : VerificationStatus.unverified.name,
-      // Driver vs. guide. Both keep role 'driver': the crew role only changes
-      // the labels and who the barangay is told is holding the device.
-      if (role == UserRole.driver) 'crewRole': crewRole.wireName,
       if (profile != null) ...profile,
     });
 
@@ -173,14 +169,12 @@ class AuthService {
     // The barangay desk reviews new residents, so it is told a registration
     // is waiting. Written while the new account is still signed in, because
     // the notification rules require an active session.
-    if (role == UserRole.user) {
-      await NotificationService().notifyStaff(
-        title: 'New resident registration',
-        body: '$name registered and is waiting for review.',
-        type: AppNotificationType.account,
-        data: {'uid': uid},
-      );
-    }
+    await NotificationService().notifyStaff(
+      title: 'New resident registration',
+      body: '$name registered and is waiting for review.',
+      type: AppNotificationType.account,
+      data: {'uid': uid},
+    );
 
     // Do not keep them logged in until email is verified
     await _auth.signOut();
@@ -215,6 +209,13 @@ class AuthService {
       if (appUser.isPendingApproval) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.accountPending);
+      }
+
+      // The barangay checked the ID and the address and said no — usually
+      // because the applicant is not from Batasan Hills.
+      if (appUser.accountStatus == 'rejected') {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.accountRejected);
       }
 
       // A frozen login keeps its data but loses access: City Hall suspends a
@@ -316,22 +317,20 @@ class AuthService {
     await _firestore.collection('users').doc(uid).update(data);
   }
 
-  // Accounts waiting for barangay staff approval
-  Future<List<Map<String, dynamic>>> getPendingAccounts() async {
-    final snapshot = await _firestore
-        .collection('users')
-        .where('accountStatus', isEqualTo: 'pending')
-        .get();
-    return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
-  }
-
-  // Approve a driver / staff account
-  Future<void> approveAccount(String uid) async {
-    await _audit('approve', uid);
-    await _firestore.collection('users').doc(uid).update({
-      'accountStatus': 'active',
-      'approvedAt': FieldValue.serverTimestamp(),
-    });
+  // Residents who signed up and are waiting for the barangay's decision.
+  // Filtered on the client: two equality filters would need a composite index,
+  // and the residents list is small.
+  Future<List<Map<String, dynamic>>> getPendingRegistrations() async {
+    final snapshot = await _firestore.collection('users').get();
+    return snapshot.docs
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .where((u) =>
+            (u['role'] ?? 'user') == 'user' &&
+            (u['registrationStatus'] ?? 'accepted') == 'pending' &&
+            // A rejected application is no longer waiting on the desk; it only
+            // comes back if the resident resubmits.
+            (u['verificationStatus'] ?? 'unverified') != 'rejected')
+        .toList();
   }
 
   /// The resident answers the barangay's registration approval.

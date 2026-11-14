@@ -137,20 +137,17 @@ service cloud.firestore {
       // Iswim needs the driver directory to issue tickets; City Hall needs it
       // to provision the accounts Iswim asks for.
       allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
-      // Three ways a profile is born:
-      //  1. self sign-up — residents go active, drivers wait for approval, and
-      //     nobody self-credits points or self-verifies a government account;
+      // Two ways a profile is born:
+      //  1. self sign-up — residents only. Drivers and guides never sign
+      //     themselves up; City Hall provisions their logins. Nobody
+      //     self-credits points or self-verifies a government account;
       //  2. City Hall provisions a government login. The crew never signs
       //     itself up: the login is made on a secondary app, so the profile is
-      //     written by the desk and arrives already active;
-      //  3. the barangay desk makes its own crews — but it cannot mint another
-      //     super admin or an Iswim account.
+      //     written by the desk and arrives already active.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
-        && ((request.resource.data.role == 'user'
-              && request.resource.data.accountStatus == 'active')
-            || (request.resource.data.role == 'driver'
-              && request.resource.data.accountStatus == 'pending'))
+        && request.resource.data.role == 'user'
+        && request.resource.data.accountStatus == 'active'
         && (!('accountType' in request.resource.data)
             || request.resource.data.accountType in ['resident', 'government'])
         && (!('verificationStatus' in request.resource.data)
@@ -167,13 +164,9 @@ service cloud.firestore {
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
           && !('points' in request.resource.data)
-          && photoOk(request.resource.data))
-        || (isAdmin()
-          && !isRemoved(userId)
-          && request.resource.data.role in ['driver', 'admin']
-          && request.resource.data.accountStatus == 'active'
-          && !('points' in request.resource.data)
           && photoOk(request.resource.data));
+      // The barangay cannot mint accounts. It reviews the ones that arrive
+      // (see the update rule below), but provisioning belongs to City Hall.
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
@@ -187,7 +180,12 @@ service cloud.firestore {
                          'registrationApprovedAt'])
           && residentAnswer()
           && photoOk(request.resource.data))
-        || isAdmin() || isCityHall();
+        || isCityHall()
+        // The barangay desk reviews accounts but never hands out roles: a
+        // driver, Iswim or City Hall login is provisioned by City Hall.
+        || (isAdmin()
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['role']));
       // Not their own profile: that would lock the admin out for good.
       allow delete: if isAdmin() && request.auth.uid != userId;
 
@@ -279,28 +277,33 @@ service cloud.firestore {
       allow delete: if isSelf(userId) || isAdmin();
     }
 
-    // Staff (admin) schedule a driver's day here. The driver may only flip
-    // their own assignment from scheduled -> active/completed.
+    // Iswim dispatches a driver's day here (it used to be the barangay desk).
+    // The driver may only flip their own assignment from scheduled ->
+    // active/completed.
     match /routePlans/{planId} {
       // Residents may read a plan while it is being run, so the tracking map can
       // show the same stops the driver sees. Finished and scheduled plans stay
-      // private to the driver and staff.
+      // private to the driver and the dispatching desks.
       allow read: if signedIn()
-        && (isAdmin()
+        && (isIswim()
+            || isCityHall()
+            || isAdmin()
             || resource.data.driverId == request.auth.uid
             || resource.data.status == 'active');
-      allow create: if isAdmin()
+      allow create: if isIswim()
+        || isCityHall()
         || (isActive()
             && request.resource.data.driverId == request.auth.uid
             && request.resource.data.adHoc == true
             && request.resource.data.status == 'scheduled');
-      allow update: if isAdmin()
+      allow update: if isIswim()
+        || isCityHall()
         || (isActive()
             && resource.data.driverId == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'activatedAt', 'completedAt', 'sessionId'])
             && request.resource.data.status in ['active', 'completed']);
-      allow delete: if isAdmin();
+      allow delete: if isIswim() || isCityHall();
     }
 
     // Live driver locations: any signed-in user can watch, only the driver

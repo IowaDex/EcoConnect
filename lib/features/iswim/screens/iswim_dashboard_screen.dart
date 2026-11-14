@@ -175,6 +175,13 @@ class _TicketFeed extends StatelessWidget {
               children: [
                 _quickAction(
                   context,
+                  Icons.route_rounded,
+                  'Assign route',
+                  '/routes',
+                ),
+                const SizedBox(width: 8),
+                _quickAction(
+                  context,
                   Icons.menu_book_outlined,
                   'Manuals',
                   '/manuals',
@@ -186,8 +193,6 @@ class _TicketFeed extends StatelessWidget {
                   'Manual requests',
                   '/manual-requests',
                 ),
-                const SizedBox(width: 8),
-                const Expanded(child: SizedBox()),
               ],
             ),
             const SizedBox(height: 16),

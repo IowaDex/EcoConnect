@@ -16,7 +16,6 @@ import 'features/driver/screens/driver_routes_screen.dart';
 import 'features/driver/screens/driver_completed_screen.dart';
 import 'features/driver/screens/driver_profile_screen.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
-import 'features/admin/screens/admin_panel_screen.dart';
 import 'features/admin/screens/live_routes_screen.dart';
 import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/alerts/screens/alerts_screen.dart';
@@ -25,7 +24,6 @@ import 'features/community/screens/post_detail_screen.dart';
 import 'features/incident/screens/report_incident_screen.dart';
 import 'features/staff/screens/drop_off_station_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
-import 'features/staff/screens/pending_accounts_screen.dart';
 import 'features/staff/screens/route_plans_screen.dart';
 import 'features/staff/screens/verification_screen.dart';
 import 'features/staff/screens/collection_requests_screen.dart';
@@ -117,6 +115,8 @@ const _iswimRoutes = {
   '/tickets',
   '/trucks',
   '/fleet',
+  // Iswim dispatches: the run assignment is theirs, not the barangay's.
+  '/routes',
   '/delays',
   '/delays/new',
   '/memos',
@@ -143,16 +143,12 @@ const _cityHallRoutes = {
   ..._sharedRoutes,
 };
 
+/// The barangay desk. Dispatch (routes), incidents and account provisioning
+/// belong to Iswim and City Hall, so those routes are deliberately absent.
 const _staffRoutes = {
   '/admin-dashboard',
-  '/admin',
-  '/incidents',
-  '/pending-accounts',
-  '/accounts',
-  '/routes',
   '/dropoff',
   '/tracking',
-  '/live-routes',
   '/verification',
   '/staff-requests',
   '/waste-validation',
@@ -360,7 +356,6 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/admin-dashboard',
           builder: (_, __) => const AdminDashboardScreen(),
         ),
-        GoRoute(path: '/admin', builder: (_, __) => const AdminPanelScreen()),
         GoRoute(path: '/tracking', builder: (_, __) => const TrackingScreen()),
         GoRoute(
           path: '/live-routes',
@@ -382,10 +377,6 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(
           path: '/incidents',
           builder: (_, __) => const IncidentDeskScreen(),
-        ),
-        GoRoute(
-          path: '/pending-accounts',
-          builder: (_, __) => const PendingAccountsScreen(),
         ),
         GoRoute(path: '/routes', builder: (_, __) => const RoutePlansScreen()),
         GoRoute(
