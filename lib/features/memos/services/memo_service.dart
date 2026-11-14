@@ -144,6 +144,18 @@ class MemoService {
         return memos;
       });
 
+  DocumentReference<Map<String, dynamic>> get _officerRef =>
+      _db.collection('settings').doc('districtOfficer');
+
+  /// The District Officer's email address City Hall saved, if any.
+  Stream<String?> watchDistrictOfficerEmail() => _officerRef
+      .snapshots()
+      .map((doc) => (doc.data()?['email'] as String?)?.trim())
+      .map((email) => (email == null || email.isEmpty) ? null : email);
+
+  Future<void> setDistrictOfficerEmail(String email) =>
+      _officerRef.set({'email': email.trim()});
+
   Stream<List<EmailLogEntry>> watchEmailLog() => _db
       .collection('email_log')
       .orderBy('sentAt', descending: true)

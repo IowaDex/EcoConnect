@@ -326,6 +326,16 @@ test('only City Hall creates driver and staff accounts; the barangay does not', 
   await assertSucceeds(setDoc(doc(as('carl'), 'users/newdriver'), crew('driver')));
 });
 
+test('City Hall alone keeps the District Officer email address', async () => {
+  const ref = (uid) => doc(as(uid), 'settings/districtOfficer');
+  await assertSucceeds(setDoc(ref('carl'), {email: 'officer@qc.gov.ph'}));
+  await assertSucceeds(getDoc(ref('carl')));
+  await assertFails(setDoc(ref('carl'), {email: 'x'.repeat(201)}));
+  await assertFails(setDoc(ref('carl'), {email: 'officer@qc.gov.ph', extra: true}));
+  await assertFails(setDoc(ref('root'), {email: 'officer@qc.gov.ph'}));
+  await assertFails(getDoc(ref('alice')));
+});
+
 test('a resident marks their email confirmed only once Firebase confirmed it', async () => {
   const pending = {
     name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',

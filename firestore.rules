@@ -637,6 +637,16 @@ service cloud.firestore {
     }
 
     // Outgoing mail to the district officer. No SMTP: this is the record.
+    // The District Officer has no account; City Hall keeps their email address
+    // so ISWIM announcements can be sent from City Hall's own email app.
+    match /settings/districtOfficer {
+      allow read: if isCityHall();
+      allow write: if isCityHall()
+        && request.resource.data.keys().hasOnly(['email'])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200;
+    }
+
     match /email_log/{entryId} {
       allow read: if isCityHall() || isAdmin();
       allow create: if isIswim();
