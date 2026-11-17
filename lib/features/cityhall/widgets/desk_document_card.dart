@@ -172,10 +172,7 @@ class DeskDocumentCard extends StatelessWidget {
             document.senderRole,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 9,
-              color: AppColors.inkMuted,
-            ),
+            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
           ),
         ),
       ],

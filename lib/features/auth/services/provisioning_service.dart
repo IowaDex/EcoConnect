@@ -84,29 +84,29 @@ class ProvisioningService {
         )
         .snapshots()
         .map((snap) {
-      final accounts = snap.docs.map((doc) {
-        final data = doc.data();
-        final email = data['email'] as String? ?? '';
-        final name = (data['name'] as String?)?.trim();
-        return ProvisionedAccount(
-          uid: doc.id,
-          name: (name == null || name.isEmpty)
-              ? (email.isEmpty ? 'No name' : email.split('@').first)
-              : name,
-          email: email,
-          role: UserRole.values.firstWhere(
-            (role) => role.name == data['role'],
-            orElse: () => UserRole.user,
-          ),
-          status: data['accountStatus'] as String? ?? 'active',
-          crewRole: data['crewRole'] == null
-              ? null
-              : TruckCrewRoleX.fromName(data['crewRole'] as String?),
-          truckId: data['assignedTruckId'] as String?,
-        );
-      }).toList();
-      // Newest roles first: the people who sign tickets, then the crews.
-      int rank(UserRole role) => switch (role) {
+          final accounts = snap.docs.map((doc) {
+            final data = doc.data();
+            final email = data['email'] as String? ?? '';
+            final name = (data['name'] as String?)?.trim();
+            return ProvisionedAccount(
+              uid: doc.id,
+              name: (name == null || name.isEmpty)
+                  ? (email.isEmpty ? 'No name' : email.split('@').first)
+                  : name,
+              email: email,
+              role: UserRole.values.firstWhere(
+                (role) => role.name == data['role'],
+                orElse: () => UserRole.user,
+              ),
+              status: data['accountStatus'] as String? ?? 'active',
+              crewRole: data['crewRole'] == null
+                  ? null
+                  : TruckCrewRoleX.fromName(data['crewRole'] as String?),
+              truckId: data['assignedTruckId'] as String?,
+            );
+          }).toList();
+          // Newest roles first: the people who sign tickets, then the crews.
+          int rank(UserRole role) => switch (role) {
             UserRole.cityHall => 0,
             UserRole.iswim => 1,
             UserRole.admin => 2,
@@ -114,12 +114,12 @@ class ProvisioningService {
             UserRole.driver => 4,
             UserRole.user => 5,
           };
-      accounts.sort((a, b) {
-        final byRole = rank(a.role).compareTo(rank(b.role));
-        return byRole != 0 ? byRole : a.name.compareTo(b.name);
-      });
-      return accounts;
-    });
+          accounts.sort((a, b) {
+            final byRole = rank(a.role).compareTo(rank(b.role));
+            return byRole != 0 ? byRole : a.name.compareTo(b.name);
+          });
+          return accounts;
+        });
   }
 
   /// Creates the login and its profile. Returns the new uid.
@@ -166,7 +166,8 @@ class ProvisioningService {
         'provisionedBy': FirebaseAuth.instance.currentUser?.uid,
         if (request.phone != null && request.phone!.trim().isNotEmpty)
           'phone': request.phone!.trim(),
-        if (request.role == UserRole.driver) 'crewRole': request.crewRole.wireName,
+        if (request.role == UserRole.driver)
+          'crewRole': request.crewRole.wireName,
         if (request.truckId != null && request.truckId!.isNotEmpty)
           'assignedTruckId': request.truckId,
       });
@@ -236,15 +237,17 @@ class ProvisioningService {
   }
 
   String _message(FirebaseAuthException e) => switch (e.code) {
-        'email-already-in-use' =>
-          'This email already has an account. Use "Reset password" if the '
-              'owner lost access.',
-        'invalid-email' => 'Invalid email.',
-        'weak-password' => 'Password is too weak (use at least 6 characters).',
-        'operation-not-allowed' =>
-          'Email/Password sign-in is not enabled in the Firebase project.',
-        _ => 'Could not create the account (${e.code}).',
-      };
+    'email-already-in-use' =>
+      'This email already has an account. Use "Reset password" if the '
+          'owner lost access.',
+    'invalid-email' => 'Invalid email.',
+    'weak-password' =>
+      'Password is too weak (8+ characters with upper, lower, number and '
+          'special character).',
+    'operation-not-allowed' =>
+      'Email/Password sign-in is not enabled in the Firebase project.',
+    _ => 'Could not create the account (${e.code}).',
+  };
 }
 
 class ProvisioningException implements Exception {

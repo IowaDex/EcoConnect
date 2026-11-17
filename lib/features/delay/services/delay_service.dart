@@ -19,13 +19,16 @@ class DelayService {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('delay_reports');
 
-  Stream<List<DelayReport>> watchAll() =>
-      _col.orderBy('createdAt', descending: true).limit(60).snapshots().map(
-            (snap) => snap.docs
-                .map((doc) => DelayReport.fromDoc(doc.id, doc.data()))
-                .whereType<DelayReport>()
-                .toList(),
-          );
+  Stream<List<DelayReport>> watchAll() => _col
+      .orderBy('createdAt', descending: true)
+      .limit(60)
+      .snapshots()
+      .map(
+        (snap) => snap.docs
+            .map((doc) => DelayReport.fromDoc(doc.id, doc.data()))
+            .whereType<DelayReport>()
+            .toList(),
+      );
 
   Future<DelayReport> file({
     required String plateNumber,
@@ -62,6 +65,17 @@ class DelayService {
       body: '$plateNumber ($driverName) · $reason · $minutesLate min late.',
       type: AppNotificationType.route,
       data: {'delayId': ref.id, 'kind': 'delayFiled'},
+      dedupeKey: 'delay_${ref.id}_dsqc',
+    );
+    // The barangay keeps a copy from the moment the report is filed. The
+    // later hand-off still updates the document stage, but this notification
+    // is already delivered, so the same key prevents a second copy.
+    await _notifications.notifyStaff(
+      title: 'Delay report · $code',
+      body: '$plateNumber · $reason · $minutesLate min late.',
+      type: AppNotificationType.route,
+      data: {'delayId': ref.id, 'kind': 'delayBarangay'},
+      dedupeKey: 'delay_${ref.id}_barangay',
     );
 
     final snap = await ref.get();
@@ -98,10 +112,12 @@ class DelayService {
     });
     await _notifications.notifyStaff(
       title: 'Delay report copy · ${report.code}',
-      body: '${report.plateNumber} · ${report.reason} · '
+      body:
+          '${report.plateNumber} · ${report.reason} · '
           '${report.minutesLate} min late.',
       type: AppNotificationType.route,
       data: {'delayId': report.id, 'kind': 'delayBarangay'},
+      dedupeKey: 'delay_${report.id}_barangay',
     );
   }
 

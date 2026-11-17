@@ -88,6 +88,7 @@ class ComplaintService {
       body: '$residentName: ${title.trim()}',
       type: AppNotificationType.complaint,
       data: {'complaintId': ref.id, 'kind': 'complaintFiled'},
+      dedupeKey: 'complaint_${ref.id}_filed',
     );
 
     return ref.id;
@@ -127,6 +128,10 @@ class ComplaintService {
         'kind': 'complaintResponse',
         'status': status.name,
       },
+      // Every reply is a new event; the index keeps them from collapsing into
+      // one notification while still deduplicating a double submit.
+      dedupeKey:
+          'complaint_${complaint.id}_reply_${complaint.responses.length + 1}',
     );
   }
 

@@ -1,3 +1,5 @@
+import 'package:eco_connect/core/widgets/eco_pagination.dart';
+import 'package:eco_connect/core/widgets/empty_state.dart';
 import 'package:eco_connect/features/cityhall/models/desk_document.dart';
 import 'package:eco_connect/features/cityhall/widgets/desk_filters.dart';
 import 'package:flutter/material.dart';
@@ -5,8 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('desk filters', () {
-    testWidgets('category bar reports the tapped office and its counts',
-        (tester) async {
+    testWidgets('category bar reports the tapped office and its counts', (
+      tester,
+    ) async {
       DeskCategory? selected;
       var cleared = false;
 
@@ -72,7 +75,9 @@ void main() {
       expect(selected, SignatureFilter.signed);
     });
 
-    testWidgets('search field reports typing and clears', (tester) async {
+    testWidgets('shared search field reports typing and clears', (
+      tester,
+    ) async {
       final controller = TextEditingController();
       var query = '';
 
@@ -80,9 +85,9 @@ void main() {
         _wrap(
           StatefulBuilder(
             builder: (context, setState) {
-              return DeskSearchField(
+              return EcoSearchField(
                 controller: controller,
-                hintText: 'Search document, driver name, or reference number...',
+                hint: 'Search document, driver name, or reference number...',
                 onChanged: (value) => setState(() => query = value),
               );
             },
@@ -106,13 +111,15 @@ void main() {
       controller.dispose();
     });
 
-    testWidgets('empty state shows its action only when one is given',
-        (tester) async {
+    testWidgets('shared empty state shows its action only when one is given', (
+      tester,
+    ) async {
       var cleared = false;
 
       await tester.pumpWidget(
         _wrap(
-          DeskEmptyState(
+          EmptyState(
+            compact: true,
             icon: Icons.search_off_rounded,
             title: 'No documents match your filters',
             message: 'Try another category.',

@@ -7,12 +7,11 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
-import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../location/providers/location_provider.dart';
+import '../../auth/services/session_actions.dart';
 import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
 import '../widgets/driver_nav_bar.dart';
@@ -21,14 +20,7 @@ import '../widgets/driver_nav_bar.dart';
 class DriverProfileScreen extends StatelessWidget {
   const DriverProfileScreen({super.key});
 
-  Future<void> _logout(BuildContext context) async {
-    if (!await confirmLogout(context) || !context.mounted) return;
-    final auth = context.read<AuthProvider>();
-    final location = context.read<LocationProvider>();
-    await location.endSession();
-    await auth.logout();
-    if (context.mounted) context.go('/login');
-  }
+  Future<void> _logout(BuildContext context) => confirmAndLogout(context);
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +68,7 @@ class DriverProfileScreen extends StatelessWidget {
                         Text(
                           user.email ?? 'No email on file',
                           style: const TextStyle(
-                            fontSize: 10,
+                            fontSize: 11,
                             color: AppColors.inkMuted,
                           ),
                         ),
@@ -223,15 +215,21 @@ class _StatsCard extends StatelessWidget {
       stream: RouteService().watchCompletedPlans(driverId),
       builder: (context, snapshot) {
         final runs = snapshot.data?.length ?? 0;
-        final stops = (snapshot.data ?? const <RoutePlan>[])
-            .fold<int>(0, (sum, plan) => sum + plan.stops.length);
+        final stops = (snapshot.data ?? const <RoutePlan>[]).fold<int>(
+          0,
+          (sum, plan) => sum + plan.stops.length,
+        );
         return EcoCard(
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Row(
             children: [
-              Expanded(child: _Stat(value: '$runs', label: 'Runs completed')),
+              Expanded(
+                child: _Stat(value: '$runs', label: 'Runs completed'),
+              ),
               Container(height: 34, width: 1, color: AppColors.sage),
-              Expanded(child: _Stat(value: '$stops', label: 'Stops served')),
+              Expanded(
+                child: _Stat(value: '$stops', label: 'Stops served'),
+              ),
             ],
           ),
         );
@@ -261,7 +259,7 @@ class _Stat extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
         ),
       ],
     );
@@ -292,10 +290,7 @@ class _InfoRow extends StatelessWidget {
             width: 74,
             child: Text(
               label,
-              style: const TextStyle(
-                fontSize: 9.5,
-                color: AppColors.inkMuted,
-              ),
+              style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
             ),
           ),
           Expanded(
@@ -348,8 +343,11 @@ class _LinkRow extends StatelessWidget {
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 18, color: AppColors.inkMuted),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: AppColors.inkMuted,
+            ),
           ],
         ),
       ),

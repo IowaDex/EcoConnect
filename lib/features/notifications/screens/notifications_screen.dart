@@ -37,26 +37,21 @@ class NotificationsScreen extends StatelessWidget {
             AppPageHeader(
               title: 'Notifications',
               subtitle: 'Route, request and verification updates.',
-              onBack: () => context.go(
-                switch (user.role) {
-                  UserRole.admin => '/admin-dashboard',
-                  UserRole.driver => '/driver',
-                  UserRole.user => '/user',
-                  UserRole.iswim => '/iswim',
-                  UserRole.cityHall => '/cityhall',
-                  UserRole.auditor => '/audit-log',
-                },
-              ),
+              onBack: () => context.go(switch (user.role) {
+                UserRole.admin => '/admin-dashboard',
+                UserRole.driver => '/driver',
+                UserRole.user => '/user',
+                UserRole.iswim => '/iswim',
+                UserRole.cityHall => '/cityhall',
+                UserRole.auditor => '/audit-log',
+              }),
               actions: [
                 IconButton(
                   onPressed: () async {
                     try {
                       await (deskChannel == null
                           ? service.markAllRead(user.uid)
-                          : service.markAllReadForDesk(
-                              user.uid,
-                              deskChannel,
-                            ));
+                          : service.markAllReadForDesk(user.uid, deskChannel));
                       if (context.mounted) {
                         AppFeedback.success(context, 'All notifications read');
                       }
@@ -94,9 +89,12 @@ class NotificationsScreen extends StatelessWidget {
                           'Route changes, approvals and announcements will appear here.',
                     );
                   }
-                  final today = items.where((n) => _isToday(n.createdAt)).toList();
-                  final earlier =
-                      items.where((n) => !_isToday(n.createdAt)).toList();
+                  final today = items
+                      .where((n) => _isToday(n.createdAt))
+                      .toList();
+                  final earlier = items
+                      .where((n) => !_isToday(n.createdAt))
+                      .toList();
 
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(18, 0, 18, 26),
@@ -141,10 +139,7 @@ class NotificationsScreen extends StatelessWidget {
         date.day == now.day;
   }
 
-  Future<void> _delete(
-    BuildContext context,
-    AppNotification item,
-  ) async {
+  Future<void> _delete(BuildContext context, AppNotification item) async {
     try {
       await NotificationService().delete(item.id);
     } catch (e) {
@@ -173,23 +168,53 @@ class NotificationsScreen extends StatelessWidget {
       return;
     }
 
-    // Complaints go to City Hall's complaint desk (opened on that complaint)
-    // and to the resident's own list. Older complaint notifications were
-    // saved as `request`, so the complaint id is what identifies them.
-    final complaintId = item.data['complaintId'] as String?;
-    if (item.type == AppNotificationType.complaint || complaintId != null) {
-      if (role == UserRole.cityHall) {
-        context.push(
-          complaintId == null ? '/complaints' : '/complaints?id=$complaintId',
-        );
-      } else if (role == UserRole.user) {
-        context.push(
-          complaintId == null
-              ? '/my-complaints'
-              : '/my-complaints?id=$complaintId',
-        );
+    // Some alerts carry a kind that points at a specific record. Routing on
+    // the kind is more precise than routing on the notification type alone.
+    final kind = item.data['kind'];
+    if (kind is String) {
+      final ticketId = item.data['ticketId'];
+      if (kind.startsWith('ticket') &&
+          ticketId is String &&
+          ticketId.isNotEmpty) {
+        context.push('/tickets/$ticketId');
+        return;
       }
-      return;
+      if (kind == 'incident') {
+        context.push('/incidents');
+        return;
+      }
+      if (kind == 'complaintFiled' || kind == 'complaintResponse') {
+        // The alert carries the complaint id, so the reader lands on that
+        // thread instead of the top of the list.
+        final complaintId = item.data['complaintId'] as String?;
+        final cityHall = role == UserRole.cityHall;
+        context.push(
+          cityHall
+              ? (complaintId == null
+                    ? '/complaints'
+                    : '/complaints?id=$complaintId')
+              : (complaintId == null
+                    ? '/my-complaints'
+                    : '/my-complaints?id=$complaintId'),
+        );
+        return;
+      }
+      if (kind == 'planAssigned' || kind == 'planCancelled') {
+        context.push(role == UserRole.driver ? '/driver-routes' : '/routes');
+        return;
+      }
+      if (kind.startsWith('delay')) {
+        context.push('/delays');
+        return;
+      }
+      if (kind.startsWith('manual')) {
+        context.push(
+          kind.toLowerCase().contains('request')
+              ? '/manual-requests'
+              : '/manuals',
+        );
+        return;
+      }
     }
 
     // Desk roles have their own destinations; residents and drivers keep the
@@ -219,6 +244,8 @@ class NotificationsScreen extends StatelessWidget {
     }
 
     final isStaff = role == UserRole.admin;
+    // A delay alert names a desk, not a record; the barangay reads delays on
+    // its own board.
     if (isStaff && item.data['delayId'] != null) {
       context.push('/delays');
       return;
@@ -239,14 +266,15 @@ class NotificationsScreen extends StatelessWidget {
       case AppNotificationType.event:
         context.push('/events');
       case AppNotificationType.points:
-        // Residents see the balance and history in their wallet.
-        if (!isStaff) context.push('/wallet');
+        // Recycling points are no longer a resident-facing screen; the
+        // notification stays as a record of the drop-off.
+        break;
       case AppNotificationType.account:
         // "New resident registration" and other account notices land on the
         // residents desk, which is where the barangay reviews them.
         if (isStaff) context.push('/verification');
-      case AppNotificationType.system:
       case AppNotificationType.complaint:
+      case AppNotificationType.system:
         break;
     }
   }

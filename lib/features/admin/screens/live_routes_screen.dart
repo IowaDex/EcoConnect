@@ -96,10 +96,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
 
   void _zoomBy(double delta) {
     final camera = _map.camera;
-    _map.move(
-      camera.center,
-      (camera.zoom + delta).clamp(5.0, 19.0),
-    );
+    _map.move(camera.center, (camera.zoom + delta).clamp(5.0, 19.0));
   }
 
   void _centreOnDrivers(List<CollectionRoute> routes) {
@@ -138,8 +135,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
                   if ((route.zone ?? '').trim().isNotEmpty) route.zone!.trim(),
                 for (final plan in plans)
                   if (plan.zone.trim().isNotEmpty) plan.zone.trim(),
-              }.toList()
-                ..sort();
+              }.toList()..sort();
 
               final routes = _sector == 'All sectors'
                   ? allRoutes
@@ -267,9 +263,9 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
   }
 
   LatLng _lerp(LatLng from, LatLng to, double t) => LatLng(
-        from.latitude + (to.latitude - from.latitude) * t,
-        from.longitude + (to.longitude - from.longitude) * t,
-      );
+    from.latitude + (to.latitude - from.latitude) * t,
+    from.longitude + (to.longitude - from.longitude) * t,
+  );
 
   Widget _topBar(int liveCount, List<String> sectors) {
     return Positioned(
@@ -285,10 +281,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
             children: [
               Row(
                 children: [
-                  _CircleButton(
-                    icon: Icons.close_rounded,
-                    onTap: _close,
-                  ),
+                  _CircleButton(icon: Icons.close_rounded, onTap: _close),
                   const SizedBox(width: 10),
                   Expanded(child: _StatusPill(count: liveCount)),
                 ],
@@ -321,15 +314,9 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
       top: MediaQuery.paddingOf(context).top + 104,
       child: Column(
         children: [
-          _CircleButton(
-            icon: Icons.add_rounded,
-            onTap: () => _zoomBy(1),
-          ),
+          _CircleButton(icon: Icons.add_rounded, onTap: () => _zoomBy(1)),
           const SizedBox(height: 10),
-          _CircleButton(
-            icon: Icons.remove_rounded,
-            onTap: () => _zoomBy(-1),
-          ),
+          _CircleButton(icon: Icons.remove_rounded, onTap: () => _zoomBy(-1)),
           const SizedBox(height: 10),
           _CircleButton(
             icon: Icons.my_location_rounded,
@@ -391,7 +378,7 @@ class _LiveRoutesScreenState extends State<LiveRoutesScreen> {
                   ),
                   const Text(
                     'Updated just now',
-                    style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
+                    style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
                   ),
                 ],
               ),
@@ -472,10 +459,10 @@ class _StatusPill extends StatelessWidget {
                   count == 0
                       ? 'No drivers collecting'
                       : count == 1
-                          ? '1 driver collecting'
-                          : '$count drivers collecting',
+                      ? '1 driver collecting'
+                      : '$count drivers collecting',
                   style: const TextStyle(
-                    fontSize: 9.5,
+                    fontSize: 11,
                     color: AppColors.inkMuted,
                   ),
                 ),
@@ -624,27 +611,28 @@ class _DriverCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final zone =
-        (route.zone ?? '').trim().isEmpty ? 'Unassigned zone' : route.zone!;
+    final zone = (route.zone ?? '').trim().isEmpty
+        ? 'Unassigned zone'
+        : route.zone!;
     final status = route.isStale ? 'Signal lost' : route.status.label;
     // Trip guard first: a crew that switched the phone off, or drove out of
     // the zone, is the thing staff must act on.
     final attention = route.connectionAlert
         ? 'Device offline · wifi/data off'
         : route.outsideRadius
-            ? (route.geofenceMeters == null
-                ? 'Outside the 100 m radius'
-                : 'Outside radius · ${route.geofenceMeters} m from centre')
-            : route.status == RouteStatus.paused
-                ? 'Route paused'
-                : route.locationState.needsAttention
-                    ? route.locationState.label
-                    : null;
+        ? (route.geofenceMeters == null
+              ? 'Outside the 100 m radius'
+              : 'Outside radius · ${route.geofenceMeters} m from centre')
+        : route.status == RouteStatus.paused
+        ? 'Route paused'
+        : route.locationState.needsAttention
+        ? route.locationState.label
+        : null;
     final truckLine = route.truckPlate == null
         ? null
         : '${route.truckPlate}'
-            '${route.truckWheelers == null ? '' : ' · ${route.truckWheelers}-wheeler'}'
-            '${route.crewRole == 'guide' ? ' · guide on device' : ''}';
+              '${route.truckWheelers == null ? '' : ' · ${route.truckWheelers}-wheeler'}'
+              '${route.crewRole == 'guide' ? ' · guide on device' : ''}';
     final stops = plan?.stops ?? const <RouteStop>[];
     final next = stops.isEmpty ? null : stops.first.name;
     final eta = route.etaMinutes;
@@ -699,7 +687,7 @@ class _DriverCard extends StatelessWidget {
                               ? '1 stop'
                               : '${stops.length} stops',
                           style: const TextStyle(
-                            fontSize: 9,
+                            fontSize: 10.5,
                             color: AppColors.inkMuted,
                           ),
                         ),
@@ -711,7 +699,7 @@ class _DriverCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 9.5,
+                      fontSize: 11,
                       color: AppColors.inkMuted,
                     ),
                   ),
@@ -719,8 +707,11 @@ class _DriverCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        const Icon(Icons.local_shipping_rounded,
-                            size: 11, color: AppColors.moss),
+                        const Icon(
+                          Icons.local_shipping_rounded,
+                          size: 11,
+                          color: AppColors.moss,
+                        ),
                         const SizedBox(width: 3),
                         Expanded(
                           child: Text(
@@ -728,7 +719,7 @@ class _DriverCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 8.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700,
                               color: AppColors.forest,
                             ),
@@ -741,8 +732,11 @@ class _DriverCard extends StatelessWidget {
                     const SizedBox(height: 5),
                     Row(
                       children: [
-                        const Icon(Icons.warning_amber_rounded,
-                            size: 11, color: AppColors.warning),
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          size: 11,
+                          color: AppColors.warning,
+                        ),
                         const SizedBox(width: 3),
                         Expanded(
                           child: Text(
@@ -750,7 +744,7 @@ class _DriverCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 8.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700,
                               color: AppColors.warning,
                             ),
@@ -766,7 +760,7 @@ class _DriverCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: 10.5,
                         color: AppColors.moss,
                         fontWeight: FontWeight.w600,
                       ),

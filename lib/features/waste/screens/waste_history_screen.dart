@@ -118,7 +118,7 @@ class WasteHistoryScreen extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Submitted ${timeAgo(submission.createdAt)}',
-              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+              style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
             ),
             if (submission.images.isNotEmpty) ...[
               const SizedBox(height: 14),
@@ -208,14 +208,11 @@ class _WasteHistoryCard extends StatelessWidget {
       child: Row(
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.horizontal(left: Radius.circular(18)),
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(18),
+            ),
             child: submission.images.isEmpty
-                ? Container(
-                    width: 84,
-                    height: 96,
-                    color: AppColors.lightGreen,
-                  )
+                ? Container(width: 84, height: 96, color: AppColors.lightGreen)
                 : Image.memory(
                     _bytes(submission.coverUrl),
                     width: 84,
@@ -256,7 +253,7 @@ class _WasteHistoryCard extends StatelessWidget {
                   Text(
                     '${submission.category.label} · ${submission.quantity} · ${timeAgo(submission.createdAt)}',
                     style: const TextStyle(
-                      fontSize: 8.5,
+                      fontSize: 11,
                       color: AppColors.inkMuted,
                     ),
                   ),
@@ -264,8 +261,11 @@ class _WasteHistoryCard extends StatelessWidget {
               ),
             ),
           ),
-          const Icon(Icons.chevron_right_rounded,
-              size: 18, color: AppColors.inkMuted),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: AppColors.inkMuted,
+          ),
           const SizedBox(width: 8),
         ],
       ),

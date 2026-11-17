@@ -82,7 +82,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                       selectedColor: AppColors.lightGreen,
                       checkmarkColor: AppColors.primary,
                       labelStyle: const TextStyle(
-                        fontSize: 9.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: AppColors.darkGreen,
                       ),
@@ -91,7 +91,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                     Text(
                       '${items.length} shown',
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: 10.5,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -167,10 +167,7 @@ class _RequestTile extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -192,21 +189,22 @@ class _RequestTile extends StatelessWidget {
             ' · ${request.location}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 6),
           Row(
             children: [
-              const Icon(Icons.forum_outlined, size: 12, color: AppColors.primary),
+              const Icon(
+                Icons.forum_outlined,
+                size: 12,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 4),
               Text(
                 request.responses.isEmpty
                     ? 'No City Hall reply yet'
                     : '${request.responses.length} replies',
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -283,10 +281,7 @@ class _ReplySheetState extends State<_ReplySheet> {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -304,7 +299,7 @@ class _ReplySheetState extends State<_ReplySheet> {
           Text(
             '${request.requesterName}'
             '${request.requesterBarangay == null ? '' : ' · ${request.requesterBarangay}'}',
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 12),
           Text(
@@ -322,10 +317,7 @@ class _ReplySheetState extends State<_ReplySheet> {
             'Preferred: ${dateLabel(request.preferredDate)}',
           ),
           if (request.isWave2)
-            _row(
-              Icons.layers_outlined,
-              'Wave 2 · City Hall status: ${request.cityHallStatus}',
-            ),
+            _row(Icons.layers_outlined, 'Wave 2 · ${request.wave2StageLabel}'),
           const SizedBox(height: 16),
           const SectionHeader(title: 'Shared conversation'),
           const SizedBox(height: 8),
@@ -363,7 +355,7 @@ class _ReplySheetState extends State<_ReplySheet> {
                     Text(
                       '${response.byName} · ${timeAgo(response.at)}',
                       style: const TextStyle(
-                        fontSize: 8,
+                        fontSize: 10,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -399,14 +391,9 @@ class _ReplySheetState extends State<_ReplySheet> {
                   : const Icon(Icons.send_rounded, size: 16),
               label: const Text(
                 'Send reply',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.forest,
-              ),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.forest),
             ),
           ),
         ],

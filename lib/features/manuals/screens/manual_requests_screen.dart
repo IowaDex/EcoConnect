@@ -83,10 +83,7 @@ class ManualRequestsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
             children: [
               for (final request in requests) ...[
-                _RequestCard(
-                  request: request,
-                  isIswim: isIswim,
-                ),
+                _RequestCard(request: request, isIswim: isIswim),
                 const SizedBox(height: 10),
               ],
             ],
@@ -103,9 +100,7 @@ class ManualRequestsScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _RequestForm(
-        byName: user.displayName ?? 'City Hall',
-      ),
+      builder: (_) => _RequestForm(byName: user.displayName ?? 'City Hall'),
     );
   }
 }
@@ -168,7 +163,7 @@ class _RequestCard extends StatelessWidget {
               Text(
                 request.code,
                 style: const TextStyle(
-                  fontSize: 9,
+                  fontSize: 10.5,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.4,
                   color: AppColors.moss,
@@ -196,7 +191,7 @@ class _RequestCard extends StatelessWidget {
             Text(
               request.details,
               style: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 height: 1.5,
                 color: AppColors.inkMuted,
               ),
@@ -207,21 +202,24 @@ class _RequestCard extends StatelessWidget {
             'Requested by ${request.requestedByName} · '
             '${timeAgo(request.createdAt)}'
             '${request.neededBy == null ? '' : ' · needed by ${dateLabel(request.neededBy!)}'}',
-            style: const TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
           ),
           if (request.fulfilledAt != null) ...[
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.check_circle_rounded,
-                    size: 13, color: AppColors.primary),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 13,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
                     'Submitted by ${request.fulfilledByName ?? 'Iswim'} · '
                     '${timeAgo(request.fulfilledAt)}',
                     style: const TextStyle(
-                      fontSize: 8.5,
+                      fontSize: 10,
                       color: AppColors.inkMuted,
                     ),
                   ),
@@ -447,7 +445,8 @@ class _RequestFormState extends State<_RequestForm> {
                 maxLines: 4,
                 decoration: const InputDecoration(
                   labelText: 'Details',
-                  hintText: 'Why City Hall needs it, or which sections to include',
+                  hintText:
+                      'Why City Hall needs it, or which sections to include',
                 ),
               ),
               const SizedBox(height: 12),

@@ -37,47 +37,45 @@ enum RequestStatus {
 
 extension RequestStatusX on RequestStatus {
   String get label => switch (this) {
-        RequestStatus.pending => 'Pending',
-        RequestStatus.underReview => 'Under review',
-        RequestStatus.approved => 'Approved',
-        RequestStatus.assigned => 'Assigned',
-        RequestStatus.inProgress => 'In progress',
-        RequestStatus.collected => 'Collected',
-        RequestStatus.completed => 'Completed',
-        RequestStatus.rejected => 'Rejected',
-      };
+    RequestStatus.pending => 'Pending',
+    RequestStatus.underReview => 'Under review',
+    RequestStatus.approved => 'Approved',
+    RequestStatus.assigned => 'Assigned',
+    RequestStatus.inProgress => 'In progress',
+    RequestStatus.collected => 'Collected',
+    RequestStatus.completed => 'Completed',
+    RequestStatus.rejected => 'Rejected',
+  };
 
   Color get color => switch (this) {
-        RequestStatus.pending => AppColors.warning,
-        RequestStatus.underReview => const Color(0xFF1565C0),
-        RequestStatus.approved => AppColors.primary,
-        RequestStatus.assigned => const Color(0xFF6A1B9A),
-        RequestStatus.inProgress => const Color(0xFFEF6C00),
-        RequestStatus.collected => const Color(0xFF00897B),
-        RequestStatus.completed => AppColors.darkGreen,
-        RequestStatus.rejected => AppColors.error,
-      };
+    RequestStatus.pending => AppColors.warning,
+    RequestStatus.underReview => const Color(0xFF1565C0),
+    RequestStatus.approved => AppColors.primary,
+    RequestStatus.assigned => const Color(0xFF6A1B9A),
+    RequestStatus.inProgress => const Color(0xFFEF6C00),
+    RequestStatus.collected => const Color(0xFF00897B),
+    RequestStatus.completed => AppColors.darkGreen,
+    RequestStatus.rejected => AppColors.error,
+  };
 
   IconData get icon => switch (this) {
-        RequestStatus.pending => Icons.hourglass_empty_rounded,
-        RequestStatus.underReview => Icons.search_rounded,
-        RequestStatus.approved => Icons.check_rounded,
-        RequestStatus.assigned => Icons.person_pin_circle_outlined,
-        RequestStatus.inProgress => Icons.local_shipping_rounded,
-        RequestStatus.collected => Icons.inventory_2_outlined,
-        RequestStatus.completed => Icons.task_alt_rounded,
-        RequestStatus.rejected => Icons.close_rounded,
-      };
+    RequestStatus.pending => Icons.hourglass_empty_rounded,
+    RequestStatus.underReview => Icons.search_rounded,
+    RequestStatus.approved => Icons.check_rounded,
+    RequestStatus.assigned => Icons.person_pin_circle_outlined,
+    RequestStatus.inProgress => Icons.local_shipping_rounded,
+    RequestStatus.collected => Icons.inventory_2_outlined,
+    RequestStatus.completed => Icons.task_alt_rounded,
+    RequestStatus.rejected => Icons.close_rounded,
+  };
 
-  bool get isOpen => this != RequestStatus.completed &&
-      this != RequestStatus.rejected;
+  bool get isOpen =>
+      this != RequestStatus.completed && this != RequestStatus.rejected;
 
   bool get isTerminal => !isOpen;
 
-  static RequestStatus fromName(String? name) => RequestStatus.values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => RequestStatus.pending,
-      );
+  static RequestStatus fromName(String? name) => RequestStatus.values
+      .firstWhere((s) => s.name == name, orElse: () => RequestStatus.pending);
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -97,11 +95,11 @@ class RequestHistoryEntry {
   final String? note;
 
   Map<String, dynamic> toMap() => {
-        'status': status.name,
-        'at': FieldValue.serverTimestamp(),
-        'byName': byName,
-        'note': note,
-      };
+    'status': status.name,
+    'at': FieldValue.serverTimestamp(),
+    'byName': byName,
+    'note': note,
+  };
 
   static RequestHistoryEntry fromMap(dynamic raw) {
     if (raw is! Map) {
@@ -132,11 +130,11 @@ class RequestResponse {
   final DateTime? at;
 
   Map<String, dynamic> toMap() => {
-        'message': message,
-        'byName': byName,
-        'byRole': byRole,
-        'at': Timestamp.now(),
-      };
+    'message': message,
+    'byName': byName,
+    'byRole': byRole,
+    'at': Timestamp.now(),
+  };
 
   static RequestResponse? fromMap(dynamic raw) {
     if (raw is! Map) return null;
@@ -213,6 +211,30 @@ class CollectionRequest {
   final String cityHallStatus;
 
   bool get needsCityHall => cityHallStatus == 'pending';
+
+  /// Human wording for the Wave 2 stage, covering both the barangay review
+  /// and the City Hall decision so the resident never sees a raw field value.
+  String get wave2StageLabel {
+    switch (cityHallStatus) {
+      case 'pending':
+        return 'Forwarded to City Hall';
+      case 'approved':
+        return 'Approved by City Hall';
+      case 'rejected':
+        return 'Declined by City Hall';
+    }
+    return switch (status) {
+      RequestStatus.pending => 'Submitted',
+      RequestStatus.underReview => 'Under barangay review',
+      RequestStatus.approved => 'Verified by barangay',
+      RequestStatus.assigned => 'Scheduled for collection',
+      RequestStatus.inProgress => 'Collection in progress',
+      RequestStatus.collected => 'Collected',
+      RequestStatus.completed => 'Completed',
+      RequestStatus.rejected => 'Rejected',
+    };
+  }
+
   bool get isWave2 => wave == 2;
 
   bool get isSpecial => kind == RequestKind.special;
@@ -277,9 +299,9 @@ class CollectionRequest {
       remarks: data['remarks'] as String?,
       images: rawImages is List
           ? rawImages
-              .map(UploadPayload.fromMap)
-              .whereType<UploadPayload>()
-              .toList(growable: false)
+                .map(UploadPayload.fromMap)
+                .whereType<UploadPayload>()
+                .toList(growable: false)
           : const [],
       status: RequestStatusX.fromName(data['status'] as String?),
       wave: (data['wave'] as num?)?.toInt() ?? 1,
@@ -292,15 +314,13 @@ class CollectionRequest {
       createdAt: _asDate(data['createdAt']),
       updatedAt: _asDate(data['updatedAt']),
       history: rawHistory is List
-          ? rawHistory
-              .map(RequestHistoryEntry.fromMap)
-              .toList(growable: false)
+          ? rawHistory.map(RequestHistoryEntry.fromMap).toList(growable: false)
           : const [],
       responses: rawResponses is List
           ? rawResponses
-              .map(RequestResponse.fromMap)
-              .whereType<RequestResponse>()
-              .toList(growable: false)
+                .map(RequestResponse.fromMap)
+                .whereType<RequestResponse>()
+                .toList(growable: false)
           : const [],
     );
   }

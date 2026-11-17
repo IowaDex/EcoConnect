@@ -13,11 +13,7 @@ import '../services/ticket_service.dart';
 
 /// A driver account as Iswim sees it when issuing a ticket.
 class FleetDriver {
-  const FleetDriver({
-    required this.uid,
-    required this.name,
-    this.truckId,
-  });
+  const FleetDriver({required this.uid, required this.name, this.truckId});
 
   final String uid;
   final String name;
@@ -60,9 +56,9 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         final current = _truck;
         if (current != null) {
           _truck = trucks.cast<GarbageTruck?>().firstWhere(
-                (t) => t?.id == current.id,
-                orElse: () => null,
-              );
+            (t) => t?.id == current.id,
+            orElse: () => null,
+          );
         }
       });
     });
@@ -87,16 +83,18 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           .get();
       if (!mounted) return;
       setState(() {
-        _drivers = snap.docs.map((doc) {
-          final data = doc.data();
-          return FleetDriver(
-            uid: doc.id,
-            name: (data['name'] as String?)?.trim().isNotEmpty == true
-                ? data['name'] as String
-                : (data['email'] as String? ?? 'Driver'),
-            truckId: data['assignedTruckId'] as String?,
-          );
-        }).toList(growable: false);
+        _drivers = snap.docs
+            .map((doc) {
+              final data = doc.data();
+              return FleetDriver(
+                uid: doc.id,
+                name: (data['name'] as String?)?.trim().isNotEmpty == true
+                    ? data['name'] as String
+                    : (data['email'] as String? ?? 'Driver'),
+                truckId: data['assignedTruckId'] as String?,
+              );
+            })
+            .toList(growable: false);
       });
     } catch (_) {
       // Without the directory Iswim can still issue against the roster name;
@@ -178,7 +176,8 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/iswim'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/iswim'),
         ),
         title: const Text(
           'New trip ticket',
@@ -236,8 +235,11 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.person_pin_circle_rounded,
-                        size: 15, color: AppColors.forest),
+                    const Icon(
+                      Icons.person_pin_circle_rounded,
+                      size: 15,
+                      color: AppColors.forest,
+                    ),
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
@@ -318,7 +320,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   const Flexible(
                     child: Text(
                       'Allowed even while Wave 1 is ongoing',
-                      style: TextStyle(fontSize: 8.5, color: AppColors.moss),
+                      style: TextStyle(fontSize: 10, color: AppColors.moss),
                     ),
                   ),
               ],
@@ -363,7 +365,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
               'a copy immediately.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 9,
+                fontSize: 10.5,
                 height: 1.5,
                 color: AppColors.inkMuted,
               ),

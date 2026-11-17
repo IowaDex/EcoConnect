@@ -56,9 +56,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               subtitle: isStaff
                   ? 'Publish schedules and reminders for your barangay.'
                   : 'Updates from your barangay team.',
-              onBack: () => context.go(
-                isStaff ? '/admin-dashboard' : '/user',
-              ),
+              onBack: () => context.go(isStaff ? '/admin-dashboard' : '/user'),
               actions: const [NotificationBell()],
             ),
             _CategoryFilter(
@@ -146,8 +144,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final ok = await AppFeedback.confirm(
       context,
       title: 'Delete announcement?',
-      message:
-          '"${item.title}" will be removed from every resident dashboard.',
+      message: '"${item.title}" will be removed from every resident dashboard.',
       confirmLabel: 'Delete',
       destructive: true,
       icon: Icons.delete_outline_rounded,
@@ -283,8 +280,9 @@ class _AnnouncementCard extends StatelessWidget {
         children: [
           if (image.isNotEmpty)
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
+              ),
               child: Image.memory(
                 _bytes(image),
                 height: 132,
@@ -376,15 +374,16 @@ class _AnnouncementCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    const Icon(Icons.schedule_rounded,
-                        size: 12, color: AppColors.inkMuted),
+                    const Icon(
+                      Icons.schedule_rounded,
+                      size: 12,
+                      color: AppColors.inkMuted,
+                    ),
                     const SizedBox(width: 4),
                     Text(
-                      timeAgo(
-                        announcement.publishAt ?? announcement.createdAt,
-                      ),
+                      timeAgo(announcement.publishAt ?? announcement.createdAt),
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: 10.5,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -392,7 +391,7 @@ class _AnnouncementCard extends StatelessWidget {
                     Text(
                       announcement.authorName ?? 'Barangay',
                       style: const TextStyle(
-                        fontSize: 9,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w600,
                         color: AppColors.primary,
                       ),
@@ -455,7 +454,7 @@ class _AnnouncementDetail extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Posted by ${announcement.authorName ?? 'Barangay staff'} · ${timeAgo(announcement.publishAt ?? announcement.createdAt)}',
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
           ),
           if (image.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -641,7 +640,8 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                   hintText: 'What should residents know?',
                   alignLabelWithHint: true,
                 ),
-                validator: (value) => (value == null || value.trim().length < 10)
+                validator: (value) =>
+                    (value == null || value.trim().length < 10)
                     ? 'Please write the announcement content'
                     : null,
               ),
@@ -668,7 +668,8 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                 previewHeight: 140,
                 onChanged: (value) => setState(() {
                   _image = value;
-                  _removeImage = value == null && widget.existing?.image != null;
+                  _removeImage =
+                      value == null && widget.existing?.image != null;
                 }),
               ),
               const SizedBox(height: 14),
@@ -687,8 +688,11 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.event_outlined,
-                          size: 18, color: AppColors.primary),
+                      const Icon(
+                        Icons.event_outlined,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -696,7 +700,7 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                           const Text(
                             'Publication date',
                             style: TextStyle(
-                              fontSize: 9,
+                              fontSize: 10.5,
                               color: AppColors.inkMuted,
                             ),
                           ),
@@ -711,8 +715,11 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                         ],
                       ),
                       const Spacer(),
-                      const Icon(Icons.edit_calendar_outlined,
-                          size: 17, color: AppColors.inkMuted),
+                      const Icon(
+                        Icons.edit_calendar_outlined,
+                        size: 17,
+                        color: AppColors.inkMuted,
+                      ),
                     ],
                   ),
                 ),
@@ -732,7 +739,7 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                 ),
                 subtitle: const Text(
                   'Turn off to keep this as a draft.',
-                  style: TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+                  style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
                 ),
                 onChanged: (value) => setState(
                   () => _status = value

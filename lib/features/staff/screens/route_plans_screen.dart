@@ -35,6 +35,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
   // until staff have chosen the full shift.
   TimeOfDay? _start;
   TimeOfDay? _end;
+  DateTime _date = DateTime.now();
   String? _windowError;
   bool _loadingDrivers = true;
   bool _busy = false;
@@ -107,6 +108,23 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
     });
   }
 
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).add(const Duration(days: 90)),
+      helpText: 'Select the duty date',
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _date = picked);
+  }
+
   Future<void> _assign() async {
     final driverId = _driverId;
     if (driverId == null) {
@@ -153,7 +171,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
         driverId: driverId,
         driverName: name,
         zone: zone,
-        date: DateTime.now(),
+        date: _date,
         windowStart: _timeKey(start),
         windowEnd: _timeKey(end),
         stops: _stops,
@@ -161,7 +179,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       );
       if (!mounted) return;
       setState(() => _stops = []);
-      _toast('Route assigned to $name');
+      _toast('Route assigned to $name · ${routeDateLabel(_date)}');
     } catch (e) {
       _toast('Could not assign the route: $e', isError: true);
     } finally {
@@ -315,6 +333,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 stops: _stops,
                 start: _start,
                 end: _end,
+                date: _date,
                 windowError: _windowError,
                 busy: _busy,
                 onDriverChanged: (value) {
@@ -323,6 +342,7 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 },
                 onPickStart: () => _pickTime(isStart: true),
                 onPickEnd: () => _pickTime(isStart: false),
+                onPickDate: _pickDate,
                 onPickStops: _pickStops,
                 onRemoveStop: (index) =>
                     setState(() => _stops = [..._stops]..removeAt(index)),
@@ -373,6 +393,44 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                   );
                 },
               ),
+              const SizedBox(height: 22),
+              const Text(
+                'Scheduled ahead',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.forest,
+                ),
+              ),
+              const SizedBox(height: 8),
+              StreamBuilder<List<RoutePlan>>(
+                stream: _routeService.watchPlansAhead(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const EcoLoadingView(
+                      truckWidth: 96,
+                      label: 'Loading upcoming routes',
+                    );
+                  }
+                  final plans = snapshot.data ?? const <RoutePlan>[];
+                  if (plans.isEmpty) {
+                    return const _EmptyPlans(
+                      message: 'No future duty assignments yet.',
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final plan in plans)
+                        _PlanTile(
+                          plan: plan,
+                          onCancel: plan.status == RoutePlanStatus.scheduled
+                              ? () => _cancelPlan(plan)
+                              : null,
+                        ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
@@ -390,11 +448,13 @@ class _AssignCard extends StatelessWidget {
     required this.stops,
     required this.start,
     required this.end,
+    required this.date,
     required this.windowError,
     required this.busy,
     required this.onDriverChanged,
     required this.onPickStart,
     required this.onPickEnd,
+    required this.onPickDate,
     required this.onPickStops,
     required this.onRemoveStop,
     required this.onAssign,
@@ -407,11 +467,13 @@ class _AssignCard extends StatelessWidget {
   final List<RouteStop> stops;
   final TimeOfDay? start;
   final TimeOfDay? end;
+  final DateTime date;
   final String? windowError;
   final bool busy;
   final ValueChanged<String?> onDriverChanged;
   final VoidCallback onPickStart;
   final VoidCallback onPickEnd;
+  final VoidCallback onPickDate;
   final VoidCallback onPickStops;
   final ValueChanged<int> onRemoveStop;
   final VoidCallback onAssign;
@@ -499,6 +561,12 @@ class _AssignCard extends StatelessWidget {
               border: OutlineInputBorder(),
             ),
             style: const TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          _TimeField(
+            label: 'Duty date',
+            value: routeDateLabel(date),
+            onTap: onPickDate,
           ),
           const SizedBox(height: 10),
           Row(

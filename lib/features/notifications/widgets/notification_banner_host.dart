@@ -30,8 +30,7 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
   /// not new events, so they never trigger a banner.
   final Set<String> _known = {};
   bool _primed = false;
-  String? _userId;
-  bool _staff = false;
+  String? _streamKey;
 
   AppNotification? _current;
 
@@ -39,11 +38,11 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final user = context.watch<AuthProvider>().currentUser;
-    final staff = user?.role == UserRole.admin;
-    if (user?.uid == _userId && staff == _staff) return;
+    final role = user?.role;
+    final key = user == null ? null : '${user.uid}:${role?.name}';
+    if (key == _streamKey) return;
 
-    _userId = user?.uid;
-    _staff = staff;
+    _streamKey = key;
     _primed = false;
     _known.clear();
     _sub?.cancel();
@@ -55,8 +54,18 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
     }
 
     final service = NotificationService();
-    _sub = (staff ? service.watchForStaff(user.uid) : service.watch(user.uid))
-        .listen(_onItems, onError: (_) {});
+    _sub = switch (role) {
+      UserRole.admin => service.watchForStaff(user.uid),
+      UserRole.cityHall => service.watchForDesk(
+        user.uid,
+        NotificationService.cityHallChannel,
+      ),
+      UserRole.iswim => service.watchForDesk(
+        user.uid,
+        NotificationService.iswimChannel,
+      ),
+      _ => service.watch(user.uid),
+    }.listen(_onItems, onError: (_) {});
   }
 
   void _onItems(List<AppNotification> items) {

@@ -64,19 +64,20 @@ class DriverCompletedScreen extends StatelessWidget {
                   return StreamBuilder<List<CollectionRequest>>(
                     stream: CollectionRequestService().watchForDriver(user.uid),
                     builder: (context, requestSnapshot) {
-                      final done = (requestSnapshot.data ??
-                              const <CollectionRequest>[])
-                          .where((r) =>
-                              r.status == RequestStatus.collected ||
-                              r.status == RequestStatus.completed)
-                          .toList(growable: false);
+                      final done =
+                          (requestSnapshot.data ?? const <CollectionRequest>[])
+                              .where(
+                                (r) =>
+                                    r.status == RequestStatus.collected ||
+                                    r.status == RequestStatus.completed,
+                              )
+                              .toList(growable: false);
 
-                      if (snapshot.connectionState ==
-                              ConnectionState.waiting &&
+                      if (snapshot.connectionState == ConnectionState.waiting &&
                           plans.isEmpty) {
-                  return const Center(
-                    child: LoadingView(label: 'Loading completed runs'),
-                  );
+                        return const Center(
+                          child: LoadingView(label: 'Loading completed runs'),
+                        );
                       }
                       if (plans.isEmpty && done.isEmpty) {
                         return const EmptyState(
@@ -132,7 +133,7 @@ class _Label extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        fontSize: 9,
+        fontSize: 10.5,
         fontWeight: FontWeight.w700,
         letterSpacing: 1,
         color: AppColors.inkMuted,
@@ -166,10 +167,7 @@ class _PlanTile extends StatelessWidget {
                 plan.completedAt == null
                     ? plan.date
                     : dateTimeLabel(plan.completedAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -187,7 +185,7 @@ class _PlanTile extends StatelessWidget {
             '${plan.windowLabel} · ${plan.stops.length} '
             '${plan.stops.length == 1 ? 'stop' : 'stops'}'
             '${plan.adHoc ? ' · ad-hoc' : ''}',
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
           ),
         ],
       ),
@@ -218,10 +216,7 @@ class _RequestTile extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(request.updatedAt ?? request.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -241,7 +236,7 @@ class _RequestTile extends StatelessWidget {
             '${request.requesterName} · ${request.location}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
           ),
         ],
       ),

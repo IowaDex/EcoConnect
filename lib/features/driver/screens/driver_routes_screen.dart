@@ -89,6 +89,8 @@ class DriverRoutesScreen extends StatelessWidget {
                         ),
                       const SizedBox(height: 18),
                       const _PinnedStops(),
+                      const SizedBox(height: 22),
+                      _UpcomingDuties(driverId: user.uid),
                     ],
                   );
                 },
@@ -98,6 +100,131 @@ class DriverRoutesScreen extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: const DriverNavBar(currentIndex: 1),
+    );
+  }
+}
+
+/// Every run assigned after today, soonest first. This is the driver's
+/// "My schedule" view: a barangay assignment appears here as soon as it is
+/// saved, and the same write sends a duty notification.
+class _UpcomingDuties extends StatelessWidget {
+  const _UpcomingDuties({required this.driverId});
+
+  final String driverId;
+
+  static String _dayLabel(String date) {
+    final today = DateTime.now();
+    final tomorrow = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).add(const Duration(days: 1));
+    final parsed = DateTime.tryParse(date);
+    if (parsed == null) return date;
+    if (parsed.year == today.year &&
+        parsed.month == today.month &&
+        parsed.day == today.day) {
+      return 'Today';
+    }
+    if (parsed.year == tomorrow.year &&
+        parsed.month == tomorrow.month &&
+        parsed.day == tomorrow.day) {
+      return 'Tomorrow';
+    }
+    return routeDateLabel(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final todayKey = routeDateKey(DateTime.now());
+    return StreamBuilder<List<RoutePlan>>(
+      stream: RouteService().watchUpcomingPlans(driverId),
+      builder: (context, snapshot) {
+        final plans = (snapshot.data ?? const <RoutePlan>[])
+            .where((plan) => plan.date != todayKey)
+            .toList(growable: false);
+        if (plans.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'UPCOMING DUTIES',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+                color: AppColors.inkMuted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final plan in plans) ...[
+              EcoCard(
+                padding: const EdgeInsets.all(13),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.lightGreen,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            _dayLabel(plan.date),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              height: 1.2,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            plan.zone,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${plan.windowLabel} · ${plan.stops.length} '
+                            '${plan.stops.length == 1 ? 'stop' : 'stops'}',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    StatusBadge(
+                      label: plan.status.label,
+                      color: plan.status.color,
+                      compact: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -126,10 +253,7 @@ class _PlanCard extends StatelessWidget {
               const Spacer(),
               Text(
                 plan.date,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -283,8 +407,11 @@ class _PinnedStops extends StatelessWidget {
                         color: AppColors.lightGreen,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.place_outlined,
-                          size: 16, color: AppColors.forest),
+                      child: const Icon(
+                        Icons.place_outlined,
+                        size: 16,
+                        color: AppColors.forest,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -314,7 +441,7 @@ class _PinnedStops extends StatelessWidget {
                               point.scheduleDays.isEmpty
                                   ? point.scheduleTime!
                                   : '${point.scheduleDays.join(', ')} · '
-                                      '${point.scheduleTime}',
+                                        '${point.scheduleTime}',
                               style: const TextStyle(
                                 fontSize: 8.5,
                                 color: AppColors.inkMuted,

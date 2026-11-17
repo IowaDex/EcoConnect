@@ -51,8 +51,12 @@ class TicketService {
       .snapshots()
       .map(_parse);
 
-  Stream<TripTicket?> watchOne(String id) => _col.doc(id).snapshots().map(
-        (snap) => snap.exists ? TripTicket.fromDoc(snap.id, snap.data()!) : null,
+  Stream<TripTicket?> watchOne(String id) => _col
+      .doc(id)
+      .snapshots()
+      .map(
+        (snap) =>
+            snap.exists ? TripTicket.fromDoc(snap.id, snap.data()!) : null,
       );
 
   /// Sorted here, not in the query: a `where` plus `orderBy` on another field
@@ -117,6 +121,7 @@ class TicketService {
         body: '$plateNumber · $route ($zone). Accept it to start the trip.',
         type: AppNotificationType.request,
         data: {'ticketId': ref.id, 'kind': 'ticketIssued'},
+        dedupeKey: 'ticket_${ref.id}_issued',
       );
     }
 
@@ -138,7 +143,11 @@ class TicketService {
     return 'TT-$year-${next.toString().padLeft(4, '0')}';
   }
 
-  Future<void> accept(String id, {String byUid = '', String byName = 'Driver'}) async {
+  Future<void> accept(
+    String id, {
+    String byUid = '',
+    String byName = 'Driver',
+  }) async {
     await _advance(
       id,
       from: TicketStatus.issued,
@@ -176,6 +185,7 @@ class TicketService {
       body: '$byName declined a ticket: $reason',
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketDeclined'},
+      dedupeKey: 'ticket_${id}_declined',
     );
   }
 
@@ -205,6 +215,7 @@ class TicketService {
     String byUid = '',
     String note = 'Route completed and submitted',
   }) async {
+    final ticket = await _load(id);
     await _advance(
       id,
       from: TicketStatus.running,
@@ -222,6 +233,7 @@ class TicketService {
       body: '$driverName submitted a trip ticket. Barangay signature needed.',
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketSubmitted'},
+      dedupeKey: 'ticket_${id}_submitted_${ticket.history.length}',
     );
   }
 
@@ -253,6 +265,7 @@ class TicketService {
       body: reason,
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketRevision'},
+      dedupeKey: 'ticket_${id}_revision_${ticket.history.length}',
     );
   }
 
@@ -283,12 +296,14 @@ class TicketService {
       body: reason,
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketRejected'},
+      dedupeKey: 'ticket_${id}_rejected_${ticket.history.length}',
     );
     await _notifications.notifyStaff(
       title: 'Trip ticket rejected · ${ticket.code}',
       body: '$byName rejected the ticket: $reason',
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketRejected'},
+      dedupeKey: 'ticket_${id}_rejected_staff_${ticket.history.length}',
     );
   }
 
@@ -299,6 +314,7 @@ class TicketService {
     required String byName,
     String note = 'Corrected and resubmitted',
   }) async {
+    final ticket = await _load(id);
     await _advance(
       id,
       from: TicketStatus.revisionRequired,
@@ -316,6 +332,7 @@ class TicketService {
       body: '$byName corrected and resubmitted a trip ticket.',
       type: AppNotificationType.route,
       data: {'ticketId': id, 'kind': 'ticketResubmitted'},
+      dedupeKey: 'ticket_${id}_resubmitted_${ticket.history.length}',
     );
   }
 
@@ -370,14 +387,49 @@ class TicketService {
       ]),
     });
 
+    // Each hop tells the next signer that the document is waiting for them.
+    if (next == TicketStatus.barangaySigned) {
+      await _notifications.notifyIswim(
+        title: 'Signed trip ticket · ${ticket.code}',
+        body:
+            'Barangay signed ${ticket.plateNumber} (${ticket.driverName}). '
+            'Iswim verification is next.',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'ticketBarangaySigned'},
+        dedupeKey: 'ticket_${id}_barangay_signed',
+      );
+    }
+    if (next == TicketStatus.iswimSigned) {
+      await _notifications.notifyCityHall(
+        title: 'Trip ticket for final signature · ${ticket.code}',
+        body:
+            '${ticket.plateNumber} · ${ticket.driverName} was verified by '
+            'Iswim and needs the City Hall signature.',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'ticketIswimSigned'},
+        dedupeKey: 'ticket_${id}_iswim_signed',
+      );
+    }
+
     // Signed copy goes back to the barangay the moment City Hall signs.
     if (next == TicketStatus.completed) {
       await _notifications.notifyStaff(
         title: 'Trip ticket signed copy · ${ticket.code}',
-        body: '${ticket.plateNumber} · ${ticket.driverName}. Fully signed by '
+        body:
+            '${ticket.plateNumber} · ${ticket.driverName}. Fully signed by '
             'Barangay, Iswim and City Hall.',
         type: AppNotificationType.route,
         data: {'ticketId': id, 'kind': 'ticketCompleted'},
+        dedupeKey: 'ticket_${id}_completed_staff',
+      );
+      await _notifications.notifyIswim(
+        title: 'Trip ticket completed · ${ticket.code}',
+        body:
+            'City Hall signed ${ticket.plateNumber}. The signed copy is '
+            'ready to forward.',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'ticketCompleted'},
+        dedupeKey: 'ticket_${id}_completed_iswim',
       );
     }
 
@@ -406,15 +458,14 @@ class TicketService {
     String byUid = '',
     String byName = '',
     String note = '',
-  }) =>
-      _advanceFromAny(
-        id,
-        allowed: [from],
-        data: data,
-        byUid: byUid,
-        byName: byName,
-        note: note,
-      );
+  }) => _advanceFromAny(
+    id,
+    allowed: [from],
+    data: data,
+    byUid: byUid,
+    byName: byName,
+    note: note,
+  );
 
   /// Same guard, but accepts one of several current statuses. Used by the
   /// rejection step, which can happen before or after the barangay signature.
@@ -438,9 +489,7 @@ class TicketService {
       final ref = _col.doc(id);
       final snap = await tx.get(ref);
       if (!snap.exists) throw const TicketException('Ticket not found.');
-      final current = TicketStatusX.fromName(
-        snap.data()?['status'] as String?,
-      );
+      final current = TicketStatusX.fromName(snap.data()?['status'] as String?);
       if (!allowed.contains(current)) {
         throw TicketException(
           'This ticket already moved (${current.label}). Pull to refresh.',
@@ -451,10 +500,7 @@ class TicketService {
       tx.update(ref, {
         ...data,
         'history': FieldValue.arrayUnion([
-          {
-            ...entry.toMap(),
-            'previousStatus': current.name,
-          },
+          {...entry.toMap(), 'previousStatus': current.name},
         ]),
       });
     });

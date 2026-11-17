@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -28,30 +31,52 @@ class MyComplaintsScreen extends StatefulWidget {
 }
 
 class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  ComplaintStatus? _statusFilter;
+  int _page = 0;
+  int _pageSize = 10;
   bool _openedInitial = false;
 
-  void _showDetails(BuildContext context, Complaint complaint, String byName) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => ComplaintDetailSheet(
-        complaint: complaint,
-        canRespond: false,
-        byName: byName,
-      ),
-    );
-  }
-
   /// Opens the notified complaint once, after the first snapshot arrives.
-  void _openInitial(List<Complaint> items, String byName) {
+  void _openInitial(List<Complaint> all, String byName) {
     final id = widget.initialComplaintId;
     if (_openedInitial || id == null) return;
     _openedInitial = true;
-    final match = items.where((c) => c.id == id);
+    final match = all.where((c) => c.id == id);
     if (match.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _showDetails(context, match.first, byName);
+      if (!mounted) return;
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => ComplaintDetailSheet(
+          complaint: match.first,
+          canRespond: false,
+          byName: byName,
+        ),
+      );
     });
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<Complaint> _filter(List<Complaint> items) {
+    final q = _query.trim().toLowerCase();
+    return items.where((c) {
+      if (_statusFilter != null && c.status != _statusFilter) return false;
+      if (q.isEmpty) return true;
+      return c.referenceNo.toLowerCase().contains(q) ||
+          c.title.toLowerCase().contains(q) ||
+          c.description.toLowerCase().contains(q) ||
+          (c.location ?? '').toLowerCase().contains(q) ||
+          c.category.label.toLowerCase().contains(q) ||
+          c.status.label.toLowerCase().contains(q);
+    }).toList();
   }
 
   @override
@@ -101,7 +126,7 @@ class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
         stream: ComplaintService().watchMine(user.uid),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snapshot.hasError) {
             return EmptyState(
@@ -110,10 +135,9 @@ class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
               message: AppFeedback.describe(snapshot.error!),
             );
           }
-          final items = snapshot.data ?? const <Complaint>[];
-          final byName = user.displayName ?? 'Resident';
-          _openInitial(items, byName);
-          if (items.isEmpty) {
+          final all = snapshot.data ?? const <Complaint>[];
+          _openInitial(all, user.displayName ?? 'Resident');
+          if (all.isEmpty) {
             return EmptyState(
               icon: Icons.report_outlined,
               title: 'No complaints yet',
@@ -124,14 +148,97 @@ class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
               onAction: () => context.push('/complaints/new'),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, i) => _ComplaintCard(
-              complaint: items[i],
-              onTap: () => _showDetails(context, items[i], byName),
-            ),
+
+          final items = _filter(all);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 2),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search reference no., title, status',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
+                ),
+              ),
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  children: [
+                    for (final option in <ComplaintStatus?>[
+                      null,
+                      ...ComplaintStatus.values,
+                    ]) ...[
+                      ChoiceChip(
+                        label: Text(
+                          option?.label ?? 'All',
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                        selected: _statusFilter == option,
+                        onSelected: (_) => setState(() {
+                          _statusFilter = option;
+                          _page = 0;
+                        }),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                  ],
+                ),
+              ),
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No complaints match your filters.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, i) => _ComplaintCard(
+                          complaint: visible[i],
+                          onTap: () => showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            builder: (_) => ComplaintDetailSheet(
+                              complaint: visible[i],
+                              canRespond: false,
+                              byName: user.displayName ?? 'Resident',
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              if (items.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: items.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
+            ],
           );
         },
       ),

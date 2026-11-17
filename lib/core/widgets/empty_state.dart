@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../utils/reduced_motion.dart';
 import 'eco_loading.dart';
+import 'motion.dart';
 
 /// Friendly placeholder shown when a list or query has no results.
 class EmptyState extends StatelessWidget {
@@ -33,37 +35,26 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              height: compact ? 52 : 68,
-              width: compact ? 52 : 68,
-              decoration: const BoxDecoration(
-                color: AppColors.lightGreen,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: compact ? 24 : 30,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 14),
+            _FloatingBadge(icon: icon, compact: compact),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 15,
+                height: 1.3,
                 fontWeight: FontWeight.w700,
                 color: AppColors.darkGreen,
               ),
             ),
             if (message != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 7),
               Text(
                 message!,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 11,
-                  height: 1.55,
+                  fontSize: 12,
+                  height: 1.6,
                   color: AppColors.inkMuted,
                 ),
               ),
@@ -81,6 +72,65 @@ class EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The empty-state mark: a soft green disc that breathes a few pixels, with
+/// the icon fading in once. Still when the platform asks for reduced motion.
+class _FloatingBadge extends StatefulWidget {
+  const _FloatingBadge({required this.icon, required this.compact});
+
+  final IconData icon;
+  final bool compact;
+
+  @override
+  State<_FloatingBadge> createState() => _FloatingBadgeState();
+}
+
+class _FloatingBadgeState extends State<_FloatingBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.compact ? 52.0 : 68.0;
+    final badge = Container(
+      height: size,
+      width: size,
+      decoration: const BoxDecoration(
+        color: AppColors.lightGreen,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        widget.icon,
+        size: widget.compact ? 24 : 30,
+        color: AppColors.primary,
+      ),
+    );
+
+    if (reduceMotion(context)) {
+      return FadeSlideIn(child: badge);
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, -2.5 * _controller.value),
+          child: child,
+        );
+      },
+      child: FadeSlideIn(child: badge),
     );
   }
 }

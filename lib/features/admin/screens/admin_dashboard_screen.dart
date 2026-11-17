@@ -1,18 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../auth/providers/auth_provider.dart';
-import '../../location/providers/location_provider.dart';
-import '../../memos/services/memo_service.dart';
-import '../../notifications/widgets/notification_bell.dart';
+import '../../../core/design/eco_tokens.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../auth/services/session_actions.dart';
+import '../../dashboard/widgets/quick_action_grid.dart';
+import '../../dashboard/widgets/role_hero.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
+import '../../incident/models/incident.dart';
+import '../../incident/services/incident_service.dart';
+import '../../memos/services/memo_service.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
-import '../../../core/widgets/confirm_logout.dart';
 
+/// The barangay desk.
+///
+/// Every figure the officer acts on is live: pending accounts, open resident
+/// requests and unread incidents arrive through subscriptions held in state,
+/// so the hero counters and the attention list can never disagree.
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
 
@@ -21,24 +32,76 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  AuthProvider get _auth => context.read<AuthProvider>();
+  final _incidentService = IncidentService();
+  final _memoService = MemoService();
 
-  late Future<List<Map<String, dynamic>>> _pendingFuture;
+  List<Incident> _incidents = const [];
+  List<CollectionRequest> _requests = const [];
+  int _pendingAccounts = 0;
+  int _unreadMemos = 0;
+
+  StreamSubscription<List<Incident>>? _incidentSub;
+  StreamSubscription<List<CollectionRequest>>? _requestSub;
+  StreamSubscription<List<Memo>>? _memoSub;
 
   @override
   void initState() {
     super.initState();
-    _pendingFuture = _auth.getPendingRegistrations();
+
+    _incidentSub = _incidentService.watchAll().listen((incidents) {
+      if (mounted) setState(() => _incidents = incidents);
+    }, onError: (_) {});
+
+    _requestSub = CollectionRequestService().watchAll().listen((requests) {
+      if (mounted) setState(() => _requests = requests);
+    }, onError: (_) {});
+
+    _memoSub = _memoService.watchForChannel('barangay').listen((memos) {
+      if (!mounted) return;
+      setState(() {
+        _unreadMemos = memos.where((m) => m.status == MemoStatus.sent).length;
+      });
+    }, onError: (_) {});
+
+    _loadPendingAccounts();
   }
 
-  Future<void> _logout() async {
-    if (!await confirmLogout(context) || !mounted) return;
-    final authProvider = context.read<AuthProvider>();
-    // Delete the shared pin while still signed in; rules reject it afterwards.
-    await context.read<LocationProvider>().endSession();
-    await authProvider.logout();
-    if (mounted) context.go('/login');
+  @override
+  void dispose() {
+    _incidentSub?.cancel();
+    _requestSub?.cancel();
+    _memoSub?.cancel();
+    super.dispose();
   }
+
+  Future<void> _loadPendingAccounts() async {
+    try {
+      final pending = await context
+          .read<AuthProvider>()
+          .getPendingRegistrations();
+      if (mounted) setState(() => _pendingAccounts = pending.length);
+    } catch (_) {
+      // The counter keeps its last value; the desk is still usable.
+    }
+  }
+
+  /// Requests still on the desk: submitted, under review or approved but not
+  /// yet collected.
+  List<CollectionRequest> get _openRequests => _requests
+      .where(
+        (request) =>
+            request.status == RequestStatus.pending ||
+            request.status == RequestStatus.underReview ||
+            request.status == RequestStatus.approved,
+      )
+      .toList(growable: false);
+
+  List<Incident> get _pendingIncidents => _incidents
+      .where((incident) => incident.status == IncidentStatus.pending)
+      .toList(growable: false);
+
+  int get _attentionTotal =>
+      _pendingAccounts + _pendingIncidents.length + _openRequests.length;
 
   @override
   Widget build(BuildContext context) {
@@ -46,45 +109,131 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      body: SingleChildScrollView(
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Hero(
-              name: user?.displayName ?? 'Staff',
-              pendingFuture: _pendingFuture,
-              onLogout: _logout,
-              onReview: () => context.go('/verification'),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                22,
-                22,
-                22,
-                MediaQuery.paddingOf(context).bottom + 28,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _SectionLabel('NEEDS ATTENTION'),
-                  const SizedBox(height: 12),
-                  // The approval queue already sits in the hero above.
-                  const _RequestsCard(),
-                  const SizedBox(height: 22),
-                  _QuickActions(
-                    onRequests: () => context.go('/staff-requests'),
-                    onVerification: () => context.go('/verification'),
-                    onWaste: () => context.go('/waste-validation'),
-                    onPoints: () => context.go('/collection-points'),
-                    onAnnouncements: () => context.go('/announcements'),
-                    onMemos: () => context.push('/memos/barangay'),
-                    onEvents: () => context.go('/events'),
-                    onParticipation: () => context.go('/event-participation'),
-                    onRecycling: () => context.go('/dropoff'),
-                    onTickets: () => context.go('/ticket-signatures'),
-                    onWave2: () => context.go('/wave2/pass'),
+            RoleTopBar(onLogout: () => confirmAndLogout(context)),
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                    children: [
+                      FadeSlideIn(
+                        index: 0,
+                        child: RoleHero(
+                          icon: Icons.account_balance_outlined,
+                          eyebrow: 'BARANGAY STAFF · BATASAN HILLS',
+                          greeting: greeting(),
+                          title: user?.displayName ?? 'Barangay staff',
+                          subtitle:
+                              'Verify residents, assign collection runs and keep '
+                              'the barangay records current.',
+                          chip: _attentionTotal > 0
+                              ? RoleChip(
+                                  label: '$_attentionTotal to review',
+                                  icon: Icons.inbox_rounded,
+                                  tone: AppColors.warning,
+                                )
+                              : const RoleChip(
+                                  label: 'All clear',
+                                  icon: Icons.check_circle_rounded,
+                                ),
+                          stats: [
+                            RoleStat(
+                              icon: Icons.person_add_alt_1_rounded,
+                              label: 'Pending accounts',
+                              value: _pendingAccounts,
+                              accent: AppColors.warning,
+                            ),
+                            RoleStat(
+                              icon: Icons.assignment_rounded,
+                              label: 'Open requests',
+                              value: _openRequests.length,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: EcoSpace.xl),
+                      FadeSlideIn(
+                        index: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SectionLabel('QUICK ACTIONS'),
+                            const SizedBox(height: EcoSpace.sm),
+                            QuickActionGrid(
+                              actions: [
+                                const QuickAction(
+                                  label: 'Trip tickets',
+                                  icon: Icons.confirmation_number_outlined,
+                                  route: '/ticket-signatures',
+                                ),
+                                const QuickAction(
+                                  label: 'Wave 2',
+                                  icon: Icons.layers_outlined,
+                                  route: '/wave2/pass',
+                                ),
+                                QuickAction(
+                                  label: 'Memos',
+                                  icon: Icons.mail_outline_rounded,
+                                  route: '/memos/barangay',
+                                  badge: _unreadMemos,
+                                ),
+                                const QuickAction(
+                                  label: 'Requests',
+                                  icon: Icons.assignment_outlined,
+                                  route: '/staff-requests',
+                                ),
+                                const QuickAction(
+                                  label: 'Verify',
+                                  icon: Icons.verified_user_outlined,
+                                  route: '/verification',
+                                ),
+                                const QuickAction(
+                                  label: 'Waste',
+                                  icon: Icons.inventory_2_outlined,
+                                  route: '/waste-validation',
+                                ),
+                                const QuickAction(
+                                  label: 'Points',
+                                  icon: Icons.add_location_alt_outlined,
+                                  route: '/collection-points',
+                                ),
+                                const QuickAction(
+                                  label: 'Notices',
+                                  icon: Icons.campaign_outlined,
+                                  route: '/announcements',
+                                ),
+                                const QuickAction(
+                                  label: 'Events',
+                                  icon: Icons.event_available_outlined,
+                                  route: '/events',
+                                ),
+                                const QuickAction(
+                                  label: 'Sign-ups',
+                                  icon: Icons.groups_2_outlined,
+                                  route: '/event-participation',
+                                ),
+                                const QuickAction(
+                                  label: 'Recycling',
+                                  icon: Icons.recycling_rounded,
+                                  route: '/dropoff',
+                                ),
+                                const QuickAction(
+                                  label: 'Users',
+                                  icon: Icons.person_add_alt_1_rounded,
+                                  route: '/admin',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -94,577 +243,3 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-/// Dark hero: wordmark, sign-out, title and the approval queue.
-class _Hero extends StatelessWidget {
-  const _Hero({
-    required this.name,
-    required this.pendingFuture,
-    required this.onLogout,
-    required this.onReview,
-  });
-
-  final String name;
-  final Future<List<Map<String, dynamic>>> pendingFuture;
-  final VoidCallback onLogout;
-  final VoidCallback onReview;
-
-  @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(22, topInset + 16, 22, 20),
-      decoration: const BoxDecoration(
-        gradient: AppColors.forestGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
-              const Spacer(),
-              NotificationBell(
-                iconSize: 18,
-                color: AppColors.creamBright,
-                circleColor: AppColors.creamBright.withValues(alpha: 0.14),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: onLogout,
-                customBorder: const CircleBorder(),
-                child: Container(
-                  height: 38,
-                  width: 38,
-                  decoration: BoxDecoration(
-                    color: AppColors.creamBright.withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.logout_rounded,
-                    size: 18,
-                    color: AppColors.creamBright,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Barangay staff',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              height: 1.15,
-              color: AppColors.creamBright,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            name,
-            style: TextStyle(
-              fontSize: 11,
-              color: AppColors.creamBright.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 18),
-          _ApprovalCard(pendingFuture: pendingFuture, onTap: onReview),
-        ],
-      ),
-    );
-  }
-}
-
-/// The barangay's own queue, in the hero: accounts waiting for review.
-class _ApprovalCard extends StatelessWidget {
-  const _ApprovalCard({required this.pendingFuture, required this.onTap});
-
-  final Future<List<Map<String, dynamic>>> pendingFuture;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: AppColors.creamBright,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: pendingFuture,
-        builder: (context, snapshot) {
-          final count = snapshot.data?.length ?? 0;
-          final waiting = snapshot.connectionState == ConnectionState.waiting;
-          return Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Resident applications',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      waiting
-                          ? 'Checking the list…'
-                          : count == 0
-                              ? 'No one is waiting right now'
-                              : '$count resident'
-                                  '${count == 1 ? '' : 's'} waiting · check the ID',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.forest,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'Review',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.creamBright,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 9.5,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.1,
-        color: AppColors.inkMuted,
-      ),
-    );
-  }
-}
-
-class _QuickActions extends StatelessWidget {
-  const _QuickActions({
-    required this.onRequests,
-    required this.onVerification,
-    required this.onWaste,
-    required this.onPoints,
-    required this.onAnnouncements,
-    required this.onMemos,
-    required this.onEvents,
-    required this.onParticipation,
-    required this.onRecycling,
-    required this.onTickets,
-    required this.onWave2,
-  });
-
-  final VoidCallback onRequests;
-  final VoidCallback onVerification;
-  final VoidCallback onWaste;
-  final VoidCallback onPoints;
-  final VoidCallback onAnnouncements;
-  final VoidCallback onMemos;
-  final VoidCallback onEvents;
-  final VoidCallback onRecycling;
-  final VoidCallback onParticipation;
-  final VoidCallback onTickets;
-  final VoidCallback onWave2;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <Widget>[
-      _QuickTile(
-        icon: Icons.confirmation_number_outlined,
-        label: 'Trip tickets',
-        onTap: onTickets,
-      ),
-      _QuickTile(icon: Icons.layers_outlined, label: 'Wave 2', onTap: onWave2),
-      _MemoTile(onTap: onMemos),
-      _QuickTile(
-        icon: Icons.assignment_outlined,
-        label: 'Requests',
-        onTap: onRequests,
-      ),
-      _QuickTile(
-        icon: Icons.verified_user_outlined,
-        label: 'Verify',
-        onTap: onVerification,
-      ),
-      _QuickTile(
-        icon: Icons.inventory_2_outlined,
-        label: 'Waste',
-        onTap: onWaste,
-      ),
-      _QuickTile(
-        icon: Icons.add_location_alt_outlined,
-        label: 'Points',
-        onTap: onPoints,
-      ),
-      _QuickTile(
-        icon: Icons.campaign_outlined,
-        label: 'Notices',
-        onTap: onAnnouncements,
-      ),
-      _QuickTile(
-        icon: Icons.event_available_outlined,
-        label: 'Events',
-        onTap: onEvents,
-      ),
-      _QuickTile(
-        icon: Icons.groups_2_outlined,
-        label: 'Sign-ups',
-        onTap: onParticipation,
-      ),
-      _QuickTile(
-        icon: Icons.recycling_rounded,
-        label: 'Recycling',
-        onTap: onRecycling,
-      ),
-    ];
-
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 14,
-      crossAxisSpacing: 6,
-      childAspectRatio: 0.82,
-      children: [
-        for (var i = 0; i < items.length; i++)
-          FadeSlideIn(
-            index: i,
-            offset: 10,
-            child: HoverLift(child: items[i]),
-          ),
-      ],
-    );
-  }
-}
-
-/// Memos addressed to the barangay, with a live count of the unopened ones.
-class _MemoTile extends StatefulWidget {
-  const _MemoTile({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_MemoTile> createState() => _MemoTileState();
-}
-
-class _MemoTileState extends State<_MemoTile> {
-  // Held in state: the quick-action grid rebuilds on every incident update,
-  // and a fresh stream each time would resubscribe to Firestore.
-  final Stream<List<Memo>> _stream =
-      MemoService().watchForChannel('barangay');
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Memo>>(
-      stream: _stream,
-      builder: (context, snapshot) {
-        final unread = (snapshot.data ?? const <Memo>[])
-            .where((m) => m.status == MemoStatus.sent)
-            .length;
-        return _QuickTile(
-          icon: Icons.mail_outline_rounded,
-          label: 'Memos',
-          badge: unread,
-          onTap: widget.onTap,
-        );
-      },
-    );
-  }
-}
-
-class _QuickTile extends StatelessWidget {
-  const _QuickTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.badge = 0,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final int badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 56,
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.cream,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.sage.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      child: Center(
-                        child: Icon(icon, size: 20, color: AppColors.forest),
-                      ),
-                    ),
-                    if (badge > 0)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          height: 14,
-                          constraints: const BoxConstraints(minWidth: 14),
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          alignment: Alignment.center,
-                          decoration: const BoxDecoration(
-                            color: AppColors.danger,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text(
-                            badge > 9 ? '9+' : badge.toString(),
-                            style: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-              color: AppColors.inkMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Live queue of resident collection requests. New submissions appear here
-/// without a refresh, and tapping opens the staff desk to verify and assign.
-class _RequestsCard extends StatelessWidget {
-  const _RequestsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<CollectionRequest>>(
-      stream: CollectionRequestService().watchAll(),
-      builder: (context, snapshot) {
-        final all = snapshot.data ?? const <CollectionRequest>[];
-        final open = all
-            .where(
-              (r) =>
-                  r.status == RequestStatus.pending ||
-                  r.status == RequestStatus.underReview ||
-                  r.status == RequestStatus.approved,
-            )
-            .toList(growable: false);
-        final pending = open
-            .where((r) => r.status == RequestStatus.pending)
-            .length;
-
-        return InkWell(
-          onTap: () => context.go('/staff-requests'),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
-            decoration: BoxDecoration(
-              color: AppColors.creamBright,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: open.isEmpty
-                    ? AppColors.sage.withValues(alpha: 0.7)
-                    : AppColors.forest.withValues(alpha: 0.45),
-                width: open.isEmpty ? 1 : 1.2,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      height: 34,
-                      width: 34,
-                      decoration: const BoxDecoration(
-                        color: AppColors.mint,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.assignment_outlined,
-                        size: 17,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Collection requests',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            open.isEmpty
-                                ? 'Nothing waiting for review'
-                                : pending == 0
-                                ? '${open.length} in progress with staff'
-                                : '$pending waiting for review · ${open.length} open',
-                            style: const TextStyle(
-                              fontSize: 9,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (pending > 0)
-                      Container(
-                        height: 22,
-                        constraints: const BoxConstraints(minWidth: 22),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        alignment: Alignment.center,
-                        decoration: const BoxDecoration(
-                          color: AppColors.danger,
-                          borderRadius: BorderRadius.all(Radius.circular(11)),
-                        ),
-                        child: Text(
-                          '$pending',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: AppColors.moss,
-                    ),
-                  ],
-                ),
-                if (open.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  for (final request in open.take(3))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 7),
-                      child: Row(
-                        children: [
-                          Container(
-                            height: 6,
-                            width: 6,
-                            decoration: BoxDecoration(
-                              color: request.status.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              request.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            request.status.label,
-                            style: TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: request.status.color,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (open.length > 3)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        '+${open.length - 3} more',
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}

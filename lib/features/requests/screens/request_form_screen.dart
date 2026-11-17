@@ -15,6 +15,7 @@ import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
+import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/collection_request.dart';
 import '../services/collection_request_service.dart';
@@ -25,8 +26,13 @@ import '../services/collection_request_service.dart';
 /// checked by the barangay at sign-up. Firestore enforces the same rule (only
 /// approved residents, never crews).
 class RequestFormScreen extends StatefulWidget {
-  const RequestFormScreen({super.key, this.initialKind = RequestKind.resident});
+  const RequestFormScreen({
+    super.key,
+    this.initialKind = RequestKind.resident,
+  });
 
+  /// Wave 2: the resident is reporting garbage that was not collected. The
+  /// report still goes to the barangay first for verification.
   /// Opened as an uncollected-garbage (wave 2) report from the resident home.
   final RequestKind initialKind;
 
@@ -56,6 +62,11 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
     _location.text = user?.fullAddress == 'No address on file'
         ? ''
         : (user?.fullAddress ?? '');
+    if (_kind == RequestKind.uncollected) {
+      _title.text = 'Uncollected garbage';
+      _category = WasteCategory.residual;
+      _preferred = DateTime.now();
+    }
   }
 
   @override
@@ -168,9 +179,15 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
         child: Column(
           children: [
             AppPageHeader(
-              title: canSpecial ? 'Collection request' : 'Request a collection',
-              subtitle: canSpecial
-                  ? 'Standard or special pickup from your barangay.'
+              title: _kind == RequestKind.uncollected
+                  ? 'Report uncollected garbage'
+                  : canSpecial
+                  ? 'Collection request'
+                  : 'Request a collection',
+              subtitle: _kind == RequestKind.uncollected
+                  ? 'The barangay verifies the report before City Hall decides.'
+                  : canSpecial
+                  ? 'Standard or special pickup for government personnel.'
                   : 'Tell the barangay what needs to be collected.',
               onBack: () => context.go('/user'),
               actions: [
@@ -189,26 +206,43 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_kind == RequestKind.uncollected) ...[
+                        const EcoBanner(
+                          message:
+                              'This is a Wave 2 report. Barangay staff will '
+                              'verify it, then forward it to City Hall for a '
+                              'decision. You will be notified at every step.',
+                          icon: Icons.report_problem_outlined,
+                          color: AppColors.warning,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       if (canSpecial) ...[
                         _KindSelector(
                           kind: _kind,
                           onChanged: (value) => setState(() => _kind = value),
                         ),
                         const SizedBox(height: 14),
-                      ],
-                      if (_kind == RequestKind.uncollected) ...[
-                        const EcoBanner(
+                      ] else if (user?.isGovernment == true) ...[
+                        EcoBanner(
                           message:
-                              'Report garbage the truck missed on its regular run. Add a photo and the exact street or landmark. The barangay asks City Hall for a wave 2 pickup.',
-                          icon: Icons.report_gmailerrorred_outlined,
-                          color: Color(0xFFEF6C00),
+                              user?.verificationStatus ==
+                                  VerificationStatus.rejected
+                              ? 'Your government ID was rejected. Standard requests still work while you resubmit your document.'
+                              : 'Your government account is pending verification. Special collection requests unlock once staff approve your ID.',
+                          icon: Icons.badge_outlined,
+                          color:
+                              user?.verificationStatus ==
+                                  VerificationStatus.rejected
+                              ? AppColors.error
+                              : AppColors.warning,
                         ),
                         const SizedBox(height: 14),
                       ],
                       if (_kind == RequestKind.special) ...[
                         const EcoBanner(
                           message:
-                              'Special collection is for a big load that can’t wait for the next scheduled pickup, like old furniture or renovation debris. Barangay Batasan Hills reviews it and sets a schedule.',
+                              'Special collection is for government offices, schools and public facilities. Include the office name and authorized contact in the description.',
                           icon: Icons.info_outline_rounded,
                           color: Color(0xFF1565C0),
                         ),
@@ -509,15 +543,8 @@ class _KindSelector extends StatelessWidget {
             context,
             kind: RequestKind.special,
             label: 'Special',
-            icon: Icons.inventory_2_outlined,
-            subtitle: 'Big load',
-          ),
-          _option(
-            context,
-            kind: RequestKind.uncollected,
-            label: 'Missed',
-            icon: Icons.report_gmailerrorred_outlined,
-            subtitle: 'Wave 2',
+            icon: Icons.badge_outlined,
+            subtitle: 'Government',
           ),
         ],
       ),

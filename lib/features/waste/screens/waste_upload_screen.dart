@@ -95,8 +95,11 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle_rounded,
-              size: 34, color: AppColors.primary),
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            size: 34,
+            color: AppColors.primary,
+          ),
           title: const Text('Waste submitted'),
           content: const Text(
             'Barangay staff will validate your waste photos. '
@@ -127,7 +130,8 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
           children: [
             AppPageHeader(
               title: 'Upload waste',
-              subtitle: 'Send a photo so staff can validate and schedule pickup.',
+              subtitle:
+                  'Send a photo so staff can validate and schedule pickup.',
               onBack: () => context.go('/user'),
               actions: [
                 IconButton(
@@ -217,7 +221,7 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                               const Text(
                                 'Maximum of 3 photos reached.',
                                 style: TextStyle(
-                                  fontSize: 9.5,
+                                  fontSize: 11,
                                   color: AppColors.inkMuted,
                                 ),
                               ),
@@ -253,7 +257,7 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                             Text(
                               _category.hint,
                               style: const TextStyle(
-                                fontSize: 9,
+                                fontSize: 10.5,
                                 color: AppColors.inkMuted,
                               ),
                             ),
@@ -266,8 +270,8 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().isEmpty)
-                                      ? 'Please estimate the quantity'
-                                      : null,
+                                  ? 'Please estimate the quantity'
+                                  : null,
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
@@ -283,8 +287,8 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().length < 5)
-                                      ? 'Please describe the waste'
-                                      : null,
+                                  ? 'Please describe the waste'
+                                  : null,
                             ),
                           ],
                         ),
@@ -311,14 +315,16 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                               ),
                               validator: (value) =>
                                   (value == null || value.trim().isEmpty)
-                                      ? 'Please add the pickup location'
-                                      : null,
+                                  ? 'Please add the pickup location'
+                                  : null,
                             ),
                             const SizedBox(height: 8),
                             TextButton.icon(
                               onPressed: _useCurrentLocation,
-                              icon: const Icon(Icons.my_location_rounded,
-                                  size: 16),
+                              icon: const Icon(
+                                Icons.my_location_rounded,
+                                size: 16,
+                              ),
                               label: const Text('Use my current GPS location'),
                             ),
                           ],
@@ -347,7 +353,7 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
                         'Staff may reject unclear or mis-segregated waste.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 8.5,
+                          fontSize: 11,
                           height: 1.5,
                           color: AppColors.inkMuted,
                         ),

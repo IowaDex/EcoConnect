@@ -9,8 +9,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
@@ -23,22 +23,21 @@ import '../../events/services/event_service.dart';
 import '../../user/widgets/profile_sheet.dart';
 import '../models/community_post.dart';
 import '../services/community_post_service.dart';
-import '../../notifications/widgets/notification_bell.dart';
 
 enum CommunitySection { announcements, events, posts }
 
 extension on CommunitySection {
   String get label => switch (this) {
-        CommunitySection.announcements => 'Announcements',
-        CommunitySection.events => 'Events',
-        CommunitySection.posts => 'Posts',
-      };
+    CommunitySection.announcements => 'Announcements',
+    CommunitySection.events => 'Events',
+    CommunitySection.posts => 'Posts',
+  };
 
   IconData get icon => switch (this) {
-        CommunitySection.announcements => Icons.campaign_outlined,
-        CommunitySection.events => Icons.event_outlined,
-        CommunitySection.posts => Icons.forum_outlined,
-      };
+    CommunitySection.announcements => Icons.campaign_outlined,
+    CommunitySection.events => Icons.event_outlined,
+    CommunitySection.posts => Icons.forum_outlined,
+  };
 }
 
 /// Barangay feed with three sections: official announcements, community
@@ -67,23 +66,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 18, 4),
-              child: Row(
-                children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  const NotificationBell(
-                    iconSize: 19,
-                    color: AppColors.inkMuted,
-                  ),
-                  const SizedBox(width: 4),
-                  _HeaderAction(
-                    icon: Icons.edit_outlined,
-                    onTap: _openComposer,
-                  ),
-                ],
-              ),
+            RoleTopBar(
+              actions: [
+                _HeaderAction(icon: Icons.edit_outlined, onTap: _openComposer),
+              ],
             ),
             const Padding(
               padding: EdgeInsets.fromLTRB(22, 0, 22, 0),
@@ -588,8 +574,11 @@ class _EventCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.place_outlined,
-                  size: 12, color: AppColors.primary),
+              const Icon(
+                Icons.place_outlined,
+                size: 12,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -602,15 +591,15 @@ class _EventCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(Icons.schedule_rounded,
-                  size: 12, color: AppColors.inkMuted),
+              const Icon(
+                Icons.schedule_rounded,
+                size: 12,
+                color: AppColors.inkMuted,
+              ),
               const SizedBox(width: 4),
               Text(
                 timeLabel(event.startAt),
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -708,8 +697,11 @@ class _ComposerBar extends StatelessWidget {
               color: AppColors.lightGreen,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.edit_outlined,
-                size: 15, color: AppColors.forest),
+            child: const Icon(
+              Icons.edit_outlined,
+              size: 15,
+              color: AppColors.forest,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -717,10 +709,7 @@ class _ComposerBar extends StatelessWidget {
               'Share something with your barangay, $name…',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: AppColors.inkMuted,
-              ),
+              style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
             ),
           ),
         ],
@@ -795,7 +784,9 @@ class _PostCard extends StatelessWidget {
                           const SizedBox(width: 5),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 2),
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.mint,
                               borderRadius: BorderRadius.circular(7),
@@ -1001,9 +992,9 @@ class _ComposerSheetState extends State<_ComposerSheet> {
                   AppFeedback.error(context, 'Write something first.');
                   return;
                 }
-                Navigator.of(context).pop(
-                  _PostDraft(body: text, image: _image),
-                );
+                Navigator.of(
+                  context,
+                ).pop(_PostDraft(body: text, image: _image));
               },
               child: const Text('Post to community'),
             ),

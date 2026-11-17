@@ -34,13 +34,13 @@ class AnnouncementService {
         .where('status', isEqualTo: AnnouncementStatus.published.name)
         .snapshots()
         .map((snap) {
-      final items = snap.docs
-          .map((doc) => Announcement.fromDoc(doc.id, doc.data()))
-          .where((a) => a.isLive)
-          .toList();
-      items.sort(_newestFirst);
-      return items;
-    });
+          final items = snap.docs
+              .map((doc) => Announcement.fromDoc(doc.id, doc.data()))
+              .where((a) => a.isLive)
+              .toList();
+          items.sort(_newestFirst);
+          return items;
+        });
   }
 
   static int _newestFirst(Announcement a, Announcement b) {
@@ -88,6 +88,7 @@ class AnnouncementService {
           body: title.trim(),
           type: AppNotificationType.announcement,
           data: {'announcementId': ref.id},
+          dedupeKey: 'announcement_${ref.id}_published',
         );
       }
     } else {
@@ -111,6 +112,7 @@ class AnnouncementService {
         body: item.title,
         type: AppNotificationType.announcement,
         data: {'announcementId': id},
+        dedupeKey: 'announcement_${id}_published',
       );
     }
   }

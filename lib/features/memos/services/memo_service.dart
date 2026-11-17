@@ -9,23 +9,23 @@ enum MemoKind { memo, endorsement, announcement, manualRequest }
 
 extension MemoKindX on MemoKind {
   String get wireName => switch (this) {
-        MemoKind.memo => 'memo',
-        MemoKind.endorsement => 'endorsement',
-        MemoKind.announcement => 'announcement',
-        MemoKind.manualRequest => 'manualRequest',
-      };
+    MemoKind.memo => 'memo',
+    MemoKind.endorsement => 'endorsement',
+    MemoKind.announcement => 'announcement',
+    MemoKind.manualRequest => 'manualRequest',
+  };
 
   String get label => switch (this) {
-        MemoKind.memo => 'Memo',
-        MemoKind.endorsement => 'Endorsement',
-        MemoKind.announcement => 'Announcement',
-        MemoKind.manualRequest => 'Manual request',
-      };
+    MemoKind.memo => 'Memo',
+    MemoKind.endorsement => 'Endorsement',
+    MemoKind.announcement => 'Announcement',
+    MemoKind.manualRequest => 'Manual request',
+  };
 
   static MemoKind fromName(String? name) => MemoKind.values.firstWhere(
-        (m) => m.wireName == name,
-        orElse: () => MemoKind.memo,
-      );
+    (m) => m.wireName == name,
+    orElse: () => MemoKind.memo,
+  );
 }
 
 /// Where a memo is in its life.
@@ -37,23 +37,23 @@ enum MemoStatus { sent, received, acknowledged }
 
 extension MemoStatusX on MemoStatus {
   String get wireName => switch (this) {
-        MemoStatus.sent => 'sent',
-        MemoStatus.received => 'received',
-        MemoStatus.acknowledged => 'acknowledged',
-      };
+    MemoStatus.sent => 'sent',
+    MemoStatus.received => 'received',
+    MemoStatus.acknowledged => 'acknowledged',
+  };
 
   String get label => switch (this) {
-        MemoStatus.sent => 'Sent',
-        MemoStatus.received => 'Received',
-        MemoStatus.acknowledged => 'Signed',
-      };
+    MemoStatus.sent => 'Sent',
+    MemoStatus.received => 'Received',
+    MemoStatus.acknowledged => 'Signed',
+  };
 
   bool get isFinal => this == MemoStatus.acknowledged;
 
   static MemoStatus fromName(String? name) => MemoStatus.values.firstWhere(
-        (s) => s.wireName == name,
-        orElse: () => MemoStatus.sent,
-      );
+    (s) => s.wireName == name,
+    orElse: () => MemoStatus.sent,
+  );
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -112,47 +112,47 @@ class Memo {
   bool get isEditable => status == MemoStatus.sent;
 
   String get recipientLabel => switch (toChannel) {
-        'iswim' => 'Iswim',
-        'barangay' => 'Barangay',
-        _ => 'City Hall',
-      };
+    'iswim' => 'Iswim',
+    'barangay' => 'Barangay',
+    _ => 'City Hall',
+  };
 
   Map<String, dynamic> toMap() => {
-        'kind': kind.wireName,
-        'subject': subject,
-        'body': body,
-        'fromName': fromName,
-        'fromRole': fromRole,
-        'fromUid': fromUid,
-        'toChannel': toChannel,
-        'status': MemoStatus.sent.wireName,
-        if (attachment != null) 'attachment': attachment!.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+    'kind': kind.wireName,
+    'subject': subject,
+    'body': body,
+    'fromName': fromName,
+    'fromRole': fromRole,
+    'fromUid': fromUid,
+    'toChannel': toChannel,
+    'status': MemoStatus.sent.wireName,
+    if (attachment != null) 'attachment': attachment!.toMap(),
+    'createdAt': FieldValue.serverTimestamp(),
+  };
 
   static Memo? fromDoc(String id, Map<String, dynamic> data) => Memo(
-        id: id,
-        kind: MemoKindX.fromName(data['kind'] as String?),
-        subject: data['subject'] as String? ?? '(no subject)',
-        body: data['body'] as String? ?? '',
-        fromName: data['fromName'] as String? ?? '',
-        fromRole: data['fromRole'] as String? ?? '',
-        fromUid: data['fromUid'] as String? ?? '',
-        toChannel: data['toChannel'] as String? ?? 'cityHall',
-        // Records written before attachments were typed stored a bare data URL
-        // in `photo`; read it as an image so old memos keep their file.
-        attachment: UploadPayload.fromMap(data['attachment']) ??
-            _legacyPhoto(data['photo']),
-        status: MemoStatusX.fromName(data['status'] as String?),
-        createdAt: _asDate(data['createdAt']),
-        receivedAt: _asDate(data['receivedAt']),
-        acknowledgedAt: _asDate(data['acknowledgedAt']),
-        acknowledgedByUid: data['acknowledgedByUid'] as String?,
-        acknowledgedByName: data['acknowledgedByName'] as String?,
-        acknowledgementSignature:
-            data['acknowledgementSignature'] as String?,
-        editedAt: _asDate(data['editedAt']),
-      );
+    id: id,
+    kind: MemoKindX.fromName(data['kind'] as String?),
+    subject: data['subject'] as String? ?? '(no subject)',
+    body: data['body'] as String? ?? '',
+    fromName: data['fromName'] as String? ?? '',
+    fromRole: data['fromRole'] as String? ?? '',
+    fromUid: data['fromUid'] as String? ?? '',
+    toChannel: data['toChannel'] as String? ?? 'cityHall',
+    // Records written before attachments were typed stored a bare data URL
+    // in `photo`; read it as an image so old memos keep their file.
+    attachment:
+        UploadPayload.fromMap(data['attachment']) ??
+        _legacyPhoto(data['photo']),
+    status: MemoStatusX.fromName(data['status'] as String?),
+    createdAt: _asDate(data['createdAt']),
+    receivedAt: _asDate(data['receivedAt']),
+    acknowledgedAt: _asDate(data['acknowledgedAt']),
+    acknowledgedByUid: data['acknowledgedByUid'] as String?,
+    acknowledgedByName: data['acknowledgedByName'] as String?,
+    acknowledgementSignature: data['acknowledgementSignature'] as String?,
+    editedAt: _asDate(data['editedAt']),
+  );
 
   static UploadPayload? _legacyPhoto(dynamic raw) {
     if (raw is! String || raw.isEmpty) return null;
@@ -163,6 +163,21 @@ class Memo {
       bytes: 0,
     );
   }
+}
+
+/// True when [query] appears in anything a desk clerk would look a memo up
+/// by: the subject, the body, the sender, the receiving desk, the kind or the
+/// status. An empty query matches everything.
+bool memoMatchesQuery(Memo memo, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  return memo.subject.toLowerCase().contains(q) ||
+      memo.body.toLowerCase().contains(q) ||
+      memo.fromName.toLowerCase().contains(q) ||
+      memo.recipientLabel.toLowerCase().contains(q) ||
+      memo.kind.label.toLowerCase().contains(q) ||
+      memo.status.label.toLowerCase().contains(q) ||
+      (memo.acknowledgedByName ?? '').toLowerCase().contains(q);
 }
 
 class MemoException implements Exception {
@@ -212,8 +227,7 @@ class MemoService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final NotificationService _notifications = NotificationService();
 
-  CollectionReference<Map<String, dynamic>> get _col =>
-      _db.collection('memos');
+  CollectionReference<Map<String, dynamic>> get _col => _db.collection('memos');
 
   /// Memos addressed to one desk, newest first.
   Stream<List<Memo>> watchForChannel(String channel, {int limit = 60}) => _col
@@ -247,9 +261,10 @@ class MemoService {
         return memos;
       });
 
-  Stream<Memo?> watchOne(String id) => _col.doc(id).snapshots().map(
-        (doc) => doc.exists ? Memo.fromDoc(doc.id, doc.data()!) : null,
-      );
+  Stream<Memo?> watchOne(String id) => _col
+      .doc(id)
+      .snapshots()
+      .map((doc) => doc.exists ? Memo.fromDoc(doc.id, doc.data()!) : null);
 
   DocumentReference<Map<String, dynamic>> get _officerRef =>
       _db.collection('settings').doc('districtOfficer');
@@ -268,10 +283,12 @@ class MemoService {
       .orderBy('sentAt', descending: true)
       .limit(40)
       .snapshots()
-      .map((snap) => snap.docs
-          .map((doc) => EmailLogEntry.fromDoc(doc.id, doc.data()))
-          .whereType<EmailLogEntry>()
-          .toList());
+      .map(
+        (snap) => snap.docs
+            .map((doc) => EmailLogEntry.fromDoc(doc.id, doc.data()))
+            .whereType<EmailLogEntry>()
+            .toList(),
+      );
 
   /// Writes the memo, then alerts the desk it was addressed to. Returns the new
   /// document id so the caller can open the record it just created.
@@ -353,7 +370,9 @@ class MemoService {
       throw const MemoException('This memo has already been signed.');
     }
     if (data['toChannel'] != 'cityHall') {
-      throw const MemoException('Only City Hall memos are signed at this desk.');
+      throw const MemoException(
+        'Only City Hall memos are signed at this desk.',
+      );
     }
 
     await _col.doc(id).update({
@@ -372,6 +391,7 @@ class MemoService {
         body: '${data['subject'] ?? 'Your memo'} was signed by $byName.',
         type: AppNotificationType.account,
         data: {'kind': 'memo', 'memoId': id},
+        dedupeKey: 'memo_${id}_signed',
       );
     }
   }
@@ -386,8 +406,7 @@ class MemoService {
     final doc = await _col.doc(id).get();
     final data = doc.data();
     if (data == null) throw const MemoException('This memo no longer exists.');
-    if (data['status'] != null &&
-        data['status'] != MemoStatus.sent.wireName) {
+    if (data['status'] != null && data['status'] != MemoStatus.sent.wireName) {
       throw const MemoException(
         'This memo has already been received and can no longer be edited.',
       );
@@ -414,6 +433,7 @@ class MemoService {
           body: body,
           type: AppNotificationType.system,
           data: data,
+          dedupeKey: 'memo_${memoId}_iswim',
         );
       case 'barangay':
         await _notifications.notifyStaff(
@@ -421,6 +441,7 @@ class MemoService {
           body: body,
           type: AppNotificationType.system,
           data: data,
+          dedupeKey: 'memo_${memoId}_barangay',
         );
       default:
         await _notifications.notifyCityHall(
@@ -428,6 +449,7 @@ class MemoService {
           body: body,
           type: AppNotificationType.system,
           data: data,
+          dedupeKey: 'memo_${memoId}_cityHall',
         );
     }
   }

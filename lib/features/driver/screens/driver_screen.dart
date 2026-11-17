@@ -13,8 +13,8 @@ import '../../location/providers/location_provider.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/network/network_status.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/confirm_logout.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
@@ -29,13 +29,14 @@ import '../models/truck_crew_role.dart';
 import '../providers/truck_provider.dart';
 import '../services/driver_session_service.dart';
 import '../services/trip_guard_service.dart';
+import '../../dashboard/widgets/role_hero.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../widgets/driver_nav_bar.dart';
 import '../widgets/truck_trip_header.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
 import '../../tickets/widgets/ticket_card.dart';
 import '../../../core/widgets/status_badge.dart';
-import '../../notifications/widgets/notification_bell.dart';
 
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
@@ -110,8 +111,11 @@ class _DriverScreenState extends State<DriverScreen> {
     if (role == TruckCrewRole.driver) {
       // The registry first: Iswim may have added or re-plated the truck since
       // the app was built. The mock roster is only the seed data.
-      final registered = await FleetService().findTruck(account?.assignedTruckId);
-      final designated = registered ??
+      final registered = await FleetService().findTruck(
+        account?.assignedTruckId,
+      );
+      final designated =
+          registered ??
           truckForDriver(
             assignedTruckId: account?.assignedTruckId,
             driverName: account?.displayName,
@@ -146,74 +150,73 @@ class _DriverScreenState extends State<DriverScreen> {
 
     // Mirror the server state so a reload never desyncs the dashboard from
     // what residents are actually seeing.
-    _routeSub = _routeService.watchDriverRoute(uid).listen(
-      (route) {
-        if (!mounted) return;
-        final status = route?.status ?? RouteStatus.idle;
-        setState(() {
-          _status = status;
-          _startedAt = route?.startedAt;
-          _activePlanId = route?.planId;
-          if (route?.geofenceLatitude != null &&
-              route?.geofenceLongitude != null) {
-            _guardCenter = (
-              lat: route!.geofenceLatitude!,
-              lng: route.geofenceLongitude!,
-            );
-          }
-        });
-        if (status == RouteStatus.inTransit || status == RouteStatus.delayed) {
-          _checkLocationHealth();
-          _evaluateGeofence();
-        }
-      },
-      onError: (_) {
-        if (mounted) setState(() => _serviceUnavailable = true);
-      },
-    );
+    _routeSub = _routeService
+        .watchDriverRoute(uid)
+        .listen(
+          (route) {
+            if (!mounted) return;
+            final status = route?.status ?? RouteStatus.idle;
+            setState(() {
+              _status = status;
+              _startedAt = route?.startedAt;
+              _activePlanId = route?.planId;
+              if (route?.geofenceLatitude != null &&
+                  route?.geofenceLongitude != null) {
+                _guardCenter = (
+                  lat: route!.geofenceLatitude!,
+                  lng: route.geofenceLongitude!,
+                );
+              }
+            });
+            if (status == RouteStatus.inTransit ||
+                status == RouteStatus.delayed) {
+              _checkLocationHealth();
+              _evaluateGeofence();
+            }
+          },
+          onError: (_) {
+            if (mounted) setState(() => _serviceUnavailable = true);
+          },
+        );
 
     // The trip ticket is the gate: accepted tickets unlock Start trip, and a
     // fresh ticket sits here until the crew accepts or declines it.
-    _ticketSub = _ticketService.watchForDriver(uid).listen(
-      (tickets) {
-        if (!mounted) return;
-        TripTicket? active;
+    _ticketSub = _ticketService.watchForDriver(uid).listen((tickets) {
+      if (!mounted) return;
+      TripTicket? active;
+      for (final ticket in tickets) {
+        if (ticket.canStartTrip) {
+          active = ticket;
+          break;
+        }
+      }
+      if (active == null) {
         for (final ticket in tickets) {
-          if (ticket.canStartTrip) {
+          if (ticket.needsDriver) {
             active = ticket;
             break;
           }
         }
-        if (active == null) {
-          for (final ticket in tickets) {
-            if (ticket.needsDriver) {
-              active = ticket;
-              break;
-            }
-          }
-        }
-        setState(() => _ticket = active);
-      },
-      onError: (_) {},
-    );
+      }
+      setState(() => _ticket = active);
+    }, onError: (_) {});
 
     // The assignment is the source of truth for *what* the driver may start.
-    _planSub = _routeService.watchTodayPlan(uid).listen(
-      (plan) {
-        if (mounted) setState(() => _plan = plan);
-      },
-      onError: (_) {
-        if (mounted) setState(() => _serviceUnavailable = true);
-      },
-    );
+    _planSub = _routeService
+        .watchTodayPlan(uid)
+        .listen(
+          (plan) {
+            if (mounted) setState(() => _plan = plan);
+          },
+          onError: (_) {
+            if (mounted) setState(() => _serviceUnavailable = true);
+          },
+        );
 
     // Stops staff pin for this driver, shown even before a run starts.
-    _pointsSub = _pointService.watchForDriver(uid).listen(
-      (points) {
-        if (mounted) setState(() => _assignedPoints = points);
-      },
-      onError: (_) {},
-    );
+    _pointsSub = _pointService.watchForDriver(uid).listen((points) {
+      if (mounted) setState(() => _assignedPoints = points);
+    }, onError: (_) {});
 
     // Keeps the "running for…" clock ticking without another server read.
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -395,7 +398,7 @@ class _DriverScreenState extends State<DriverScreen> {
       _toast(
         ticket == null
             ? 'No trip ticket yet. Iswim creates it — wait for the '
-                'notification.'
+                  'notification.'
             : 'Accept the trip ticket before starting the trip.',
         isError: true,
       );
@@ -618,8 +621,11 @@ class _DriverScreenState extends State<DriverScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.pause_circle_outline_rounded,
-            size: 30, color: AppColors.warning),
+        icon: const Icon(
+          Icons.pause_circle_outline_rounded,
+          size: 30,
+          color: AppColors.warning,
+        ),
         title: const Text('Pause this route?'),
         content: const Text(
           'Progress tracking stops and residents see that you are paused. '
@@ -777,13 +783,14 @@ class _DriverScreenState extends State<DriverScreen> {
 
   void _fail(String action, Object error) {
     final raw = error.toString();
-    final denied = raw.contains('permission-denied') ||
+    final denied =
+        raw.contains('permission-denied') ||
         raw.contains('PERMISSION_DENIED') ||
         raw.contains('insufficient permissions');
     _toast(
       denied
           ? 'Could not $action: Firestore permissions are blocking writes. '
-              'Ask barangay staff to publish the updated rules.'
+                'Ask barangay staff to publish the updated rules.'
           : 'Could not $action: $raw',
       isError: true,
     );
@@ -801,7 +808,8 @@ class _DriverScreenState extends State<DriverScreen> {
       );
   }
 
-  /// Back to the truck list, so the crew can switch plates without signing out.
+  /// Back to the truck list, so the crew can switch plates without signing
+  /// out.
   void _back() {
     if (context.canPop()) {
       context.pop();
@@ -813,7 +821,8 @@ class _DriverScreenState extends State<DriverScreen> {
   Future<void> _logout() async {
     final confirmed = await confirmLogout(
       context,
-      message: 'If your route is running, end it first so residents stop '
+      message:
+          'If your route is running, end it first so residents stop '
           'seeing your location.',
     );
     if (!confirmed) return;
@@ -844,267 +853,237 @@ class _DriverScreenState extends State<DriverScreen> {
     final trucks = context.watch<TruckProvider>();
     final truck = trucks.selectedTruck;
     final user = auth.currentUser;
-    final role = user?.crewRole ?? TruckCrewRole.driver;
-    // The guide picks the plate, so only the guide gets a way back to the list.
-    // A driver is already on the truck the barangay assigned them.
-    final showBack = role == TruckCrewRole.guide;
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  if (showBack) ...[
-                    InkWell(
-                      onTap: _back,
-                      borderRadius: BorderRadius.circular(20),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          size: 16,
-                          color: AppColors.inkMuted,
+        child: Column(
+          children: [
+            RoleTopBar(onLogout: _logout),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // The guide picks the plate, so only the guide gets a way
+                    // back to the list. A driver is already on the truck the
+                    // barangay assigned them.
+                    if (user?.crewRole == TruckCrewRole.guide) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: InkWell(
+                          onTap: _back,
+                          borderRadius: BorderRadius.circular(20),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              size: 16,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 6),
+                    ],
+                    RoleHero(
+                      icon: Icons.local_shipping_rounded,
+                      eyebrow:
+                          '${(user?.crewRole ?? TruckCrewRole.driver).label.toUpperCase()} · BATASAN HILLS',
+                      greeting: greeting(),
+                      title: user?.displayName ?? 'Collector',
+                      subtitle: truck == null
+                          ? 'No truck paired yet. ISWIM assigns the plate.'
+                          : '${truck.plateNumber} · ${truck.wheelerLabel}',
+                      chip: _status == RouteStatus.idle
+                          ? const RoleChip(
+                              label: 'Not started',
+                              icon: Icons.radio_button_unchecked_rounded,
+                            )
+                          : RoleChip(
+                              label: _status.label,
+                              icon: Icons.circle,
+                              tone: _status.color,
+                            ),
                     ),
-                    const SizedBox(width: 6),
-                  ],
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  const NotificationBell(
-                    iconSize: 19,
-                    color: AppColors.inkMuted,
-                  ),
-                  const SizedBox(width: 2),
-                  InkWell(
-                    onTap: _logout,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.logout_rounded,
-                          size: 18, color: AppColors.inkMuted),
+                    const SizedBox(height: 16),
+                    if (_ticket != null) ...[
+                      TicketCard(
+                        ticket: _ticket!,
+                        trailingLabel: _ticket!.needsDriver
+                            ? 'Accept muna'
+                            : null,
+                        onTap: () => context.push('/tickets/${_ticket!.id}'),
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.cream,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppColors.sage),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.confirmation_number_outlined,
+                              size: 15,
+                              color: AppColors.inkMuted,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'No trip ticket yet. Iswim creates it — you cannot '
+                                'start the trip without one.',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  height: 1.45,
+                                  color: AppColors.inkMuted,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => context.push('/driver-tickets'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.forest,
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 26),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'View',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _NextDutyReminder(driverId: user?.uid ?? ''),
+                    if (truck != null)
+                      TruckTripHeader(
+                        truck: truck,
+                        role: user?.crewRole ?? TruckCrewRole.driver,
+                        status: _status,
+                        startedAt: _startedAt,
+                        busy: _busy,
+                        metresFromCenter: _metresFromCenter,
+                        connectionLost: _connectionLost,
+                        onStart: _activate,
+                        onPause: _pauseRoute,
+                        onResume: _resumeRoute,
+                        onEnd: _endRoute,
+                      ),
+                    const SizedBox(height: 14),
+                    if (_serviceUnavailable) ...[
+                      const _ServiceWarning(),
+                      const SizedBox(height: 14),
+                    ],
+                    if (_isRunning && _connectionLost) ...[
+                      const EcoBanner(
+                        message:
+                            'No wifi or data. The truck is off the live map — '
+                            'barangay staff were alerted the moment you went offline.',
+                        icon: Icons.wifi_off_rounded,
+                        color: AppColors.error,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    if (_isRunning && _outsideRadius) ...[
+                      EcoBanner(
+                        message: _metresFromCenter == null
+                            ? 'You are outside your assigned radius. Move back '
+                                  'inside the ${TripGuardService.radiusMeters.round()} m '
+                                  'zone.'
+                            : 'You are ${_metresFromCenter!.round()} m from the zone '
+                                  'centre — ${(_metresFromCenter! - TripGuardService.radiusMeters).round()} m '
+                                  'past the ${TripGuardService.radiusMeters.round()} m '
+                                  'limit. Barangay staff were alerted.',
+                        icon: Icons.wrong_location_rounded,
+                        color: AppColors.warning,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    if (_isRunning && _locationState.needsAttention) ...[
+                      _LocationWarning(
+                        state: _locationState,
+                        onEnable: () async {
+                          final location = context.read<LocationProvider>();
+                          final opened =
+                              _locationState == DriverLocationState.permission
+                              ? await location.openAppSettings()
+                              : await location.openLocationSettings();
+                          if (!opened && mounted) {
+                            _toast(
+                              'Open your device settings and allow location for EcoConnect.',
+                            );
+                          }
+                          await _checkLocationHealth();
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    _AssignmentCard(
+                      plan: _plan,
+                      status: _status,
+                      startedAt: _startedAt,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Who is holding the device. Both roles run the same dashboard,
-              // so the pill and the account under it are the only difference.
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.mint,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          role.icon,
-                          size: 13,
+                    if (_plan != null) ...[
+                      const SizedBox(height: 14),
+                      _RouteStopsCard(
+                        plan: _plan!,
+                        truck: location.hasLocation
+                            ? LatLng(location.latitude!, location.longitude!)
+                            : null,
+                      ),
+                    ] else if (_assignedPoints.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      _AssignedStopsCard(points: _assignedPoints),
+                    ],
+                    const SizedBox(height: 14),
+                    const _DriverPickupsCard(),
+                    if (_isLive) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Update status',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.forest,
                         ),
-                        const SizedBox(width: 7),
-                        Text(
-                          role.label,
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.forest,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                user?.email ?? user?.displayName ?? 'Collector',
-                style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-              ),
-              const SizedBox(height: 14),
-              if (_ticket != null) ...[
-                TicketCard(
-                  ticket: _ticket!,
-                  trailingLabel:
-                      _ticket!.needsDriver ? 'Accept muna' : null,
-                  onTap: () => context.push('/tickets/${_ticket!.id}'),
-                ),
-                const SizedBox(height: 12),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.cream,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.sage),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.confirmation_number_outlined,
-                          size: 15, color: AppColors.inkMuted),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'No trip ticket yet. Iswim creates it — you cannot '
-                          'start the trip without one.',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            height: 1.45,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
                       ),
-                      TextButton(
-                        onPressed: () => context.push('/driver-tickets'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.forest,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 26),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          'View',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final status in [
+                            RouteStatus.inTransit,
+                            RouteStatus.delayed,
+                          ])
+                            _StatusChip(
+                              label: status.label,
+                              selected: _status == status,
+                              color: status.color,
+                              onTap: () => _changeStatus(status),
+                            ),
+                        ],
                       ),
                     ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (truck != null)
-                TruckTripHeader(
-                  truck: truck,
-                  role: role,
-                  status: _status,
-                  startedAt: _startedAt,
-                  busy: _busy,
-                  metresFromCenter: _metresFromCenter,
-                  connectionLost: _connectionLost,
-                  onStart: _activate,
-                  onPause: _pauseRoute,
-                  onResume: _resumeRoute,
-                  onEnd: _endRoute,
-                  canStart: _ticket != null,
-                ),
-              const SizedBox(height: 14),
-              if (_serviceUnavailable) ...[
-                const _ServiceWarning(),
-                const SizedBox(height: 14),
-              ],
-              if (_isRunning && _connectionLost) ...[
-                const EcoBanner(
-                  message: 'No wifi or data. The truck is off the live map — '
-                      'barangay staff were alerted the moment you went offline.',
-                  icon: Icons.wifi_off_rounded,
-                  color: AppColors.error,
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (_isRunning && _outsideRadius) ...[
-                EcoBanner(
-                  message: _metresFromCenter == null
-                      ? 'You are outside your assigned radius. Move back '
-                          'inside the ${TripGuardService.radiusMeters.round()} m '
-                          'zone.'
-                      : 'You are ${_metresFromCenter!.round()} m from the zone '
-                          'centre — ${(_metresFromCenter! - TripGuardService.radiusMeters).round()} m '
-                          'past the ${TripGuardService.radiusMeters.round()} m '
-                          'limit. Barangay staff were alerted.',
-                  icon: Icons.wrong_location_rounded,
-                  color: AppColors.warning,
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (_isRunning && _locationState.needsAttention) ...[
-                _LocationWarning(
-                  state: _locationState,
-                  onEnable: () async {
-                    final location = context.read<LocationProvider>();
-                    final opened = _locationState ==
-                            DriverLocationState.permission
-                        ? await location.openAppSettings()
-                        : await location.openLocationSettings();
-                    if (!opened && mounted) {
-                      _toast(
-                        'Open your device settings and allow location for EcoConnect.',
-                      );
-                    }
-                    await _checkLocationHealth();
-                  },
-                ),
-                const SizedBox(height: 14),
-              ],
-              _AssignmentCard(
-                plan: _plan,
-                status: _status,
-                startedAt: _startedAt,
-              ),
-              if (_plan != null) ...[
-                const SizedBox(height: 14),
-                _RouteStopsCard(
-                  plan: _plan!,
-                  truck: location.hasLocation
-                      ? LatLng(location.latitude!, location.longitude!)
-                      : null,
-                ),
-              ] else if (_assignedPoints.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                _AssignedStopsCard(points: _assignedPoints),
-              ],
-              const SizedBox(height: 14),
-              const _DriverPickupsCard(),
-              if (_isLive) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Update status',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.forest,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final status in [
-                      RouteStatus.inTransit,
-                      RouteStatus.delayed,
-                    ])
-                      _StatusChip(
-                        label: status.label,
-                        selected: _status == status,
-                        color: status.color,
-                        onTap: () => _changeStatus(status),
-                      ),
+                    const SizedBox(height: 20),
+                    _LocationCard(location: location, onFix: _fixLocation),
+                    const SizedBox(height: 16),
+                    const _TipCard(),
                   ],
                 ),
-              ],
-              const SizedBox(height: 20),
-              _LocationCard(
-                location: location,
-                onFix: _fixLocation,
               ),
-              const SizedBox(height: 16),
-              const _TipCard(),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: const DriverNavBar(currentIndex: 0),
@@ -1114,6 +1093,101 @@ class _DriverScreenState extends State<DriverScreen> {
 
 /// Explains exactly why tracking stopped. Never accuses the driver: the
 /// wording mirrors what the device reported.
+/// A quiet reminder for the next duty that is not today, so a crew that opens
+/// the app the evening before already knows where to report.
+class _NextDutyReminder extends StatelessWidget {
+  const _NextDutyReminder({required this.driverId});
+
+  final String driverId;
+
+  String _dayLabel(String key) {
+    final parsed = DateTime.tryParse(key);
+    if (parsed == null) return key;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(parsed.year, parsed.month, parsed.day);
+    if (day == today.add(const Duration(days: 1))) return 'Tomorrow';
+    return routeDateLabel(day);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (driverId.isEmpty) return const SizedBox.shrink();
+    return StreamBuilder<List<RoutePlan>>(
+      stream: RouteService().watchUpcomingPlans(driverId),
+      builder: (context, snapshot) {
+        final plans = snapshot.data ?? const <RoutePlan>[];
+        final todayKey = routeDateKey(DateTime.now());
+        RoutePlan? next;
+        for (final plan in plans) {
+          if (plan.date.compareTo(todayKey) <= 0) continue;
+          if (plan.status != RoutePlanStatus.scheduled) continue;
+          next = plan;
+          break;
+        }
+        if (next == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Material(
+            color: AppColors.lightGreen,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: () => context.push('/driver-routes'),
+              borderRadius: BorderRadius.circular(14),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.event_available_rounded,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Next duty · ${_dayLabel(next.date)}',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.darkGreen,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${next.windowStart}–${next.windowEnd} · '
+                            '${next.zone.isEmpty ? 'Zone to be confirmed' : next.zone}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              height: 1.4,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: AppColors.moss,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _LocationWarning extends StatelessWidget {
   const _LocationWarning({required this.state, required this.onEnable});
 
@@ -1121,20 +1195,20 @@ class _LocationWarning extends StatelessWidget {
   final Future<void> Function() onEnable;
 
   String get _message => switch (state) {
-        DriverLocationState.disabled =>
-          'Location tracking disabled. Please enable your device location to '
-              'continue your assigned collection route.',
-        DriverLocationState.permission =>
-          'Location permission is off. Allow EcoConnect to access your location '
-              'so barangay staff can monitor the route.',
-        DriverLocationState.offline =>
-          'You are offline. Barangay staff can see your last known position; '
-              'tracking resumes automatically when you reconnect.',
-        DriverLocationState.unknown =>
-          'Your location is temporarily unavailable. We will keep trying and '
-              'resume tracking automatically.',
-        DriverLocationState.ok => '',
-      };
+    DriverLocationState.disabled =>
+      'Location tracking disabled. Please enable your device location to '
+          'continue your assigned collection route.',
+    DriverLocationState.permission =>
+      'Location permission is off. Allow EcoConnect to access your location '
+          'so barangay staff can monitor the route.',
+    DriverLocationState.offline =>
+      'You are offline. Barangay staff can see your last known position; '
+          'tracking resumes automatically when you reconnect.',
+    DriverLocationState.unknown =>
+      'Your location is temporarily unavailable. We will keep trying and '
+          'resume tracking automatically.',
+    DriverLocationState.ok => '',
+  };
 
   bool get _canOpenSettings =>
       state == DriverLocationState.disabled ||
@@ -1167,8 +1241,11 @@ class _ServiceWarning extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded,
-              size: 16, color: Color(0xFFB26A00)),
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 16,
+            color: Color(0xFFB26A00),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -1208,10 +1285,12 @@ class _AssignmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badgeLabel =
-        _isRunning ? status.label : plan?.status.label ?? 'Not scheduled';
-    final badgeColor =
-        _isRunning ? status.color : plan?.status.color ?? Colors.white70;
+    final badgeLabel = _isRunning
+        ? status.label
+        : plan?.status.label ?? 'Not scheduled';
+    final badgeColor = _isRunning
+        ? status.color
+        : plan?.status.color ?? Colors.white70;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1225,8 +1304,10 @@ class _AssignmentCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: badgeColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
@@ -1267,22 +1348,32 @@ class _AssignmentCard extends StatelessWidget {
           if (plan != null)
             Row(
               children: [
-                const Icon(Icons.schedule_rounded,
-                    size: 13, color: Color(0xB3FFFFFF)),
+                const Icon(
+                  Icons.schedule_rounded,
+                  size: 13,
+                  color: Color(0xB3FFFFFF),
+                ),
                 const SizedBox(width: 5),
                 Text(
                   plan!.windowLabel,
-                  style:
-                      const TextStyle(fontSize: 10, color: Color(0xCCFFFFFF)),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xCCFFFFFF),
+                  ),
                 ),
                 const SizedBox(width: 12),
-                const Icon(Icons.place_outlined,
-                    size: 13, color: Color(0xB3FFFFFF)),
+                const Icon(
+                  Icons.place_outlined,
+                  size: 13,
+                  color: Color(0xB3FFFFFF),
+                ),
                 const SizedBox(width: 5),
                 Text(
                   plan!.stopsLabel,
-                  style:
-                      const TextStyle(fontSize: 10, color: Color(0xCCFFFFFF)),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xCCFFFFFF),
+                  ),
                 ),
               ],
             )
@@ -1355,8 +1446,11 @@ class _AssignedStopsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.alt_route_rounded,
-                  size: 16, color: AppColors.forest),
+              const Icon(
+                Icons.alt_route_rounded,
+                size: 16,
+                color: AppColors.forest,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Assigned stops',
@@ -1369,10 +1463,7 @@ class _AssignedStopsCard extends StatelessWidget {
               const Spacer(),
               Text(
                 '${stops.length} stop${stops.length == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -1384,19 +1475,13 @@ class _AssignedStopsCard extends StatelessWidget {
                 '${i + 1}. ${preview[i].name}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: AppColors.forest,
-                ),
+                style: const TextStyle(fontSize: 10, color: AppColors.forest),
               ),
             ),
           if (stops.length > preview.length)
             Text(
               '+${stops.length - preview.length} more',
-              style: const TextStyle(
-                fontSize: 9,
-                color: AppColors.inkMuted,
-              ),
+              style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
             ),
           const SizedBox(height: 10),
           Row(
@@ -1405,10 +1490,8 @@ class _AssignedStopsCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => RouteMapScreen(
-                        title: 'Assigned stops',
-                        stops: stops,
-                      ),
+                      builder: (_) =>
+                          RouteMapScreen(title: 'Assigned stops', stops: stops),
                     ),
                   ),
                   icon: const Icon(Icons.map_outlined, size: 15),
@@ -1437,11 +1520,8 @@ class _AssignedStopsCard extends StatelessWidget {
     if (!stops.any((stop) => stop.hasCoordinates)) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => RouteMapScreen(
-          title: 'Directions',
-          stops: stops,
-          openSteps: true,
-        ),
+        builder: (_) =>
+            RouteMapScreen(title: 'Directions', stops: stops, openSteps: true),
       ),
     );
   }
@@ -1467,8 +1547,11 @@ class _RouteStopsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.alt_route_rounded,
-                  size: 16, color: AppColors.forest),
+              const Icon(
+                Icons.alt_route_rounded,
+                size: 16,
+                color: AppColors.forest,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Your route',
@@ -1481,10 +1564,7 @@ class _RouteStopsCard extends StatelessWidget {
               const Spacer(),
               Text(
                 plan.stopsLabel,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -1562,8 +1642,11 @@ class _RouteStopsCard extends StatelessWidget {
                             ),
                           ),
                           if (plan.stops[i].hasCoordinates)
-                            const Icon(Icons.place_outlined,
-                                size: 12, color: AppColors.moss),
+                            const Icon(
+                              Icons.place_outlined,
+                              size: 12,
+                              color: AppColors.moss,
+                            ),
                         ],
                       ),
                     ),
@@ -1713,8 +1796,8 @@ class _PreflightSheetState extends State<_PreflightSheet> {
                     hasFix
                         ? Icons.gps_fixed_rounded
                         : denied
-                            ? Icons.gps_off_rounded
-                            : Icons.gps_not_fixed_rounded,
+                        ? Icons.gps_off_rounded
+                        : Icons.gps_not_fixed_rounded,
                     size: 18,
                     color: hasFix ? AppColors.forest : AppColors.inkMuted,
                   ),
@@ -1727,8 +1810,8 @@ class _PreflightSheetState extends State<_PreflightSheet> {
                           denied
                               ? 'Location permission is blocked'
                               : !hasFix
-                                  ? 'No GPS fix yet'
-                                  : 'GPS ready · ±${accuracy?.round() ?? 0} m',
+                              ? 'No GPS fix yet'
+                              : 'GPS ready · ±${accuracy?.round() ?? 0} m',
                           style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
@@ -1740,10 +1823,10 @@ class _PreflightSheetState extends State<_PreflightSheet> {
                           denied
                               ? 'You can still start; residents see you once access is granted.'
                               : !hasFix
-                                  ? 'You can still start — your position appears once it is available.'
-                                  : (accuracy != null && accuracy > 150)
-                                      ? 'Coarse fix — the map sharpens as more satellites arrive.'
-                                      : 'Residents will see this position once you start.',
+                              ? 'You can still start — your position appears once it is available.'
+                              : (accuracy != null && accuracy > 150)
+                              ? 'Coarse fix — the map sharpens as more satellites arrive.'
+                              : 'Residents will see this position once you start.',
                           style: const TextStyle(
                             fontSize: 9.5,
                             height: 1.4,
@@ -1758,13 +1841,15 @@ class _PreflightSheetState extends State<_PreflightSheet> {
                     onPressed: _refreshing
                         ? null
                         : denied
-                            ? () => location.openAppSettings()
-                            : () => _refresh(location),
+                        ? () => location.openAppSettings()
+                        : () => _refresh(location),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(0, 32),
                       textStyle: const TextStyle(
-                          fontSize: 10, fontWeight: FontWeight.w600),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     child: Text(denied ? 'Settings' : 'Refresh'),
                   ),
@@ -1798,8 +1883,8 @@ class _PreflightSheetState extends State<_PreflightSheet> {
               !checksDone
                   ? 'Tick the three checks to enable activation.'
                   : denied || !hasFix
-                      ? 'Activation works without a fix — location reports once available.'
-                      : 'Activation publishes your position to residents immediately.',
+                  ? 'Activation works without a fix — location reports once available.'
+                  : 'Activation publishes your position to residents immediately.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
             ),
@@ -1842,7 +1927,10 @@ class _CheckRow extends StatelessWidget {
               child: Text(
                 label,
                 style: const TextStyle(
-                    fontSize: 11, height: 1.35, color: AppColors.forest),
+                  fontSize: 11,
+                  height: 1.35,
+                  color: AppColors.forest,
+                ),
               ),
             ),
           ],
@@ -1853,10 +1941,7 @@ class _CheckRow extends StatelessWidget {
 }
 
 class _LocationCard extends StatelessWidget {
-  const _LocationCard({
-    required this.location,
-    required this.onFix,
-  });
+  const _LocationCard({required this.location, required this.onFix});
 
   final LocationProvider location;
   final VoidCallback onFix;
@@ -1864,7 +1949,8 @@ class _LocationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final issue = location.issue;
-    final blocked = issue == LocationIssue.permissionDenied ||
+    final blocked =
+        issue == LocationIssue.permissionDenied ||
         issue == LocationIssue.permissionDeniedForever;
     final denied = blocked || location.error != null;
 
@@ -1880,8 +1966,11 @@ class _LocationCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.my_location_rounded,
-                  size: 16, color: AppColors.forest),
+              const Icon(
+                Icons.my_location_rounded,
+                size: 16,
+                color: AppColors.forest,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Device location',
@@ -1896,16 +1985,16 @@ class _LocationCard extends StatelessWidget {
                 denied
                     ? 'Blocked'
                     : location.isTracking
-                        ? 'Broadcasting'
-                        : 'Idle',
+                    ? 'Broadcasting'
+                    : 'Idle',
                 style: TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.w600,
                   color: denied
                       ? AppColors.danger
                       : location.isTracking
-                          ? AppColors.moss
-                          : AppColors.inkMuted,
+                      ? AppColors.moss
+                      : AppColors.inkMuted,
                 ),
               ),
             ],
@@ -1915,8 +2004,8 @@ class _LocationCard extends StatelessWidget {
             denied
                 ? _blockedMessage()
                 : location.hasLocation
-                    ? location.locationString
-                    : 'Waiting for a GPS fix…',
+                ? location.locationString
+                : 'Waiting for a GPS fix…',
             style: TextStyle(
               fontSize: 11,
               height: 1.45,
@@ -1948,7 +2037,9 @@ class _LocationCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   textStyle: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -1962,13 +2053,13 @@ class _LocationCard extends StatelessWidget {
     if (kIsWeb) {
       return location.issue == LocationIssue.permissionDeniedForever
           ? 'Your browser is blocking location for this site. Open the lock '
-              'icon in the address bar, allow Location, then tap Try again.'
+                'icon in the address bar, allow Location, then tap Try again.'
           : 'Allow location when your browser asks so residents can see the '
-              'truck on the map.';
+                'truck on the map.';
     }
     return location.issue == LocationIssue.permissionDeniedForever
         ? 'Location is blocked for EcoConnect. Allow it in Settings, then tap '
-            'Try again.'
+              'Try again.'
         : 'Location permission is required to run a collection route.';
   }
 }
@@ -1994,8 +2085,9 @@ class _StatusChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color:
-              selected ? color.withValues(alpha: 0.22) : AppColors.creamBright,
+          color: selected
+              ? color.withValues(alpha: 0.22)
+              : AppColors.creamBright,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected ? color : AppColors.sage,
@@ -2029,8 +2121,11 @@ class _TipCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded,
-              size: 15, color: AppColors.moss),
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 15,
+            color: AppColors.moss,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -2081,8 +2176,11 @@ class _DriverPickupsCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.assignment_outlined,
-                      size: 16, color: AppColors.primary),
+                  const Icon(
+                    Icons.assignment_outlined,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 8),
                   const Text(
                     'Pickup requests',
@@ -2104,7 +2202,10 @@ class _DriverPickupsCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               for (final request in items) ...[
-                _PickupTile(request: request, driverName: user.displayName ?? 'Driver'),
+                _PickupTile(
+                  request: request,
+                  driverName: user.displayName ?? 'Driver',
+                ),
                 const SizedBox(height: 8),
               ],
             ],
@@ -2149,9 +2250,9 @@ class _PickupTileState extends State<_PickupTile> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not update: $e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -2185,14 +2286,20 @@ class _PickupTileState extends State<_PickupTile> {
               style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
             ),
             const SizedBox(height: 14),
-            _detailRow(Icons.person_outline_rounded,
-                '${request.requesterName}${request.requesterPhone == null ? '' : ' · ${request.requesterPhone}'}'),
+            _detailRow(
+              Icons.person_outline_rounded,
+              '${request.requesterName}${request.requesterPhone == null ? '' : ' · ${request.requesterPhone}'}',
+            ),
             _detailRow(Icons.place_outlined, request.location),
-            _detailRow(Icons.event_outlined,
-                'Preferred ${request.preferredDate.month}/${request.preferredDate.day}'),
+            _detailRow(
+              Icons.event_outlined,
+              'Preferred ${request.preferredDate.month}/${request.preferredDate.day}',
+            ),
             if (request.scheduledAt != null)
-              _detailRow(Icons.event_available_rounded,
-                  'Scheduled ${request.scheduledAt!.month}/${request.scheduledAt!.day}'),
+              _detailRow(
+                Icons.event_available_rounded,
+                'Scheduled ${request.scheduledAt!.month}/${request.scheduledAt!.day}',
+              ),
             const SizedBox(height: 8),
             Text(
               request.description,
@@ -2245,7 +2352,8 @@ class _PickupTileState extends State<_PickupTile> {
   @override
   Widget build(BuildContext context) {
     final request = widget.request;
-    return Container(      padding: const EdgeInsets.all(11),
+    return Container(
+      padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: AppColors.cream,
         borderRadius: BorderRadius.circular(13),
@@ -2328,10 +2436,7 @@ class _PickupTileState extends State<_PickupTile> {
                 height: 34,
                 child: OutlinedButton(
                   onPressed: () => _showDetails(context, request),
-                  child: const Text(
-                    'Details',
-                    style: TextStyle(fontSize: 10),
-                  ),
+                  child: const Text('Details', style: TextStyle(fontSize: 10)),
                 ),
               ),
             ],

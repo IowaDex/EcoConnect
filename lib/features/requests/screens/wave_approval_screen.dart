@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/paging.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
@@ -12,13 +14,41 @@ import '../../requests/services/collection_request_service.dart';
 /// One screen, two faces — the barangay sees requests it can pass up, City Hall
 /// sees the queue it has to decide on. The resident sees the outcome on the
 /// request thread either way.
-class WaveApprovalScreen extends StatelessWidget {
+class WaveApprovalScreen extends StatefulWidget {
   const WaveApprovalScreen({super.key, required this.forCityHall});
 
   final bool forCityHall;
 
   @override
+  State<WaveApprovalScreen> createState() => _WaveApprovalScreenState();
+}
+
+class _WaveApprovalScreenState extends State<WaveApprovalScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<CollectionRequest> _filter(List<CollectionRequest> items) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((r) {
+      return r.title.toLowerCase().contains(q) ||
+          r.description.toLowerCase().contains(q) ||
+          r.location.toLowerCase().contains(q) ||
+          r.status.label.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final forCityHall = widget.forCityHall;
     final service = CollectionRequestService();
 
     return Scaffold(
@@ -49,20 +79,27 @@ class WaveApprovalScreen extends StatelessWidget {
         stream: service.watchAll(),
         builder: (context, snapshot) {
           final all = snapshot.data ?? const <CollectionRequest>[];
-          final list = forCityHall
+          final queue = forCityHall
               ? all.where((r) => r.cityHallStatus == 'pending').toList()
-              : (all
-                  .where((r) =>
-                      r.cityHallStatus == 'none' &&
-                      r.status != RequestStatus.completed &&
-                      r.status != RequestStatus.rejected)
-                  .toList()
-                // Residents' uncollected-garbage reports are wave 2 by
-                // nature, so they lead the list.
-                ..sort((a, b) => (b.kind == RequestKind.uncollected ? 1 : 0)
-                    .compareTo(a.kind == RequestKind.uncollected ? 1 : 0)));
+              : all
+                    .where(
+                      (r) =>
+                          r.cityHallStatus == 'none' &&
+                          r.status != RequestStatus.completed &&
+                          r.status != RequestStatus.rejected,
+                    )
+                    .toList();
+          // Residents' uncollected-garbage reports are wave 2 by nature, so
+          // they lead the list.
+          if (!forCityHall) {
+            queue.sort(
+              (a, b) => (b.kind == RequestKind.uncollected ? 1 : 0)
+                  .compareTo(a.kind == RequestKind.uncollected ? 1 : 0),
+            );
+          }
+          final list = _filter(queue);
 
-          if (list.isEmpty) {
+          if (queue.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
@@ -81,22 +118,73 @@ class WaveApprovalScreen extends StatelessWidget {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 26),
+          final page = clampPage(_page, list.length, _pageSize);
+          final visible = pageSlice(list, page, _pageSize);
+
+          return Column(
             children: [
-              Text(
-                '${list.length} request',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.inkMuted,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 4),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search title, location, status',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
                 ),
               ),
-              const SizedBox(height: 10),
-              for (final request in list) ...[
-                _RequestCard(request: request, forCityHall: forCityHall),
-                const SizedBox(height: 9),
-              ],
+              Expanded(
+                child: list.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No requests match your search.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
+                        children: [
+                          Text(
+                            '${list.length} request'
+                            '${list.length == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          for (final request in visible) ...[
+                            _RequestCard(
+                              request: request,
+                              forCityHall: forCityHall,
+                            ),
+                            const SizedBox(height: 9),
+                          ],
+                        ],
+                      ),
+              ),
+              if (list.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: list.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
             ],
           );
         },
@@ -113,10 +201,7 @@ class _RequestCard extends StatelessWidget {
 
   Future<void> _pass(BuildContext context) async {
     final name = context.read<AuthProvider>().currentUser?.displayName;
-    await CollectionRequestService().passToCityHall(
-      request.id,
-      byName: name,
-    );
+    await CollectionRequestService().passToCityHall(request.id, byName: name);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
