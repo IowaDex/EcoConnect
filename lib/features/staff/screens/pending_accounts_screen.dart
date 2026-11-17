@@ -39,7 +39,10 @@ class _PendingAccountsScreenState extends State<PendingAccountsScreen> {
   }
 
   void _reload() {
-    setState(() => _future = _auth.getPendingAccounts());
+    // The callback must not return the assigned Future, or setState throws.
+    setState(() {
+      _future = _auth.getPendingAccounts();
+    });
   }
 
   Future<void> _approve(Map<String, dynamic> account) async {

@@ -37,7 +37,10 @@ class _EventParticipationScreenState extends State<EventParticipationScreen> {
   }
 
   Future<void> _reload() async {
-    setState(() => _future = _service.loadParticipationOverview());
+    // The callback must not return the assigned Future, or setState throws.
+    setState(() {
+      _future = _service.loadParticipationOverview();
+    });
     await _future;
   }
 
