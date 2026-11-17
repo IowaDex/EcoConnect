@@ -471,14 +471,17 @@ test('the calls the app makes every day are allowed', async () => {
   await assertFails(deleteDoc(doc(as('alice'), 'shared_locations/dan')));
 });
 
-test('admins can run every step of delete user and change roles; others cannot', async () => {
+test('admins can delete a user but cannot hand out roles; City Hall can', async () => {
   await assertFails(getDocs(collection(as('dan'), 'users')));
   await assertFails(deleteDoc(doc(as('dan'), 'users/alice/locations/l1')));
   await assertFails(setDoc(doc(as('dan'), 'removed_users/alice'), {removedAt: 1}));
 
   const root = as('root');
   await assertSucceeds(getDocs(collection(root, 'users')));
-  await assertSucceeds(updateDoc(doc(root, 'users/alice'), {role: 'driver'}));
+  // Provisioning moved to City Hall, so the barangay desk edits a profile but
+  // never its role.
+  await assertFails(updateDoc(doc(root, 'users/alice'), {role: 'driver'}));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'users/alice'), {role: 'driver'}));
   // Staff can list location history only once the deletion tombstone exists.
   await assertFails(getDocs(collection(root, 'users/alice/locations')));
   await assertSucceeds(setDoc(doc(root, 'removed_users/alice'), {removedAt: 1}));

@@ -293,7 +293,10 @@ test('a driver can start or finish only their own plan and change nothing else',
   await assertFails(updateDoc(plan('dan'), {status: 'scheduled'}));
   await assertSucceeds(updateDoc(plan('dan'), {status: 'active', sessionId: 's1', activatedAt: Timestamp.now()}));
   await assertFails(setDoc(doc(as('alice'), 'routePlans/p2'), {driverId: 'alice', status: 'scheduled'}));
-  await assertSucceeds(setDoc(doc(as('root'), 'routePlans/p3'), {driverId: 'dan', status: 'scheduled'}));
+  // The dispatch board moved to Iswim, so the barangay admin no longer writes
+  // plans; a driver may only open their own ad-hoc run.
+  await assertFails(setDoc(doc(as('root'), 'routePlans/p3'), {driverId: 'dan', status: 'scheduled'}));
+  await assertSucceeds(setDoc(doc(as('dan'), 'routePlans/p4'), {driverId: 'dan', status: 'scheduled', adHoc: true}));
 });
 
 // --------------------------------------------------------- collectionPoints

@@ -198,9 +198,6 @@ service cloud.firestore {
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
                          'accountType', 'verificationStatus', 'verifiedBy',
                          'verificationDate', 'rejectionReason', 'approvedAt',
-                         // Only the desk that provisions an account may mark
-                         // the email verified; a resident cannot skip it.
-                         'emailVerified',
                          // Set by the barangay desk when it approves the
                          // registration; the resident only answers it.
                          'registrationApprovedAt'])
