@@ -35,14 +35,15 @@ class CollectionRequestService {
   Stream<List<CollectionRequest>> watchAll() => _col.snapshots().map(_sorted);
 
   List<CollectionRequest> _sorted(QuerySnapshot<Map<String, dynamic>> snap) {
-    final items = snap.docs
-        .map((doc) => CollectionRequest.fromDoc(doc.id, doc.data()))
-        .toList()
-      ..sort((a, b) {
-        final aDate = a.createdAt ?? DateTime(2000);
-        final bDate = b.createdAt ?? DateTime(2000);
-        return bDate.compareTo(aDate);
-      });
+    final items =
+        snap.docs
+            .map((doc) => CollectionRequest.fromDoc(doc.id, doc.data()))
+            .toList()
+          ..sort((a, b) {
+            final aDate = a.createdAt ?? DateTime(2000);
+            final bDate = b.createdAt ?? DateTime(2000);
+            return bDate.compareTo(aDate);
+          });
     return items;
   }
 
@@ -62,6 +63,7 @@ class CollectionRequestService {
     required DateTime preferredDate,
     String? remarks,
     List<UploadPayload> images = const [],
+    int wave = 1,
   }) async {
     final ref = _col.doc();
     await ref.set({
@@ -70,6 +72,10 @@ class CollectionRequestService {
       'requesterPhone': requesterPhone,
       'requesterBarangay': requesterBarangay,
       'kind': kind.name,
+      // Wave 2 reports start at the barangay for verification, then move to
+      // City Hall. `cityHallStatus` stays 'none' until the barangay forwards.
+      'wave': wave,
+      'cityHallStatus': 'none',
       'title': title.trim(),
       'description': description.trim(),
       'category': category.name,
@@ -95,12 +101,15 @@ class CollectionRequestService {
     });
 
     await _notifications.notifyStaff(
-      title: kind == RequestKind.special
+      title: wave == 2
+          ? 'New uncollected garbage report'
+          : kind == RequestKind.special
           ? 'New special collection request'
           : 'New collection request',
       body: '$requesterName submitted "${title.trim()}".',
       type: AppNotificationType.request,
-      data: {'requestId': ref.id},
+      data: {'requestId': ref.id, 'kind': 'requestFiled', 'wave': wave},
+      dedupeKey: 'request_${ref.id}_submitted',
     );
 
     return ref.id;
@@ -140,6 +149,8 @@ class CollectionRequestService {
           : 'Your request "${request.title}" is now ${status.label.toLowerCase()}.',
       type: AppNotificationType.request,
       data: {'requestId': request.id},
+      dedupeKey:
+          'request_${request.id}_status_${status.name}_${history.length}',
     );
   }
 
@@ -177,6 +188,7 @@ class CollectionRequestService {
           '$driverName will collect your ${request.category.shortLabel.toLowerCase()} waste on ${scheduledAt.month}/${scheduledAt.day}.',
       type: AppNotificationType.request,
       data: {'requestId': request.id},
+      dedupeKey: 'request_${request.id}_assigned_${history.length}',
     );
     await _notifications.push(
       userId: driverId,
@@ -185,6 +197,7 @@ class CollectionRequestService {
           '${request.title} · ${request.location}. Scheduled ${scheduledAt.month}/${scheduledAt.day}.',
       type: AppNotificationType.route,
       data: {'requestId': request.id},
+      dedupeKey: 'request_${request.id}_driver_${history.length}',
     );
   }
 
@@ -193,14 +206,24 @@ class CollectionRequestService {
     await _col.doc(id).update({
       'wave': 2,
       'cityHallStatus': 'pending',
+      'status': RequestStatus.underReview.name,
       'updatedAt': FieldValue.serverTimestamp(),
       if (byName != null) 'staffNote': 'Passed to City Hall by $byName',
+      'history': FieldValue.arrayUnion([
+        {
+          'status': RequestStatus.underReview.name,
+          'at': Timestamp.now(),
+          'byName': byName ?? 'Barangay staff',
+          'note': 'Verified by the barangay and forwarded to City Hall',
+        },
+      ]),
     });
     await _notifications.notifyCityHall(
       title: 'Wave 2 request for approval',
       body: 'The barangay passed a collection request to City Hall.',
       type: AppNotificationType.request,
       data: {'requestId': id, 'kind': 'wave2Pending'},
+      dedupeKey: 'request_${id}_wave2',
     );
   }
 
@@ -218,14 +241,32 @@ class CollectionRequestService {
           : RequestStatus.rejected.name,
       'rejectionReason': approve ? null : note,
       'updatedAt': FieldValue.serverTimestamp(),
+      'history': FieldValue.arrayUnion([
+        {
+          'status': approve
+              ? RequestStatus.approved.name
+              : RequestStatus.rejected.name,
+          'at': Timestamp.now(),
+          'byName': 'City Hall · DSQC',
+          'note': note?.trim().isNotEmpty == true
+              ? note!.trim()
+              : approve
+              ? 'Approved by City Hall'
+              : 'Rejected by City Hall',
+        },
+      ]),
     });
     await _notifications.notifyStaff(
       title: approve ? 'Wave 2 approved by City Hall' : 'Wave 2 rejected',
-      body: note ?? (approve
-          ? 'City Hall approved the request. The barangay can schedule it.'
-          : 'City Hall rejected the request.'),
+      body:
+          note ??
+          (approve
+              ? 'City Hall approved the request. The barangay can schedule it.'
+              : 'City Hall rejected the request.'),
       type: AppNotificationType.request,
       data: {'requestId': id, 'kind': 'wave2Decision'},
+      dedupeKey:
+          'request_${id}_decision_staff_${approve ? 'approved' : 'rejected'}',
     );
 
     // The resident who filed the request gets the final decision directly.
@@ -238,10 +279,12 @@ class CollectionRequestService {
         body: note?.trim().isNotEmpty == true
             ? note!.trim()
             : approve
-                ? 'City Hall approved your request. The barangay will schedule it.'
-                : 'City Hall rejected your request.',
+            ? 'City Hall approved your request. The barangay will schedule it.'
+            : 'City Hall rejected your request.',
         type: AppNotificationType.request,
         data: {'requestId': id, 'kind': 'wave2Decision'},
+        dedupeKey:
+            'request_${id}_decision_resident_${approve ? 'approved' : 'rejected'}',
       );
     }
   }
@@ -335,13 +378,13 @@ class CollectionRequestService {
   }
 
   String _statusTitle(RequestStatus status) => switch (status) {
-        RequestStatus.approved => 'Request approved',
-        RequestStatus.rejected => 'Request rejected',
-        RequestStatus.assigned => 'Collection scheduled',
-        RequestStatus.inProgress => 'Collector on the way',
-        RequestStatus.collected => 'Waste collected',
-        RequestStatus.completed => 'Request completed',
-        RequestStatus.underReview => 'Request under review',
-        RequestStatus.pending => 'Request received',
-      };
+    RequestStatus.approved => 'Request approved',
+    RequestStatus.rejected => 'Request rejected',
+    RequestStatus.assigned => 'Collection scheduled',
+    RequestStatus.inProgress => 'Collector on the way',
+    RequestStatus.collected => 'Waste collected',
+    RequestStatus.completed => 'Request completed',
+    RequestStatus.underReview => 'Request under review',
+    RequestStatus.pending => 'Request received',
+  };
 }

@@ -1,6 +1,16 @@
 const _months = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 String _two(int value) => value.toString().padLeft(2, '0');
@@ -55,4 +65,14 @@ String relativeDay(DateTime? date) {
   if (days == -1) return 'Yesterday';
   if (days > 1) return 'In $days days';
   return '${-days} days ago';
+}
+
+/// "Good morning" / "Good afternoon" / "Good evening".
+///
+/// One helper so every role dashboard greets the user with the same words.
+String greeting([DateTime? now]) {
+  final hour = (now ?? DateTime.now()).hour;
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }

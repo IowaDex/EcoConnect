@@ -1,16 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
-import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/app_bottom_nav.dart';
+import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../auth/services/session_actions.dart';
+import '../../dashboard/widgets/quick_action_grid.dart';
+import '../../dashboard/widgets/role_hero.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
-import '../../location/providers/location_provider.dart';
-import '../../notifications/widgets/notification_bell.dart';
+import '../../fleet/widgets/fleet_truck_tile.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
 import '../../tickets/widgets/ticket_card.dart';
@@ -18,6 +27,10 @@ import '../../tickets/widgets/ticket_flow_filter.dart';
 
 /// Iswim's console: issues the tickets, signs them, and keeps the per-truck
 /// history the barangay and City Hall both read.
+///
+/// One scroll view holds the hero, the operations shortcuts and whichever
+/// desk the bottom bar has selected, so the header and the counters never
+/// disappear when the officer switches between tickets and the fleet.
 class IswimDashboardScreen extends StatefulWidget {
   const IswimDashboardScreen({super.key});
 
@@ -28,14 +41,42 @@ class IswimDashboardScreen extends StatefulWidget {
 class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
   int _tab = 0;
 
-  Future<void> _logout() async {
-    final confirmed = await confirmLogout(context);
-    if (!confirmed || !mounted) return;
-    final auth = context.read<AuthProvider>();
-    await context.read<LocationProvider>().endSession();
-    await auth.logout();
-    if (mounted) context.go('/login');
+  /// `null` means All.
+  TicketFlowStage? _stage;
+
+  List<TripTicket> _tickets = const [];
+  bool _loaded = false;
+  StreamSubscription<List<TripTicket>>? _ticketSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // One subscription feeds both the hero counters and the ticket list.
+    _ticketSub = TicketService().watchAll().listen(
+      (tickets) {
+        if (!mounted) return;
+        setState(() {
+          _tickets = tickets;
+          _loaded = true;
+        });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _loaded = true);
+      },
+    );
   }
+
+  @override
+  void dispose() {
+    _ticketSub?.cancel();
+    super.dispose();
+  }
+
+  int get _waiting => _tickets.where((ticket) => ticket.needsDriver).length;
+  int get _running => _tickets.where((ticket) => ticket.canStartTrip).length;
+  int get _toSign => _tickets
+      .where((ticket) => ticket.status == TicketStatus.barangaySigned)
+      .length;
 
   @override
   Widget build(BuildContext context) {
@@ -48,322 +89,265 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
               onPressed: () => context.push('/iswim/new-ticket'),
               backgroundColor: AppColors.forest,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_rounded, size: 18),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(EcoRadius.lg),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 19),
               label: const Text(
                 'Trip ticket',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
             )
           : null,
+      // The nav lives in the Scaffold slot, not inside the body, so the
+      // "Trip ticket" button floats above it instead of covering the Fleet tab.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: AppBottomNav(
+          currentIndex: _tab,
+          onTap: (index) => setState(() => _tab = index),
+          items: const [
+            (icon: Icons.confirmation_number_outlined, label: 'Tickets'),
+            (icon: Icons.local_shipping_outlined, label: 'Fleet'),
+          ],
+        ),
+      ),
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
-              child: Row(
-                children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  const NotificationBell(
-                    iconSize: 19,
-                    color: AppColors.inkMuted,
-                  ),
-                  const SizedBox(width: 2),
-                  InkWell(
-                    onTap: _logout,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.logout_rounded,
-                          size: 18, color: AppColors.inkMuted),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            RoleTopBar(onLogout: () => confirmAndLogout(context)),
             Expanded(
-              child: _tab == 0
-                  ? _TicketFeed(userName: user?.displayName ?? 'Iswim')
-                  : const _FleetList(),
-            ),
-            _BottomBar(
-              index: _tab,
-              onChanged: (index) => setState(() => _tab = index),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
+                    children: [
+                      FadeSlideIn(
+                        index: 0,
+                        child: RoleHero(
+                          icon: Icons.business_center_rounded,
+                          eyebrow: 'ISWIM · OPERATIONS',
+                          greeting: greeting(),
+                          title: user?.displayName ?? 'ISWIM',
+                          subtitle:
+                              'Issue trip tickets, sign them, and keep the fleet '
+                              'history the barangay and City Hall both read.',
+                          chip: _toSign > 0
+                              ? RoleChip(
+                                  label: '$_toSign to sign',
+                                  icon: Icons.draw_rounded,
+                                  tone: AppColors.warning,
+                                )
+                              : null,
+                          stats: [
+                            RoleStat(
+                              icon: Icons.hourglass_empty_rounded,
+                              label: 'Waiting driver',
+                              value: _waiting,
+                              accent: AppColors.warning,
+                            ),
+                            RoleStat(
+                              icon: Icons.local_shipping_rounded,
+                              label: 'Running',
+                              value: _running,
+                            ),
+                            RoleStat(
+                              icon: Icons.draw_rounded,
+                              label: 'To sign',
+                              value: _toSign,
+                              accent: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: EcoSpace.lg),
+                      const FadeSlideIn(
+                        index: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SectionLabel('OPERATIONS'),
+                            SizedBox(height: EcoSpace.sm),
+                            QuickActionGrid(actions: _operations),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: EcoSpace.xl),
+                      FadeSlideIn(
+                        index: 2,
+                        child: _tab == 0 ? _ticketSection() : _fleetSection(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
 
-class _TicketFeed extends StatefulWidget {
-  const _TicketFeed({required this.userName});
-
-  final String userName;
-
-  @override
-  State<_TicketFeed> createState() => _TicketFeedState();
-}
-
-class _TicketFeedState extends State<_TicketFeed> {
-  /// `null` means All.
-  TicketFlowStage? _stage;
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<TripTicket>>(
-      stream: TicketService().watchAll(),
-      builder: (context, snapshot) {
-        final tickets = snapshot.data ?? const <TripTicket>[];
-        final waiting = tickets.where((t) => t.needsDriver).length;
-        final running = tickets.where((t) => t.canStartTrip).length;
-        final toSign =
-            tickets.where((t) => t.status == TicketStatus.barangaySigned).length;
-        final visible = ticketsInStage(tickets, _stage);
-
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 96),
-          children: [
-            const Text(
-              'Iswim',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.8,
-                color: AppColors.moss,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.userName,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                _Stat(label: 'Total', value: tickets.length),
-                const SizedBox(width: 8),
-                _Stat(label: 'Waiting driver', value: waiting),
-                const SizedBox(width: 8),
-                _Stat(label: 'Running', value: running),
-                const SizedBox(width: 8),
-                _Stat(label: 'Your signature', value: toSign, highlight: true),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                _quickAction(
-                  context,
-                  Icons.timer_outlined,
-                  'Delay report',
-                  '/delays/new',
-                ),
-                const SizedBox(width: 8),
-                _quickAction(
-                  context,
-                  Icons.mail_outline_rounded,
-                  'Memo to City Hall',
-                  '/memos/new',
-                ),
-                const SizedBox(width: 8),
-                _quickAction(
-                  context,
-                  Icons.receipt_long_outlined,
-                  'Delay list',
-                  '/delays',
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _quickAction(
-                  context,
-                  Icons.menu_book_outlined,
-                  'Manuals',
-                  '/manuals',
-                ),
-                const SizedBox(width: 8),
-                _quickAction(
-                  context,
-                  Icons.mark_email_unread_outlined,
-                  'Manual requests',
-                  '/manual-requests',
-                ),
-                const SizedBox(width: 8),
-                _quickAction(
-                  context,
-                  Icons.inbox_outlined,
-                  'Memos',
-                  '/memos/iswim',
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Text(
-                  'Tickets',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.forest,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  _stage == null
-                      ? '${tickets.length} total'
-                      : '${visible.length} of ${tickets.length}',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TicketFlowFilterBar(
-              selected: _stage,
-              counts: ticketStageCounts(tickets),
-              total: tickets.length,
-              onChanged: (stage) => setState(() => _stage = stage),
-            ),
-            const SizedBox(height: 12),
-            if (tickets.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: Text(
-                  'No tickets yet. Tap "Trip ticket" to create one — pick a '
-                  'truck and its driver is included automatically.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    height: 1.6,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
-              )
-            else if (visible.isEmpty)
-              _stageEmpty(_stage!)
-            else
-              for (final ticket in visible) ...[
-                TicketCard(
-                  ticket: ticket,
-                  onTap: () => context.push('/tickets/${ticket.id}'),
-                ),
-                const SizedBox(height: 9),
-              ],
-          ],
-        );
-      },
-    );
-  }
-
-  /// Shown when the active stage has no tickets. The chips keep their counts,
-  /// so the desk can see at a glance where the work actually is.
-  Widget _stageEmpty(TicketFlowStage stage) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            height: 42,
-            width: 42,
-            decoration: const BoxDecoration(
-              color: AppColors.mint,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(stage.icon, size: 20, color: AppColors.forest),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'No tickets in ${stage.label.toLowerCase()}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            stage.description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 9.5,
-              height: 1.6,
-              color: AppColors.inkMuted,
-            ),
-          ),
-          TextButton(
-            onPressed: () => setState(() => _stage = null),
-            style: TextButton.styleFrom(
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text(
-              'Show all tickets',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-Widget _quickAction(
-  BuildContext context,
-  IconData icon,
-  String label,
-  String route,
-) {
-  return Expanded(
-    child: HoverLift(
-      child: GestureDetector(
-        onTap: () => context.push(route),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.sage),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, size: 15, color: AppColors.forest),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  height: 1.25,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.forest,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  static const _operations = <QuickAction>[
+    QuickAction(
+      label: 'New ticket',
+      icon: Icons.note_add_outlined,
+      route: '/iswim/new-ticket',
     ),
-  );
+    QuickAction(
+      label: 'Delay report',
+      icon: Icons.timer_outlined,
+      route: '/delays/new',
+    ),
+    QuickAction(
+      label: 'Delay list',
+      icon: Icons.receipt_long_outlined,
+      route: '/delays',
+    ),
+    QuickAction(
+      label: 'Memo to City Hall',
+      icon: Icons.mail_outline_rounded,
+      route: '/memos/new',
+    ),
+    QuickAction(
+      label: 'Manuals',
+      icon: Icons.menu_book_outlined,
+      route: '/manuals',
+    ),
+    QuickAction(
+      label: 'Manual requests',
+      icon: Icons.mark_email_unread_outlined,
+      route: '/manual-requests',
+    ),
+    QuickAction(
+      label: 'Memos',
+      icon: Icons.inbox_outlined,
+      route: '/memos/iswim',
+    ),
+    QuickAction(
+      label: 'Fleet',
+      icon: Icons.local_shipping_outlined,
+      route: '/fleet',
+    ),
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Tickets
+  // ---------------------------------------------------------------------------
+
+  Widget _ticketSection() {
+    final visible = ticketsInStage(_tickets, _stage);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionLabel(
+          'TICKETS',
+          action: _stage == null ? null : 'Show all',
+          onAction: _stage == null ? null : () => setState(() => _stage = null),
+        ),
+        const SizedBox(height: EcoSpace.xs),
+        Text(
+          _stage == null
+              ? '${_tickets.length} total'
+              : '${visible.length} of ${_tickets.length} in '
+                    '${_stage!.label.toLowerCase()}',
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: AppColors.inkMuted,
+          ),
+        ),
+        const SizedBox(height: EcoSpace.sm),
+        TicketFlowFilterBar(
+          selected: _stage,
+          counts: ticketStageCounts(_tickets),
+          total: _tickets.length,
+          onChanged: (stage) => setState(() => _stage = stage),
+        ),
+        const SizedBox(height: EcoSpace.md),
+        if (!_loaded)
+          const _TicketSkeleton()
+        else if (_tickets.isEmpty)
+          const EmptyState(
+            compact: true,
+            icon: Icons.confirmation_number_outlined,
+            title: 'No tickets yet',
+            message:
+                'Tap "Trip ticket" to create one — pick a truck and its driver '
+                'is included automatically.',
+          )
+        else if (visible.isEmpty)
+          EmptyState(
+            compact: true,
+            icon: _stage!.icon,
+            title: 'No tickets in ${_stage!.label.toLowerCase()}',
+            message: _stage!.description,
+            actionLabel: 'Show all tickets',
+            onAction: () => setState(() => _stage = null),
+          )
+        else
+          for (var i = 0; i < visible.length; i++) ...[
+            TicketCard(
+              ticket: visible[i],
+              onTap: () => context.push('/tickets/${visible[i].id}'),
+            ),
+            if (i < visible.length - 1) const SizedBox(height: 9),
+          ],
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fleet
+  // ---------------------------------------------------------------------------
+
+  Widget _fleetSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('FLEET'),
+        const SizedBox(height: EcoSpace.xs),
+        const Text(
+          'Every truck has a permanent driver. Tap a plate to see all of the '
+          'trip tickets for that truck.',
+          style: TextStyle(
+            fontSize: 10.5,
+            height: 1.5,
+            color: AppColors.inkMuted,
+          ),
+        ),
+        const SizedBox(height: EcoSpace.sm),
+        SizedBox(
+          height: 38,
+          child: OutlinedButton.icon(
+            onPressed: () => context.push('/fleet'),
+            icon: const Icon(Icons.tune_rounded, size: 15),
+            label: const Text(
+              'Manage fleet (add / edit trucks)',
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.forest,
+              side: const BorderSide(color: AppColors.sage),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: EcoSpace.md),
+        const _FleetList(),
+      ],
+    );
+  }
 }
 
+/// Truck rows for the fleet tab. Rendered as a column because the page owns
+/// the only scroll view.
 class _FleetList extends StatelessWidget {
   const _FleetList();
 
@@ -372,51 +356,28 @@ class _FleetList extends StatelessWidget {
     return StreamBuilder<List<GarbageTruck>>(
       stream: FleetService().watchTrucks(),
       builder: (context, snapshot) {
+        if (!snapshot.hasData) return const _FleetSkeleton();
+
         final trucks = snapshot.data ?? const <GarbageTruck>[];
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 30),
+        if (trucks.isEmpty) {
+          return const EmptyState(
+            compact: true,
+            icon: Icons.local_shipping_outlined,
+            title: 'No trucks registered',
+            message:
+                'Add a truck to the fleet and pair it with its permanent '
+                'driver before issuing a trip ticket.',
+          );
+        }
+
+        return Column(
           children: [
-            const Text(
-              'Fleet · history per truck',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
+            for (var i = 0; i < trucks.length; i++) ...[
+              FleetTruckTile(
+                truck: trucks[i],
+                onTap: () => context.push('/trucks/${trucks[i].id}/history'),
               ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Every truck has a permanent driver. Tap a plate to see all of '
-              'the trip tickets for that truck.',
-              style: TextStyle(
-                fontSize: 10.5,
-                height: 1.5,
-                color: AppColors.inkMuted,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 38,
-              child: OutlinedButton.icon(
-                onPressed: () => context.push('/fleet'),
-                icon: const Icon(Icons.tune_rounded, size: 15),
-                label: const Text(
-                  'Manage fleet (add / edit trucks)',
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.forest,
-                  side: const BorderSide(color: AppColors.sage),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            for (final GarbageTruck truck in trucks) ...[
-              _TruckRow(truck: truck),
-              const SizedBox(height: 8),
+              if (i < trucks.length - 1) const SizedBox(height: EcoSpace.sm),
             ],
           ],
         );
@@ -425,177 +386,80 @@ class _FleetList extends StatelessWidget {
   }
 }
 
-class _TruckRow extends StatelessWidget {
-  const _TruckRow({required this.truck});
-
-  final GarbageTruck truck;
+class _TicketSkeleton extends StatelessWidget {
+  const _TicketSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => context.push('/trucks/${truck.id}/history'),
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.sage),
-          ),
-          child: Row(
-            children: [
-              Container(
-                height: 36,
-                width: 36,
-                decoration: const BoxDecoration(
-                  color: AppColors.cream,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.local_shipping_rounded,
-                    size: 17, color: AppColors.forest),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      children: [
+        for (var i = 0; i < 3; i++) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.lg),
+              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      truck.plateNumber,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    Text(
-                      '${truck.wheelerLabel} · ${truck.driverName}',
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
+                    SkeletonBox(width: 62, height: 15, radius: 7),
+                    SizedBox(width: 8),
+                    SkeletonBox(width: 46, height: 15, radius: 7),
                   ],
                 ),
-              ),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 20, color: AppColors.moss),
-            ],
+                SizedBox(height: 11),
+                SkeletonBox(width: double.infinity, height: 12),
+                SizedBox(height: 8),
+                SkeletonBox(width: 130, height: 10, radius: 5),
+              ],
+            ),
           ),
-        ),
-      ),
+          if (i < 2) const SizedBox(height: 9),
+        ],
+      ],
     );
   }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.label,
-    required this.value,
-    this.highlight = false,
-  });
-
-  final String label;
-  final num value;
-  final bool highlight;
+class _FleetSkeleton extends StatelessWidget {
+  const _FleetSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: highlight ? AppColors.mint : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: highlight ? AppColors.primary : AppColors.sage,
-          ),
-        ),
-        child: Column(
-          children: [
-            CountUpText(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: highlight ? AppColors.primary : AppColors.forest,
-              ),
+    return Column(
+      children: [
+        for (var i = 0; i < 4; i++) ...[
+          Container(
+            height: 62,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
             ),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 8,
-                height: 1.3,
-                color: AppColors.inkMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.index, required this.onChanged});
-
-  final int index;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
-      child: Container(
-        height: 58,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.creamBright,
-          borderRadius: BorderRadius.circular(29),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
-        ),
-        child: Row(
-          children: [
-            _tabItem(0, Icons.confirmation_number_outlined, 'Tickets'),
-            _tabItem(1, Icons.local_shipping_outlined, 'Fleet'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _tabItem(int item, IconData icon, String label) {
-    final selected = item == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onChanged(item),
-        child: Container(
-          decoration: BoxDecoration(
-            color: selected ? AppColors.mint : Colors.transparent,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: selected ? AppColors.forest : AppColors.inkMuted,
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                  color: selected ? AppColors.forest : AppColors.inkMuted,
+            child: const Row(
+              children: [
+                SkeletonBox(width: 36, height: 36, radius: 18),
+                SizedBox(width: 11),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 90, height: 12),
+                    SizedBox(height: 7),
+                    SkeletonBox(width: 150, height: 10, radius: 5),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+          if (i < 3) const SizedBox(height: 8),
+        ],
+      ],
     );
   }
 }

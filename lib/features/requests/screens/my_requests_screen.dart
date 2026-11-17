@@ -8,8 +8,11 @@ import 'package:provider/provider.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -26,7 +29,30 @@ class MyRequestsScreen extends StatefulWidget {
 }
 
 class _MyRequestsScreenState extends State<MyRequestsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
   bool _openOnly = false;
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<CollectionRequest> _filter(List<CollectionRequest> items) {
+    final q = _query.trim().toLowerCase();
+    return items.where((r) {
+      if (_openOnly && !r.status.isOpen) return false;
+      if (q.isEmpty) return true;
+      return r.title.toLowerCase().contains(q) ||
+          r.description.toLowerCase().contains(q) ||
+          r.location.toLowerCase().contains(q) ||
+          r.status.label.toLowerCase().contains(q) ||
+          (r.assignedDriverName ?? '').toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +84,10 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                   FilterChip(
                     label: const Text('Open only'),
                     selected: _openOnly,
-                    onSelected: (value) => setState(() => _openOnly = value),
+                    onSelected: (value) => setState(() {
+                      _openOnly = value;
+                      _page = 0;
+                    }),
                     selectedColor: AppColors.lightGreen,
                     checkmarkColor: AppColors.primary,
                     labelStyle: const TextStyle(
@@ -76,42 +105,81 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+              child: EcoSearchField(
+                controller: _search,
+                hint: 'Search title, location, status',
+                onChanged: (value) => setState(() {
+                  _query = value;
+                  _page = 0;
+                }),
+              ),
+            ),
             Expanded(
               child: StreamBuilder<List<CollectionRequest>>(
                 stream: CollectionRequestService().watchMine(user.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading requests');
+                    return const SkeletonList();
                   }
                   if (snapshot.hasError) {
                     return ErrorView(
                       message: AppFeedback.describe(snapshot.error!),
                     );
                   }
-                  var items = snapshot.data ?? const <CollectionRequest>[];
-                  if (_openOnly) {
-                    items = items
-                        .where((r) => r.status.isOpen)
-                        .toList(growable: false);
-                  }
+                  final items = _filter(
+                    snapshot.data ?? const <CollectionRequest>[],
+                  );
                   if (items.isEmpty) {
                     return EmptyState(
                       icon: Icons.assignment_outlined,
-                      title: 'No requests yet',
-                      message:
-                          'Ask the barangay to collect bulky or special waste.',
-                      actionLabel: 'Create a request',
-                      onAction: () => context.go('/request-collection'),
+                      title: _query.isEmpty && !_openOnly
+                          ? 'No requests yet'
+                          : 'Nothing matches',
+                      message: _query.isEmpty && !_openOnly
+                          ? 'Ask the barangay to collect bulky or special '
+                                'waste.'
+                          : 'Try a different search or clear the open-only '
+                                'filter.',
+                      actionLabel: _query.isEmpty && !_openOnly
+                          ? 'Create a request'
+                          : null,
+                      onAction: _query.isEmpty && !_openOnly
+                          ? () => context.go('/request-collection')
+                          : null,
                     );
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 26),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) => _RequestHistoryCard(
-                      request: items[i],
-                      onTap: () => _openDetail(context, items[i]),
-                    ),
+                  final page = clampPage(_page, items.length, _pageSize);
+                  final visible = pageSlice(items, page, _pageSize);
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, i) => _RequestHistoryCard(
+                            request: visible[i],
+                            onTap: () => _openDetail(context, visible[i]),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                        child: EcoPaginationBar(
+                          page: page,
+                          pageSize: _pageSize,
+                          total: items.length,
+                          onPageChanged: (next) => setState(() => _page = next),
+                          onPageSizeChanged: (size) => setState(() {
+                            _pageSize = size;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -190,8 +258,16 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
             ],
             const SizedBox(height: 16),
             _row(Icons.notes_rounded, request.description),
+            if (request.isWave2)
+              _row(
+                Icons.layers_outlined,
+                'Wave 2 · ${request.wave2StageLabel}',
+              ),
             _row(request.category.icon, request.category.label),
-            _row(Icons.scale_outlined, 'Quantity: ${request.estimatedQuantity}'),
+            _row(
+              Icons.scale_outlined,
+              'Quantity: ${request.estimatedQuantity}',
+            ),
             _row(Icons.place_outlined, request.location),
             _row(
               Icons.event_outlined,
@@ -385,26 +461,26 @@ class _RequestHistoryCard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(request.category.icon,
-                  size: 12, color: request.category.color),
+              Icon(
+                request.category.icon,
+                size: 12,
+                color: request.category.color,
+              ),
               const SizedBox(width: 4),
               Text(
                 request.category.shortLabel,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
               const SizedBox(width: 10),
-              const Icon(Icons.event_outlined,
-                  size: 12, color: AppColors.inkMuted),
+              const Icon(
+                Icons.event_outlined,
+                size: 12,
+                color: AppColors.inkMuted,
+              ),
               const SizedBox(width: 4),
               Text(
                 dateLabel(request.preferredDate),
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),

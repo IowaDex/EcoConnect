@@ -10,18 +10,18 @@ enum UserRole { user, driver, admin, iswim, cityHall }
 extension UserRoleX on UserRole {
   /// Name shown on badges and the staff console.
   String get label => switch (this) {
-        UserRole.user => 'Resident',
-        UserRole.driver => 'Driver',
-        UserRole.admin => 'Barangay admin',
-        UserRole.iswim => 'Iswim',
-        UserRole.cityHall => 'City Hall · DSQC',
-      };
+    UserRole.user => 'Resident',
+    UserRole.driver => 'Driver',
+    UserRole.admin => 'Barangay admin',
+    UserRole.iswim => 'Iswim',
+    UserRole.cityHall => 'City Hall · DSQC',
+  };
 
   /// True for every role that signs a trip ticket.
   bool get isSigner => switch (this) {
-        UserRole.admin || UserRole.iswim || UserRole.cityHall => true,
-        _ => false,
-      };
+    UserRole.admin || UserRole.iswim || UserRole.cityHall => true,
+    _ => false,
+  };
 
   /// City Hall is the super admin: it provisions the accounts Iswim needs.
   bool get isSuperAdmin => this == UserRole.cityHall;
@@ -39,6 +39,12 @@ class AppUser {
 
   /// Profile details collected on the second signup step.
   final int? age;
+
+  /// Date of birth. New accounts store this instead of [age]; [age] is kept
+  /// for profiles created before the field changed so existing records still
+  /// render correctly.
+  final DateTime? birthdate;
+
   final String? phone;
 
   /// Avatar. Either an http(s) URL or an inline data:image/...;base64,
@@ -84,6 +90,7 @@ class AppUser {
     this.emailVerified = false,
     this.role = UserRole.user,
     this.age,
+    this.birthdate,
     this.phone,
     this.photoUrl,
     this.houseStreet,
@@ -129,6 +136,7 @@ class AppUser {
     bool? emailVerified,
     UserRole? role,
     int? age,
+    DateTime? birthdate,
     String? phone,
     String? photoUrl,
     String? houseStreet,
@@ -150,6 +158,7 @@ class AppUser {
       emailVerified: emailVerified ?? this.emailVerified,
       role: role ?? this.role,
       age: age ?? this.age,
+      birthdate: birthdate ?? this.birthdate,
       phone: phone ?? this.phone,
       photoUrl: photoUrl ?? this.photoUrl,
       houseStreet: houseStreet ?? this.houseStreet,
@@ -177,20 +186,37 @@ class AppUser {
     return name.split(' ').first;
   }
 
+  /// Age derived from [birthdate], falling back to the stored legacy [age].
+  int? get ageYears {
+    final born = birthdate;
+    if (born == null) return age;
+    final now = DateTime.now();
+    var years = now.year - born.year;
+    if (now.month < born.month ||
+        (now.month == born.month && now.day < born.day)) {
+      years--;
+    }
+    return years < 0 ? null : years;
+  }
+
   String get fullAddress {
     // Street first, province last, the way a Philippine address is written.
-    final parts = [houseStreet, barangay, city, province]
-        .where((p) => p != null && p.trim().isNotEmpty)
-        .cast<String>();
+    final parts = [
+      houseStreet,
+      barangay,
+      city,
+      province,
+    ].where((p) => p != null && p.trim().isNotEmpty).cast<String>();
     return parts.isEmpty ? 'No address on file' : parts.join(', ');
   }
 
   Map<String, dynamic> toProfileMap() => {
-        if (age != null) 'age': age,
-        if (phone != null) 'phone': phone,
-        if (houseStreet != null) 'houseStreet': houseStreet,
-        if (barangay != null) 'barangay': barangay,
-        if (city != null) 'city': city,
-        if (province != null) 'province': province,
-      };
+    if (age != null) 'age': age,
+    if (birthdate != null) 'birthdate': birthdate!.toIso8601String(),
+    if (phone != null) 'phone': phone,
+    if (houseStreet != null) 'houseStreet': houseStreet,
+    if (barangay != null) 'barangay': barangay,
+    if (city != null) 'city': city,
+    if (province != null) 'province': province,
+  };
 }

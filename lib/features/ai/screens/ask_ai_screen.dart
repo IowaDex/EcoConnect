@@ -16,7 +16,7 @@ class _AskAiScreenState extends State<AskAiScreen> {
   final _messages = <_ChatMessage>[
     const _ChatMessage(
       'Hi! I\'m the EcoConnect assistant. Ask me about collection '
-      'schedules, missed pickups, or your recycling points.',
+      'schedules, missed pickups, or waste segregation.',
       fromUser: false,
     ),
   ];
@@ -95,8 +95,7 @@ class _AskAiScreenState extends State<AskAiScreen> {
         q.contains('drop off') ||
         q.contains('drop-off')) {
       return 'Bring sorted recyclables to the barangay drop-off station. '
-          'Staff weigh them and credit points straight to your recycling '
-          'wallet — you can open it from the home screen.';
+          'Barangay staff record the drop-off and manage the reward records.';
     }
     if (q.contains('segregat') ||
         q.contains('biodegradable') ||
@@ -107,8 +106,8 @@ class _AskAiScreenState extends State<AskAiScreen> {
           'containers so the batch stays clean.';
     }
     if (q.contains('track') || q.contains('truck') || q.contains('where')) {
-      return 'The Track tab shows the collector assigned to your area, the '
-          'stops on the route, and how far away the truck is right now.';
+      return 'Live truck positions are monitored by barangay staff. Residents '
+          'receive collection and delay updates in Notifications.';
     }
     if (q.contains('account') ||
         q.contains('verify') ||
@@ -119,17 +118,20 @@ class _AskAiScreenState extends State<AskAiScreen> {
           'If the message never arrived, check spam, then request a new link '
           'from the verification screen.';
     }
-    if (q.contains('hello') || q.contains('hi ') || q == 'hi' || q.contains('hey')) {
-      return 'Hello! How can I help — schedules, a missed pickup, or your '
-          'recycling points?';
+    if (q.contains('hello') ||
+        q.contains('hi ') ||
+        q == 'hi' ||
+        q.contains('hey')) {
+      return 'Hello! How can I help — schedules, a missed pickup, or waste '
+          'segregation?';
     }
     if (q.contains('thank')) {
       return 'You\'re welcome. Thank you for keeping the barangay clean!';
     }
 
     return 'I can help with collection schedules, reporting a missed pickup, '
-        'your recycling points, and segregation tips. Try one of the '
-        'suggestions below.';
+        'request tracking, and segregation tips. Try one of the suggestions '
+        'below.';
   }
 
   @override
@@ -323,8 +325,9 @@ class _Bubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-            fromUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: fromUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!fromUser) ...[
@@ -356,9 +359,7 @@ class _Bubble extends StatelessWidget {
                 ),
                 border: fromUser
                     ? null
-                    : Border.all(
-                        color: AppColors.sage.withValues(alpha: 0.8),
-                      ),
+                    : Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
               ),
               child: Text(
                 message.text,

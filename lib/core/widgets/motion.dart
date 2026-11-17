@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../utils/reduced_motion.dart';
 
 /// Adds pointer-driven motion to any tappable surface.
 ///
@@ -57,7 +58,7 @@ class _HoverLiftState extends State<HoverLift> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
+    if (!widget.enabled || reduceMotion(context)) return widget.child;
 
     final scale = _pressed
         ? widget.pressedScale
@@ -154,6 +155,7 @@ class _FadeSlideInState extends State<FadeSlideIn>
 
   @override
   Widget build(BuildContext context) {
+    if (reduceMotion(context)) return widget.child;
     return AnimatedBuilder(
       animation: _progress,
       builder: (context, child) {
@@ -191,14 +193,15 @@ class CountUpText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (reduceMotion(context)) {
+      return Text('$prefix${value.round()}$suffix', style: style);
+    }
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: value.toDouble()),
       duration: duration,
       curve: Curves.easeOutCubic,
-      builder: (context, current, _) => Text(
-        '$prefix${current.round()}$suffix',
-        style: style,
-      ),
+      builder: (context, current, _) =>
+          Text('$prefix${current.round()}$suffix', style: style),
     );
   }
 }
@@ -224,6 +227,17 @@ class GrowBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (reduceMotion(context)) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(height),
+        child: LinearProgressIndicator(
+          value: value.clamp(0, 1),
+          minHeight: height,
+          backgroundColor: background,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
+      );
+    }
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: value.clamp(0, 1)),
       duration: duration,

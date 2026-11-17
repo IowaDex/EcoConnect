@@ -70,7 +70,10 @@ test('nobody can self-verify, change account type or clear a rejection', async (
 });
 
 test('signup can ask for government review but not skip it', async () => {
-  const base = {name: 'E', role: 'user', accountStatus: 'active'};
+  const base = {
+    name: 'E', role: 'user', accountStatus: 'active', barangay: 'Batasan Hills',
+    barangayId: {dataUrl: 'data:image/jpeg;base64,AAAA'},
+  };
   const gov = {...base, accountType: 'government'};
   await assertFails(setDoc(doc(as('e1'), 'users/e1'), {...gov, verificationStatus: 'verified'}));
   await assertFails(setDoc(doc(as('e2'), 'users/e2'), {...base, accountType: 'admin'}));

@@ -7,7 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// drop-offs stay because they are barangay records, not personal content.
 class UserDataCleanup {
   UserDataCleanup({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+    : _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _db;
 
@@ -24,8 +24,10 @@ class UserDataCleanup {
 
   Future<void> deleteAllFor(String uid) async {
     for (final entry in ownerFields.entries) {
-      final snap =
-          await _db.collection(entry.key).where(entry.value, isEqualTo: uid).get();
+      final snap = await _db
+          .collection(entry.key)
+          .where(entry.value, isEqualTo: uid)
+          .get();
       await _deleteAll(snap.docs);
     }
     await _cleanCommunityPosts(uid);
@@ -66,7 +68,8 @@ class UserDataCleanup {
   }
 
   Future<void> _deleteAll(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) async {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
     for (var i = 0; i < docs.length; i += _batchLimit) {
       final batch = _db.batch();
       for (final doc in docs.skip(i).take(_batchLimit)) {

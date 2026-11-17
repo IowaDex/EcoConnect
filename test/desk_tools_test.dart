@@ -6,8 +6,9 @@ import 'package:go_router/go_router.dart';
 
 void main() {
   group('desk tools', () {
-    testWidgets('keeps all twelve shortcuts and the count in the header',
-        (tester) async {
+    testWidgets('keeps all twelve shortcuts and the count in the header', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const DeskTools(pendingSignatures: 2)));
 
       expect(find.text('Desk tools'), findsOneWidget);
@@ -24,7 +25,7 @@ void main() {
         'Wave 2',
         'Memos',
         'Email log',
-        'Accounts',
+        'Announcements',
         'Fleet',
         'Signatures',
       ]) {
@@ -32,8 +33,9 @@ void main() {
       }
     });
 
-    testWidgets('lays out two columns on a phone and more on wider screens',
-        (tester) async {
+    testWidgets('lays out two columns on a phone and more on wider screens', (
+      tester,
+    ) async {
       for (final (width, columns) in const [
         (320.0, 2),
         (360.0, 2),
@@ -59,8 +61,9 @@ void main() {
       }
     });
 
-    testWidgets('never scrolls sideways and reports no overflow',
-        (tester) async {
+    testWidgets('never scrolls sideways and reports no overflow', (
+      tester,
+    ) async {
       await _pumpAtWidth(tester, 320);
 
       final grid = tester.widget<GridView>(find.byType(GridView));
@@ -68,8 +71,11 @@ void main() {
 
       final scrollables = tester
           .widgetList<Scrollable>(find.byType(Scrollable))
-          .where((s) => s.axisDirection == AxisDirection.right ||
-              s.axisDirection == AxisDirection.left);
+          .where(
+            (s) =>
+                s.axisDirection == AxisDirection.right ||
+                s.axisDirection == AxisDirection.left,
+          );
       expect(scrollables, isEmpty);
       expect(tester.takeException(), isNull);
     });

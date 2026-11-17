@@ -31,10 +31,7 @@ class UserAvatar extends StatelessWidget {
           height: size,
           width: size,
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: background,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: background, shape: BoxShape.circle),
           child: _image(),
         ),
         if (showBadge)
@@ -88,5 +85,3 @@ class UserAvatar extends StatelessWidget {
   Widget get _placeholder =>
       Icon(Icons.person, size: size * 0.48, color: AppColors.forest);
 }
-
-

@@ -19,10 +19,11 @@ class EventService {
 
   Stream<List<CommunityEvent>> watchAll() {
     return _col.snapshots().map((snap) {
-      final items = snap.docs
-          .map((doc) => CommunityEvent.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort(_soonestFirst);
+      final items =
+          snap.docs
+              .map((doc) => CommunityEvent.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort(_soonestFirst);
       return items;
     });
   }
@@ -32,12 +33,13 @@ class EventService {
         .where('status', isEqualTo: EventStatus.published.name)
         .snapshots()
         .map((snap) {
-      final items = snap.docs
-          .map((doc) => CommunityEvent.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort(_soonestFirst);
-      return items;
-    });
+          final items =
+              snap.docs
+                  .map((doc) => CommunityEvent.fromDoc(doc.id, doc.data()))
+                  .toList()
+                ..sort(_soonestFirst);
+          return items;
+        });
   }
 
   static int _soonestFirst(CommunityEvent a, CommunityEvent b) =>
@@ -90,6 +92,7 @@ class EventService {
           body: title.trim(),
           type: AppNotificationType.event,
           data: {'eventId': ref.id},
+          dedupeKey: 'event_${ref.id}_published',
         );
       }
     } else {
@@ -111,6 +114,7 @@ class EventService {
         body: item.title,
         type: AppNotificationType.event,
         data: {'eventId': id},
+        dedupeKey: 'event_${id}_published',
       );
     }
   }
@@ -141,14 +145,15 @@ class EventService {
   /// Live per-street headcount, biggest street first.
   Stream<List<StreetCount>> watchStreetCounts(String eventId) {
     return _streets(eventId).snapshots().map((snap) {
-      final items = snap.docs
-          .map((doc) => StreetCount.fromDoc(doc.id, doc.data()))
-          .where((c) => c.count > 0)
-          .toList()
-        ..sort((a, b) {
-          final byCount = b.count.compareTo(a.count);
-          return byCount != 0 ? byCount : a.label.compareTo(b.label);
-        });
+      final items =
+          snap.docs
+              .map((doc) => StreetCount.fromDoc(doc.id, doc.data()))
+              .where((c) => c.count > 0)
+              .toList()
+            ..sort((a, b) {
+              final byCount = b.count.compareTo(a.count);
+              return byCount != 0 ? byCount : a.label.compareTo(b.label);
+            });
       return items;
     });
   }
@@ -170,13 +175,14 @@ class EventService {
   /// rows (names, streets) away from other residents, who read [watchStreetCounts].
   Stream<List<EventParticipant>> watchParticipants(String eventId) {
     return _participants(eventId).snapshots().map((snap) {
-      final items = snap.docs
-          .map((doc) => EventParticipant.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final byStreet = a.streetKey.compareTo(b.streetKey);
-          return byStreet != 0 ? byStreet : a.name.compareTo(b.name);
-        });
+      final items =
+          snap.docs
+              .map((doc) => EventParticipant.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort((a, b) {
+              final byStreet = a.streetKey.compareTo(b.streetKey);
+              return byStreet != 0 ? byStreet : a.name.compareTo(b.name);
+            });
       return items;
     });
   }
@@ -280,7 +286,8 @@ class EventService {
     var writes = 0;
     for (final entry in wanted.entries) {
       final stored = have[entry.key];
-      final sameCount = (stored?['count'] as num?)?.toInt() == entry.value.count;
+      final sameCount =
+          (stored?['count'] as num?)?.toInt() == entry.value.count;
       if (stored != null && sameCount) continue;
       batch.set(_streets(eventId).doc(entry.key), {
         'label': stored?['label'] ?? entry.value.label,
@@ -344,21 +351,22 @@ class EventService {
     await Future.wait(repairs);
     items.sort(_soonestFirst);
 
-    final standings = buckets.values
-        .map(
-          (b) => StreetStanding(
-            key: b.key,
-            label: b.label,
-            residents: b.uids.length,
-            attendances: b.attendances,
-            events: b.events.length,
-          ),
-        )
-        .toList()
-      ..sort((a, b) {
-        final byPoints = b.points.compareTo(a.points);
-        return byPoints != 0 ? byPoints : a.label.compareTo(b.label);
-      });
+    final standings =
+        buckets.values
+            .map(
+              (b) => StreetStanding(
+                key: b.key,
+                label: b.label,
+                residents: b.uids.length,
+                attendances: b.attendances,
+                events: b.events.length,
+              ),
+            )
+            .toList()
+          ..sort((a, b) {
+            final byPoints = b.points.compareTo(a.points);
+            return byPoints != 0 ? byPoints : a.label.compareTo(b.label);
+          });
 
     return ParticipationOverview(
       events: items,

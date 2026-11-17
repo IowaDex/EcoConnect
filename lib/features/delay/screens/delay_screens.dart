@@ -51,9 +51,9 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
         final current = _truck;
         if (current != null) {
           _truck = trucks.cast<GarbageTruck?>().firstWhere(
-                (t) => t?.id == current.id,
-                orElse: () => null,
-              );
+            (t) => t?.id == current.id,
+            orElse: () => null,
+          );
         }
       });
     });
@@ -224,7 +224,7 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
               'Barangay copy.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 9,
+                fontSize: 10.5,
                 height: 1.5,
                 color: AppColors.inkMuted,
               ),
@@ -330,7 +330,7 @@ class _DelayCard extends StatelessWidget {
               Text(
                 stage.label,
                 style: TextStyle(
-                  fontSize: 8.5,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                   color: stage == DelayStage.dsqc
                       ? AppColors.warning
@@ -351,7 +351,7 @@ class _DelayCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             '${report.reason} · ${report.minutesLate} min late',
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
           ),
           if (canForward && stage == DelayStage.dsqc) ...[
             const SizedBox(height: 10),

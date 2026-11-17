@@ -129,3 +129,48 @@ class AppPageHeader extends StatelessWidget {
     );
   }
 }
+
+/// Small uppercase label that opens a dashboard section.
+///
+/// Replaces the three hand-rolled copies the dashboards used to carry, so
+/// "QUICK ACTIONS" sits at the same weight, tracking and colour everywhere.
+class SectionLabel extends StatelessWidget {
+  const SectionLabel(this.text, {super.key, this.action, this.onAction});
+
+  final String text;
+  final String? action;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.9,
+              color: AppColors.inkMuted,
+            ),
+          ),
+        ),
+        if (action != null && onAction != null)
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              action!,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}

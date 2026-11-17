@@ -27,12 +27,17 @@ class ManualService {
       .orderBy('updatedAt', descending: true)
       .limit(60)
       .snapshots()
-      .map((snap) => snap.docs
-          .map((doc) => Manual.fromDoc(doc.id, doc.data()))
-          .whereType<Manual>()
-          .toList(growable: false));
+      .map(
+        (snap) => snap.docs
+            .map((doc) => Manual.fromDoc(doc.id, doc.data()))
+            .whereType<Manual>()
+            .toList(growable: false),
+      );
 
-  Stream<Manual?> watchOne(String id) => _manuals.doc(id).snapshots().map(
+  Stream<Manual?> watchOne(String id) => _manuals
+      .doc(id)
+      .snapshots()
+      .map(
         (snap) => snap.exists ? Manual.fromDoc(snap.id, snap.data()!) : null,
       );
 
@@ -42,11 +47,12 @@ class ManualService {
       .limit(60)
       .snapshots()
       .map((snap) {
-        final versions = snap.docs
-            .map((doc) => ManualVersion.fromDoc(doc.id, doc.data()))
-            .whereType<ManualVersion>()
-            .toList()
-          ..sort((a, b) => b.version.compareTo(a.version));
+        final versions =
+            snap.docs
+                .map((doc) => ManualVersion.fromDoc(doc.id, doc.data()))
+                .whereType<ManualVersion>()
+                .toList()
+              ..sort((a, b) => b.version.compareTo(a.version));
         return versions;
       });
 
@@ -54,10 +60,12 @@ class ManualService {
       .orderBy('createdAt', descending: true)
       .limit(60)
       .snapshots()
-      .map((snap) => snap.docs
-          .map((doc) => ManualRequest.fromDoc(doc.id, doc.data()))
-          .whereType<ManualRequest>()
-          .toList(growable: false));
+      .map(
+        (snap) => snap.docs
+            .map((doc) => ManualRequest.fromDoc(doc.id, doc.data()))
+            .whereType<ManualRequest>()
+            .toList(growable: false),
+      );
 
   /// Creates a manual and its first version in one write.
   Future<String> createManual({
@@ -101,6 +109,7 @@ class ManualService {
       body: '$byName submitted version 1 of "${title.trim()}".',
       type: AppNotificationType.system,
       data: {'manualId': ref.id, 'kind': 'manualSubmitted'},
+      dedupeKey: 'manual_${ref.id}_v1',
     );
 
     return ref.id;
@@ -152,6 +161,7 @@ class ManualService {
         'kind': 'manualUpdated',
         'version': version,
       },
+      dedupeKey: 'manual_${manual.id}_v$version',
     );
 
     return version;
@@ -173,6 +183,7 @@ class ManualService {
       body: '${manual.title} v${manual.version} was acknowledged by $byName.',
       type: AppNotificationType.system,
       data: {'manualId': manual.id, 'kind': 'manualAcknowledged'},
+      dedupeKey: 'manual_${manual.id}_ack_v${manual.version}',
     );
   }
 
@@ -200,6 +211,7 @@ class ManualService {
       body: '$byName requested "${title.trim()}".',
       type: AppNotificationType.system,
       data: {'manualRequestId': ref.id, 'kind': 'manualRequested'},
+      dedupeKey: 'manual_request_${ref.id}',
     );
 
     return ref.id;
@@ -227,13 +239,15 @@ class ManualService {
         'manualId': manual.id,
         'kind': 'manualRequestFulfilled',
       },
+      dedupeKey: 'manual_request_${request.id}_fulfilled',
     );
   }
 
   Future<void> cancelRequest(ManualRequest request, {String? reason}) async {
     await _requests.doc(request.id).update({
       'status': ManualRequestStatus.cancelled.name,
-      if (reason != null && reason.trim().isNotEmpty) 'cancelReason': reason.trim(),
+      if (reason != null && reason.trim().isNotEmpty)
+        'cancelReason': reason.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

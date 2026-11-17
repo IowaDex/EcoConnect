@@ -4,10 +4,14 @@ import 'package:http/http.dart' as http;
 
 /// One entry from the Philippine Standard Geographic Code (PSGC) API.
 class PsgcOption {
-  const PsgcOption({required this.code, required this.name});
+  const PsgcOption({required this.code, required this.name, this.parentCode});
 
   final String code;
   final String name;
+
+  /// Province (or region, for Metro Manila) a city belongs to. Null for
+  /// provinces and barangays.
+  final String? parentCode;
 
   @override
   bool operator ==(Object other) => other is PsgcOption && other.code == code;
@@ -62,6 +66,15 @@ class PsgcService {
     return _load('/provinces/$provinceCode/cities-municipalities.json');
   }
 
+  /// Every city and municipality in the country.
+  ///
+  /// The sign-up form asks for a city directly (there is no province field),
+  /// so it needs the nationwide list. Each entry carries its province code so
+  /// the profile can still store the province the city belongs to.
+  Future<List<PsgcOption>> allCities() {
+    return _load('/cities-municipalities.json');
+  }
+
   Future<List<PsgcOption>> barangays(String cityCode) {
     return _load('/cities-municipalities/$cityCode/barangays.json');
   }
@@ -94,7 +107,9 @@ class PsgcService {
 
     final decoded = jsonDecode(response.body);
     if (decoded is! List) {
-      throw const PsgcException('Unexpected response from the location service');
+      throw const PsgcException(
+        'Unexpected response from the location service',
+      );
     }
 
     final options = <PsgcOption>[];
@@ -103,7 +118,14 @@ class PsgcService {
       final code = item['code'];
       final name = item['name'];
       if (code is String && name is String && name.isNotEmpty) {
-        options.add(PsgcOption(code: code, name: name));
+        final parent = item['provinceCode'] ?? item['regionCode'];
+        options.add(
+          PsgcOption(
+            code: code,
+            name: name,
+            parentCode: parent is String && parent.isNotEmpty ? parent : null,
+          ),
+        );
       }
     }
     options.sort((a, b) => a.name.compareTo(b.name));

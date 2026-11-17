@@ -10,38 +10,38 @@ enum DeskCategory { barangay, iswim, driver }
 extension DeskCategoryX on DeskCategory {
   /// Filter label.
   String get label => switch (this) {
-        DeskCategory.barangay => 'Barangay',
-        DeskCategory.iswim => 'ISWIM',
-        DeskCategory.driver => 'Truck Drivers',
-      };
+    DeskCategory.barangay => 'Barangay',
+    DeskCategory.iswim => 'ISWIM',
+    DeskCategory.driver => 'Truck Drivers',
+  };
 
   /// Singular label used on a card.
   String get singular => switch (this) {
-        DeskCategory.barangay => 'Barangay',
-        DeskCategory.iswim => 'ISWIM',
-        DeskCategory.driver => 'Truck Driver',
-      };
+    DeskCategory.barangay => 'Barangay',
+    DeskCategory.iswim => 'ISWIM',
+    DeskCategory.driver => 'Truck Driver',
+  };
 
   /// Sender role shown under the sender's name.
   String get roleLabel => switch (this) {
-        DeskCategory.barangay => 'Barangay Staff',
-        DeskCategory.iswim => 'ISWIM',
-        DeskCategory.driver => 'Truck Driver',
-      };
+    DeskCategory.barangay => 'Barangay Staff',
+    DeskCategory.iswim => 'ISWIM',
+    DeskCategory.driver => 'Truck Driver',
+  };
 
   IconData get icon => switch (this) {
-        DeskCategory.barangay => Icons.account_balance_outlined,
-        DeskCategory.iswim => Icons.business_center_outlined,
-        DeskCategory.driver => Icons.local_shipping_outlined,
-      };
+    DeskCategory.barangay => Icons.account_balance_outlined,
+    DeskCategory.iswim => Icons.business_center_outlined,
+    DeskCategory.driver => Icons.local_shipping_outlined,
+  };
 
   /// Subtle category accent. Greens stay for the barangay, blue for Iswim,
   /// amber for the fleet so the three groups are distinguishable at a glance.
   Color get color => switch (this) {
-        DeskCategory.barangay => AppColors.primary,
-        DeskCategory.iswim => const Color(0xFF1565C0),
-        DeskCategory.driver => AppColors.warning,
-      };
+    DeskCategory.barangay => AppColors.primary,
+    DeskCategory.iswim => const Color(0xFF1565C0),
+    DeskCategory.driver => AppColors.warning,
+  };
 }
 
 /// The kind of document in the desk queue.
@@ -55,12 +55,12 @@ enum DeskDocumentKind {
 
 extension DeskDocumentKindX on DeskDocumentKind {
   String get label => switch (this) {
-        DeskDocumentKind.tripTicket => 'Trip Ticket',
-        DeskDocumentKind.memo => 'Memo',
-        DeskDocumentKind.endorsement => 'Endorsement',
-        DeskDocumentKind.announcement => 'Announcement',
-        DeskDocumentKind.manualRequest => 'Manual Request',
-      };
+    DeskDocumentKind.tripTicket => 'Trip Ticket',
+    DeskDocumentKind.memo => 'Memo',
+    DeskDocumentKind.endorsement => 'Endorsement',
+    DeskDocumentKind.announcement => 'Announcement',
+    DeskDocumentKind.manualRequest => 'Manual Request',
+  };
 }
 
 /// The status shown on a card. The same record can carry a different label in
@@ -80,43 +80,42 @@ enum DeskDocumentStatus {
 
 extension DeskDocumentStatusX on DeskDocumentStatus {
   String get label => switch (this) {
-        DeskDocumentStatus.awaitingSignature => 'Awaiting Signature',
-        DeskDocumentStatus.signed => 'Signed',
-        DeskDocumentStatus.rejected => 'Rejected',
-        DeskDocumentStatus.returnedForRevision => 'Returned for Revision',
-        DeskDocumentStatus.newDocument => 'New',
-        DeskDocumentStatus.received => 'Received',
-        DeskDocumentStatus.underReview => 'Under Review',
-        DeskDocumentStatus.acknowledged => 'Acknowledged',
-        DeskDocumentStatus.completed => 'Completed',
-      };
+    DeskDocumentStatus.awaitingSignature => 'Awaiting Signature',
+    DeskDocumentStatus.signed => 'Signed',
+    DeskDocumentStatus.rejected => 'Rejected',
+    DeskDocumentStatus.returnedForRevision => 'Returned for Revision',
+    DeskDocumentStatus.newDocument => 'New',
+    DeskDocumentStatus.received => 'Received',
+    DeskDocumentStatus.underReview => 'Under Review',
+    DeskDocumentStatus.acknowledged => 'Acknowledged',
+    DeskDocumentStatus.completed => 'Completed',
+  };
 
   Color get color => switch (this) {
-        DeskDocumentStatus.awaitingSignature => AppColors.warning,
-        DeskDocumentStatus.signed => AppColors.primary,
-        DeskDocumentStatus.rejected => AppColors.error,
-        DeskDocumentStatus.returnedForRevision => AppColors.warning,
-        DeskDocumentStatus.newDocument => const Color(0xFF1565C0),
-        DeskDocumentStatus.received => AppColors.moss,
-        DeskDocumentStatus.underReview => AppColors.warning,
-        DeskDocumentStatus.acknowledged => AppColors.primary,
-        DeskDocumentStatus.completed => AppColors.primary,
-      };
+    DeskDocumentStatus.awaitingSignature => AppColors.warning,
+    DeskDocumentStatus.signed => AppColors.primary,
+    DeskDocumentStatus.rejected => AppColors.error,
+    DeskDocumentStatus.returnedForRevision => AppColors.warning,
+    DeskDocumentStatus.newDocument => const Color(0xFF1565C0),
+    DeskDocumentStatus.received => AppColors.moss,
+    DeskDocumentStatus.underReview => AppColors.warning,
+    DeskDocumentStatus.acknowledged => AppColors.primary,
+    DeskDocumentStatus.completed => AppColors.primary,
+  };
 
   IconData get icon => switch (this) {
-        DeskDocumentStatus.awaitingSignature => Icons.draw_outlined,
-        DeskDocumentStatus.signed => Icons.verified_outlined,
-        DeskDocumentStatus.rejected => Icons.cancel_outlined,
-        DeskDocumentStatus.returnedForRevision => Icons.undo_rounded,
-        DeskDocumentStatus.newDocument => Icons.fiber_new_outlined,
-        DeskDocumentStatus.received => Icons.mark_email_read_outlined,
-        DeskDocumentStatus.underReview => Icons.visibility_outlined,
-        DeskDocumentStatus.acknowledged => Icons.verified_rounded,
-        DeskDocumentStatus.completed => Icons.task_alt_rounded,
-      };
+    DeskDocumentStatus.awaitingSignature => Icons.draw_outlined,
+    DeskDocumentStatus.signed => Icons.verified_outlined,
+    DeskDocumentStatus.rejected => Icons.cancel_outlined,
+    DeskDocumentStatus.returnedForRevision => Icons.undo_rounded,
+    DeskDocumentStatus.newDocument => Icons.fiber_new_outlined,
+    DeskDocumentStatus.received => Icons.mark_email_read_outlined,
+    DeskDocumentStatus.underReview => Icons.visibility_outlined,
+    DeskDocumentStatus.acknowledged => Icons.verified_rounded,
+    DeskDocumentStatus.completed => Icons.task_alt_rounded,
+  };
 
-  bool get isPendingSignature =>
-      this == DeskDocumentStatus.awaitingSignature;
+  bool get isPendingSignature => this == DeskDocumentStatus.awaitingSignature;
 }
 
 /// The status selector above the For Signature list. The active list defaults
@@ -126,18 +125,18 @@ enum SignatureFilter { awaiting, signed, rejected, returned }
 
 extension SignatureFilterX on SignatureFilter {
   String get label => switch (this) {
-        SignatureFilter.awaiting => 'Awaiting Signature',
-        SignatureFilter.signed => 'Signed',
-        SignatureFilter.rejected => 'Rejected',
-        SignatureFilter.returned => 'Returned for Revision',
-      };
+    SignatureFilter.awaiting => 'Awaiting Signature',
+    SignatureFilter.signed => 'Signed',
+    SignatureFilter.rejected => 'Rejected',
+    SignatureFilter.returned => 'Returned for Revision',
+  };
 
   DeskDocumentStatus get status => switch (this) {
-        SignatureFilter.awaiting => DeskDocumentStatus.awaitingSignature,
-        SignatureFilter.signed => DeskDocumentStatus.signed,
-        SignatureFilter.rejected => DeskDocumentStatus.rejected,
-        SignatureFilter.returned => DeskDocumentStatus.returnedForRevision,
-      };
+    SignatureFilter.awaiting => DeskDocumentStatus.awaitingSignature,
+    SignatureFilter.signed => DeskDocumentStatus.signed,
+    SignatureFilter.rejected => DeskDocumentStatus.rejected,
+    SignatureFilter.returned => DeskDocumentStatus.returnedForRevision,
+  };
 }
 
 /// The barangay this deployment serves.
@@ -268,10 +267,7 @@ class DeskDocument {
 
 /// The two lists the City Hall desk renders.
 class CityHallDocuments {
-  const CityHallDocuments({
-    required this.forSignature,
-    required this.received,
-  });
+  const CityHallDocuments({required this.forSignature, required this.received});
 
   final List<DeskDocument> forSignature;
   final List<DeskDocument> received;
@@ -435,8 +431,9 @@ CityHallDocuments buildCityHallDocuments({
           memo.status == MemoStatus.received
               ? DeskDocumentStatus.received
               : DeskDocumentStatus.newDocument,
-          dateCaption:
-              memo.status == MemoStatus.received ? 'Received' : 'Arrived',
+          dateCaption: memo.status == MemoStatus.received
+              ? 'Received'
+              : 'Arrived',
           // An unsigned memo in the inbox still needs the City Hall
           // acknowledgement, so the card keeps the action available.
           canSign: true,
@@ -459,8 +456,8 @@ DeskDocument _ticketDocument(
   bool canSign = false,
 }) {
   final date = switch (dateCaption) {
-    'Signed' || 'Received' =>
-      ticket.completedAt ?? ticket.submittedAt ?? ticket.createdAt,
+    'Signed' ||
+    'Received' => ticket.completedAt ?? ticket.submittedAt ?? ticket.createdAt,
     'Rejected' || 'Returned' =>
       ticket.history.isNotEmpty ? ticket.history.last.at : ticket.createdAt,
     _ => ticket.submittedAt ?? ticket.createdAt,
@@ -535,11 +532,11 @@ DeskDocument _memoDocument(
 }
 
 DeskDocumentKind _kindOf(MemoKind kind) => switch (kind) {
-      MemoKind.memo => DeskDocumentKind.memo,
-      MemoKind.endorsement => DeskDocumentKind.endorsement,
-      MemoKind.announcement => DeskDocumentKind.announcement,
-      MemoKind.manualRequest => DeskDocumentKind.manualRequest,
-    };
+  MemoKind.memo => DeskDocumentKind.memo,
+  MemoKind.endorsement => DeskDocumentKind.endorsement,
+  MemoKind.announcement => DeskDocumentKind.announcement,
+  MemoKind.manualRequest => DeskDocumentKind.manualRequest,
+};
 
 /// `MEMO-1A2B3C4D` — a stable, readable reference derived from the document
 /// id. Memos have no stored counter, so the id is the source of truth.

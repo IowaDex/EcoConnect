@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/status_badge.dart';
 import '../../memos/services/memo_service.dart';
 import '../../memos/widgets/memo_widgets.dart';
 import '../../tickets/models/trip_ticket.dart';
@@ -21,48 +27,63 @@ class SignatureQueueScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.pop(),
-        ),
-        title: const Text(
-          'Signatures',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 32),
+              children: [
+                AppPageHeader(
+                  title: 'Signature queue',
+                  subtitle:
+                      'The last step before a record is closed at City Hall.',
+                  onBack: () => context.pop(),
+                ),
+                const SizedBox(height: EcoSpace.xs),
+                const _SigningNote(),
+                const SizedBox(height: EcoSpace.lg),
+                const FadeSlideIn(index: 0, child: _MemoQueue()),
+                const SizedBox(height: EcoSpace.xl),
+                const FadeSlideIn(index: 1, child: _TicketQueue()),
+              ],
+            ),
           ),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+    );
+  }
+}
+
+/// Reminds the officer that this page only routes them to the document.
+class _SigningNote extends StatelessWidget {
+  const _SigningNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.65)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Memos for City Hall',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AppColors.forest,
+          Icon(Icons.draw_rounded, size: 16, color: AppColors.forest),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'Signing happens on the document itself — open a record to '
+              'review it before you sign.',
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.5,
+                color: AppColors.forest,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          _MemoQueue(),
-          const SizedBox(height: 20),
-          const Text(
-            'Trip tickets for final signature',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AppColors.forest,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _TicketQueue(),
         ],
       ),
     );
@@ -70,33 +91,31 @@ class SignatureQueueScreen extends StatelessWidget {
 }
 
 class _MemoQueue extends StatelessWidget {
+  const _MemoQueue();
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Memo>>(
       stream: MemoService().watchForChannel('cityHall'),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-          );
-        }
-        if (snapshot.hasError) {
-          return _error(snapshot.error!);
-        }
+        final loading = snapshot.connectionState == ConnectionState.waiting;
         final pending = (snapshot.data ?? const <Memo>[])
-            .where((m) => !m.isSigned)
+            .where((memo) => !memo.isSigned)
             .toList(growable: false);
-        if (pending.isEmpty) {
-          return const _EmptyLine('No memo is waiting for a signature.');
-        }
-        return Column(
-          children: [
-            for (final memo in pending) ...[
-              MemoCard(memo: memo),
-              const SizedBox(height: 9),
-            ],
-          ],
+
+        return _QueueSection(
+          icon: Icons.mail_outline_rounded,
+          title: 'Memos for City Hall',
+          subtitle:
+              'Endorsements and memos the barangay and ISWIM sent for acknowledgement.',
+          count: loading ? null : pending.length,
+          loading: loading,
+          error: snapshot.error,
+          emptyTitle: 'No memo is waiting for a signature',
+          emptyMessage:
+              'Memos addressed to City Hall stay in this queue until they are '
+              'acknowledged.',
+          children: [for (final memo in pending) MemoCard(memo: memo)],
         );
       },
     );
@@ -104,36 +123,36 @@ class _MemoQueue extends StatelessWidget {
 }
 
 class _TicketQueue extends StatelessWidget {
+  const _TicketQueue();
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<TripTicket>>(
       stream: TicketService().watchAll(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-          );
-        }
-        if (snapshot.hasError) {
-          return _error(snapshot.error!);
-        }
+        final loading = snapshot.connectionState == ConnectionState.waiting;
         final pending = (snapshot.data ?? const <TripTicket>[])
-            .where((t) => t.status == TicketStatus.iswimSigned)
+            .where((ticket) => ticket.status == TicketStatus.iswimSigned)
             .toList(growable: false);
-        if (pending.isEmpty) {
-          return const _EmptyLine('No ticket is waiting for a signature.');
-        }
-        return Column(
+
+        return _QueueSection(
+          icon: Icons.local_shipping_outlined,
+          title: 'Trip tickets for final signature',
+          subtitle: 'Tickets ISWIM has verified and the fleet has completed.',
+          count: loading ? null : pending.length,
+          loading: loading,
+          error: snapshot.error,
+          emptyTitle: 'No ticket is waiting for a signature',
+          emptyMessage:
+              'Tickets arrive here once ISWIM signs them and the crew closes '
+              'the trip.',
           children: [
-            for (final ticket in pending) ...[
+            for (final ticket in pending)
               TicketCard(
                 ticket: ticket,
                 trailingLabel: 'Your signature',
                 onTap: () => context.push('/tickets/${ticket.id}'),
               ),
-              const SizedBox(height: 9),
-            ],
           ],
         );
       },
@@ -141,31 +160,155 @@ class _TicketQueue extends StatelessWidget {
   }
 }
 
-class _EmptyLine extends StatelessWidget {
-  const _EmptyLine(this.message);
+/// One half of the queue: a titled header with a live count, then the cards,
+/// a skeleton while the stream warms up, or an explanation when it is empty.
+class _QueueSection extends StatelessWidget {
+  const _QueueSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+    required this.loading,
+    required this.error,
+    required this.emptyTitle,
+    required this.emptyMessage,
+    required this.children,
+  });
 
-  final String message;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int? count;
+  final bool loading;
+  final Object? error;
+  final String emptyTitle;
+  final String emptyMessage;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Text(
-        message,
-        style: const TextStyle(
-          fontSize: 10,
-          height: 1.5,
-          color: AppColors.inkMuted,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 34,
+              width: 34,
+              decoration: BoxDecoration(
+                color: AppColors.mint,
+                borderRadius: BorderRadius.circular(EcoRadius.sm + 2),
+              ),
+              child: Icon(icon, size: 16, color: AppColors.forest),
+            ),
+            const SizedBox(width: EcoSpace.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.1,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      height: 1.5,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (count != null && count! > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.warning,
+                  borderRadius: BorderRadius.circular(EcoRadius.pill),
+                ),
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
-      ),
+        const SizedBox(height: EcoSpace.sm),
+        if (error != null)
+          EcoBanner(
+            message: AppFeedback.describe(error!),
+            icon: Icons.cloud_off_rounded,
+            color: AppColors.error,
+          )
+        else if (loading)
+          const _QueueSkeleton()
+        else if (children.isEmpty)
+          EmptyState(
+            icon: icon,
+            title: emptyTitle,
+            message: emptyMessage,
+            compact: true,
+          )
+        else
+          for (var i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i < children.length - 1) const SizedBox(height: 9),
+          ],
+      ],
     );
   }
 }
 
-Widget _error(Object error) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Text(
-        AppFeedback.describe(error),
-        style: const TextStyle(fontSize: 10, color: AppColors.error),
-      ),
+class _QueueSkeleton extends StatelessWidget {
+  const _QueueSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < 2; i++) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.lg),
+              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SkeletonBox(width: 58, height: 15, radius: 7),
+                    SizedBox(width: 8),
+                    SkeletonBox(width: 44, height: 15, radius: 7),
+                  ],
+                ),
+                SizedBox(height: 11),
+                SkeletonBox(width: double.infinity, height: 12),
+                SizedBox(height: 8),
+                SkeletonBox(width: 132, height: 10, radius: 5),
+              ],
+            ),
+          ),
+          if (i == 0) const SizedBox(height: 9),
+        ],
+      ],
     );
+  }
+}

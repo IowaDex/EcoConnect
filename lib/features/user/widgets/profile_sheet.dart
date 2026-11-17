@@ -49,8 +49,9 @@ class _ProfileSheetState extends State<_ProfileSheet> {
     super.initState();
     final user = widget.auth.currentUser;
     _addressController = TextEditingController(text: user?.houseStreet ?? '');
-    _phoneController =
-        TextEditingController(text: Phone.localDigits(user?.phone));
+    _phoneController = TextEditingController(
+      text: Phone.localDigits(user?.phone),
+    );
     _photoUrl = user?.photoUrl;
   }
 
@@ -74,8 +75,9 @@ class _ProfileSheetState extends State<_ProfileSheet> {
 
     // Avatars live inline in the user document, so keep the payload small:
     // a 320px JPEG is a few KB, comfortably under Firestore's 1 MB limit.
-    final resized =
-        decoded.width > 320 ? img.copyResize(decoded, width: 320) : decoded;
+    final resized = decoded.width > 320
+        ? img.copyResize(decoded, width: 320)
+        : decoded;
     final encoded = img.encodeJpg(resized, quality: 78);
 
     if (!mounted) return;
@@ -130,11 +132,15 @@ class _ProfileSheetState extends State<_ProfileSheet> {
     final removed = await location.endSession();
     await widget.auth.logout();
     if (!removed) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('Signed out, but your shared location could not be '
-            'removed. Sign in when online and turn sharing off.'),
-        backgroundColor: Colors.orange,
-      ));
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Signed out, but your shared location could not be '
+            'removed. Sign in when online and turn sharing off.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
     messenger.clearSnackBars();
@@ -145,7 +151,9 @@ class _ProfileSheetState extends State<_ProfileSheet> {
     final user = widget.auth.currentUser;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
         child: Column(
@@ -292,7 +300,7 @@ class _ProfileField extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               color: AppColors.inkMuted,
             ),
@@ -327,5 +335,3 @@ class _ProfileField extends StatelessWidget {
     );
   }
 }
-
-

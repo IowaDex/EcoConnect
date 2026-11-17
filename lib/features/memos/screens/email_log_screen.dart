@@ -76,8 +76,11 @@ class EmailLogScreen extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.outgoing_mail,
-                              size: 14, color: AppColors.moss),
+                          const Icon(
+                            Icons.outgoing_mail,
+                            size: 14,
+                            color: AppColors.moss,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'To: ${entry.to}',
@@ -92,8 +95,8 @@ class EmailLogScreen extends StatelessWidget {
                             entry.sentAt == null
                                 ? '—'
                                 : '${entry.sentAt!.month}/${entry.sentAt!.day} '
-                                    '${entry.sentAt!.hour.toString().padLeft(2, '0')}:'
-                                    '${entry.sentAt!.minute.toString().padLeft(2, '0')}',
+                                      '${entry.sentAt!.hour.toString().padLeft(2, '0')}:'
+                                      '${entry.sentAt!.minute.toString().padLeft(2, '0')}',
                             style: const TextStyle(
                               fontSize: 8.5,
                               color: AppColors.inkMuted,

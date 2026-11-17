@@ -82,7 +82,7 @@ class ManualDetailScreen extends StatelessWidget {
                         Text(
                           timeAgo(manual.updatedAt ?? manual.createdAt),
                           style: const TextStyle(
-                            fontSize: 8.5,
+                            fontSize: 10,
                             color: AppColors.inkMuted,
                           ),
                         ),
@@ -102,7 +102,7 @@ class ManualDetailScreen extends StatelessWidget {
                     Text(
                       '${manual.category.label} · by ${manual.createdByName}',
                       style: const TextStyle(
-                        fontSize: 9.5,
+                        fontSize: 11,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -129,7 +129,7 @@ class ManualDetailScreen extends StatelessWidget {
                         child: Text(
                           'v${manual.version} notes: ${manual.currentNotes}',
                           style: const TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 11,
                             height: 1.5,
                             color: AppColors.darkGreen,
                           ),
@@ -140,15 +140,18 @@ class ManualDetailScreen extends StatelessWidget {
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          const Icon(Icons.verified_rounded,
-                              size: 14, color: AppColors.primary),
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 14,
+                            color: AppColors.primary,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Received by ${manual.acknowledgedByName ?? 'City Hall'} '
                               '· ${timeAgo(manual.acknowledgedAt)}',
                               style: const TextStyle(
-                                fontSize: 9,
+                                fontSize: 10.5,
                                 color: AppColors.inkMuted,
                               ),
                             ),
@@ -210,10 +213,7 @@ class ManualDetailScreen extends StatelessWidget {
                   if (versions.isEmpty) {
                     return const Text(
                       'No versions recorded.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.inkMuted,
-                      ),
+                      style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
                     );
                   }
                   return Column(
@@ -281,7 +281,11 @@ class _FileCard extends StatelessWidget {
       return const EcoCard(
         child: Row(
           children: [
-            Icon(Icons.attach_file_rounded, size: 18, color: AppColors.inkMuted),
+            Icon(
+              Icons.attach_file_rounded,
+              size: 18,
+              color: AppColors.inkMuted,
+            ),
             SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -327,7 +331,7 @@ class _FileCard extends StatelessWidget {
                       '${payload.sizeKb.toStringAsFixed(0)} KB · '
                       '${payload.isPdf ? 'PDF' : 'image'}',
                       style: const TextStyle(
-                        fontSize: 8.5,
+                        fontSize: 10,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -414,7 +418,7 @@ class _VersionTile extends StatelessWidget {
             child: Text(
               'v${version.version}',
               style: const TextStyle(
-                fontSize: 9,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w800,
                 color: AppColors.primary,
               ),
@@ -441,7 +445,7 @@ class _VersionTile extends StatelessWidget {
                   '${timeAgo(version.submittedAt)}'
                   '${version.file == null ? '' : ' · ${version.file!.fileName}'}',
                   style: const TextStyle(
-                    fontSize: 8.5,
+                    fontSize: 10,
                     color: AppColors.inkMuted,
                   ),
                 ),
@@ -547,7 +551,7 @@ class _RevisionFormState extends State<_RevisionForm> {
               'This becomes v${widget.manual.version + 1} and goes straight to '
               'City Hall.',
               style: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 height: 1.5,
                 color: AppColors.inkMuted,
               ),
@@ -588,10 +592,7 @@ class _RevisionFormState extends State<_RevisionForm> {
                     : const Icon(Icons.send_rounded, size: 17),
                 label: const Text(
                   'Publish version',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.forest,

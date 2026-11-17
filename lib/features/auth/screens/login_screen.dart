@@ -44,7 +44,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (success) {
-      context.go('/dashboard');
+      // /welcome is a public route; the router redirect immediately resolves
+      // the role home from the restored session, the same path sign-up uses.
+      context.go('/welcome');
     } else if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
       _showUnverifiedDialog(_emailController.text.trim());
     } else if (authProvider.error != null) {
@@ -154,17 +156,25 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const Center(
-                                child: Text(
-                                  'Log in Account',
-                                  style: TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.forest,
-                                  ),
+                              const Text(
+                                'Welcome back',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.forest,
                                 ),
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Sign in to continue with your barangay services.',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.5,
+                                  color: AppColors.inkMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 22),
                               AppTextField(
                                 label: 'Email',
                                 hint: 'you@email.com',
@@ -224,8 +234,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   child: const Text(
                                     'Forgot password?',
                                     style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w500,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
                                       color: AppColors.inkMuted,
                                     ),
                                   ),
@@ -243,9 +253,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   const Text(
-                                    'No account?',
+                                    'No account yet?',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       color: AppColors.inkMuted,
                                     ),
                                   ),
@@ -260,19 +270,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                           MaterialTapTargetSize.shrinkWrap,
                                     ),
                                     child: const Text(
-                                      'Sign up',
+                                      'Create one',
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 16),
-                              const _ContinueWithDivider(),
-                              const SizedBox(height: 14),
-                              const _SocialRow(),
                             ],
                           ),
                         ),
@@ -319,113 +325,60 @@ class _LoginHero extends StatelessWidget {
           Text(
             'Know When, Know Where!',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 12.5,
               fontWeight: FontWeight.w600,
               color: AppColors.forest,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 10),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 52),
+            padding: EdgeInsets.symmetric(horizontal: 40),
             child: Text(
               'Real-time garbage truck tracking and timely notifications, making '
               'waste disposal easier and more convenient.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 8,
-                height: 1.5,
+                fontSize: 11,
+                height: 1.55,
                 color: AppColors.inkMuted,
               ),
             ),
           ),
+          SizedBox(height: 14),
+          _AreaPill(),
         ],
       ),
     );
   }
 }
 
-class _ContinueWithDivider extends StatelessWidget {
-  const _ContinueWithDivider();
+/// Reminds the visitor that this build only serves one barangay.
+class _AreaPill extends StatelessWidget {
+  const _AreaPill();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(child: Divider()),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(
-            'continue with',
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.place_outlined, size: 13, color: AppColors.primary),
+          SizedBox(width: 5),
+          Text(
+            'Barangay Batasan Hills · Quezon City',
             style: TextStyle(
-              fontSize: 8.5,
-              letterSpacing: 0.4,
-              color: AppColors.inkMuted.withValues(alpha: 0.9),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.forest,
             ),
           ),
-        ),
-        const Expanded(child: Divider()),
-      ],
-    );
-  }
-}
-
-class _SocialRow extends StatelessWidget {
-  const _SocialRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _SocialButton(
-          icon: Icons.g_mobiledata_rounded,
-          color: const Color(0xFFDB4437),
-          onTap: () => _notice(context),
-        ),
-        const SizedBox(width: 14),
-        _SocialButton(
-          icon: Icons.facebook,
-          color: const Color(0xFF1877F2),
-          onTap: () => _notice(context),
-        ),
-      ],
-    );
-  }
-
-  void _notice(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('Social sign-in is coming soon')),
-      );
-  }
-}
-
-class _SocialButton extends StatelessWidget {
-  const _SocialButton({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Container(
-        height: 34,
-        width: 34,
-        decoration: BoxDecoration(
-          color: AppColors.creamBright,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.sage),
-        ),
-        child: Icon(icon, size: 19, color: color),
+        ],
       ),
     );
   }

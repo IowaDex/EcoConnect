@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -25,6 +27,8 @@ class ComplaintDeskScreen extends StatefulWidget {
 class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
   bool _openOnly = true;
   String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -65,14 +69,18 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
           }
           final all = snapshot.data ?? const <Complaint>[];
           final open = all.where((c) => c.status.isOpen).length;
-          final items = all.where((complaint) {
-            if (_openOnly && !complaint.status.isOpen) return false;
-            if (_query.trim().isEmpty) return true;
-            final query = _query.toLowerCase();
-            return complaint.title.toLowerCase().contains(query) ||
-                complaint.referenceNo.toLowerCase().contains(query) ||
-                complaint.residentName.toLowerCase().contains(query);
-          }).toList(growable: false);
+          final items = all
+              .where((complaint) {
+                if (_openOnly && !complaint.status.isOpen) return false;
+                if (_query.trim().isEmpty) return true;
+                final query = _query.toLowerCase();
+                return complaint.title.toLowerCase().contains(query) ||
+                    complaint.referenceNo.toLowerCase().contains(query) ||
+                    complaint.residentName.toLowerCase().contains(query);
+              })
+              .toList(growable: false);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
 
           return Column(
             children: [
@@ -87,11 +95,14 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
                     FilterChip(
                       label: const Text('Open only'),
                       selected: _openOnly,
-                      onSelected: (value) => setState(() => _openOnly = value),
+                      onSelected: (value) => setState(() {
+                        _openOnly = value;
+                        _page = 0;
+                      }),
                       selectedColor: AppColors.lightGreen,
                       checkmarkColor: AppColors.primary,
                       labelStyle: const TextStyle(
-                        fontSize: 9.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: AppColors.darkGreen,
                       ),
@@ -102,7 +113,10 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: TextField(
-                  onChanged: (value) => setState(() => _query = value),
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
                   decoration: const InputDecoration(
                     hintText: 'Search reference, title or resident',
                     prefixIcon: Icon(Icons.search_rounded, size: 19),
@@ -119,14 +133,27 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
                             'New complaints from residents appear here immediately.',
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                        itemCount: items.length,
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                        itemCount: visible.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, i) => _DeskCard(
-                          complaint: items[i],
-                          onTap: () => _open(context, items[i], byName),
+                          complaint: visible[i],
+                          onTap: () => _open(context, visible[i], byName),
                         ),
                       ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                child: EcoPaginationBar(
+                  page: page,
+                  pageSize: _pageSize,
+                  total: items.length,
+                  onPageChanged: (value) => setState(() => _page = value),
+                  onPageSizeChanged: (value) => setState(() {
+                    _pageSize = value;
+                    _page = 0;
+                  }),
+                ),
               ),
             ],
           );
@@ -171,7 +198,7 @@ class _ComplaintDeskScreenState extends State<ComplaintDeskScreen> {
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
           ),
         ],
       ),
@@ -197,7 +224,7 @@ class _DeskCard extends StatelessWidget {
               Text(
                 complaint.referenceNo,
                 style: const TextStyle(
-                  fontSize: 8.5,
+                  fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.4,
                   color: AppColors.moss,
@@ -227,18 +254,17 @@ class _DeskCard extends StatelessWidget {
             '${complaint.residentName}'
             '${complaint.residentBarangay == null ? '' : ' · ${complaint.residentBarangay}'}'
             ' · ${timeAgo(complaint.createdAt)}',
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(complaint.category.icon,
-                  size: 12, color: AppColors.primary),
+              Icon(complaint.category.icon, size: 12, color: AppColors.primary),
               const SizedBox(width: 4),
               Text(
                 complaint.category.label,
                 style: const TextStyle(
-                  fontSize: 8.5,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                   color: AppColors.primary,
                 ),
@@ -246,10 +272,7 @@ class _DeskCard extends StatelessWidget {
               const Spacer(),
               Text(
                 '${complaint.responses.length} replies',
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
               ),
             ],
           ),

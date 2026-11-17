@@ -181,7 +181,10 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
                 child: Text(
                   AppFeedback.describe(snapshot.error!),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 10.5, color: AppColors.error),
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.error,
+                  ),
                 ),
               ),
             );
@@ -230,7 +233,9 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.mint,
                             borderRadius: BorderRadius.circular(20),
@@ -311,8 +316,7 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
                 SizedBox(
                   height: 42,
                   child: OutlinedButton.icon(
-                    onPressed:
-                        _downloading ? null : () => _downloadCopy(memo),
+                    onPressed: _downloading ? null : () => _downloadCopy(memo),
                     icon: const Icon(Icons.download_rounded, size: 16),
                     label: Text(
                       _downloading ? 'Preparing…' : 'Download signed copy',
@@ -370,11 +374,11 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
 
 /// True when the signed-in role is the desk the memo was addressed to.
 bool _ownsChannel(UserRole? role, String channel) => switch (role) {
-      UserRole.cityHall => channel == 'cityHall',
-      UserRole.iswim => channel == 'iswim',
-      UserRole.admin => channel == 'barangay',
-      _ => false,
-    };
+  UserRole.cityHall => channel == 'cityHall',
+  UserRole.iswim => channel == 'iswim',
+  UserRole.admin => channel == 'barangay',
+  _ => false,
+};
 
 /// Sent → Received → Signed, so both desks see the same progress.
 class _StatusTimeline extends StatelessWidget {
@@ -390,7 +394,7 @@ class _StatusTimeline extends StatelessWidget {
       (
         label: 'Signed',
         time: memo.acknowledgedAt,
-        done: memo.acknowledgedAt != null
+        done: memo.acknowledgedAt != null,
       ),
     ];
 
@@ -426,8 +430,9 @@ class _StatusTimeline extends StatelessWidget {
                       steps[i].label,
                       style: TextStyle(
                         fontSize: 10,
-                        fontWeight:
-                            steps[i].done ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: steps[i].done
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: steps[i].done
                             ? AppColors.textDark
                             : AppColors.inkMuted,
@@ -466,8 +471,11 @@ class _SignatureCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.verified_rounded,
-                  size: 16, color: AppColors.primary),
+              const Icon(
+                Icons.verified_rounded,
+                size: 16,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Signed',

@@ -13,20 +13,68 @@ class NotificationService {
       _db.collection('notifications');
 
   Stream<List<AppNotification>> watch(String userId) {
-    return _col
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((snap) {
-      final items = snap.docs
-          .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.createdAt ?? DateTime(2000);
-          final bDate = b.createdAt ?? DateTime(2000);
-          return bDate.compareTo(aDate);
-        });
-      return items;
+    return _col.where('userId', isEqualTo: userId).snapshots().map((snap) {
+      final items =
+          snap.docs
+              .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort(newestFirst);
+      return collapseDuplicates(items);
     });
+  }
+
+  /// Newest first. A notification written with `serverTimestamp()` has a null
+  /// [AppNotification.createdAt] until the server responds; treating it as
+  /// "now" keeps a fresh alert at the top instead of pushing it to the bottom
+  /// of the list for a second.
+  static int newestFirst(AppNotification a, AppNotification b) {
+    final now = DateTime.now();
+    final aDate = a.createdAt ?? now;
+    final bDate = b.createdAt ?? now;
+    return bDate.compareTo(aDate);
+  }
+
+  /// Hides identical rows that were already written before dedupe keys
+  /// existed. The newest copy is kept; older duplicates disappear from the
+  /// list without deleting the underlying records.
+  static List<AppNotification> collapseDuplicates(List<AppNotification> items) {
+    final seen = <String>{};
+    final out = <AppNotification>[];
+    for (final item in items) {
+      final key = '${item.userId}|${item.type.name}|${item.title}|${item.body}';
+      if (!seen.add(key)) continue;
+      out.add(item);
+    }
+    return out;
+  }
+
+  /// Document ids cannot contain a slash, and a key must be stable across
+  /// retries, so it is normalised before it becomes part of an id.
+  static String _safeKey(String key) =>
+      key.replaceAll(RegExp(r'[^A-Za-z0-9_.:-]'), '_');
+
+  /// Writes [data] once for a deterministic document id.
+  ///
+  /// A retry, a double tap or two screens reacting to the same event all
+  /// produce the same document id, so the second write is skipped instead of
+  /// stacking another identical notification. Returns true only when a new
+  /// document was created.
+  Future<bool> _writeOnce({
+    required String docId,
+    required Map<String, dynamic> data,
+  }) async {
+    final ref = _col.doc(docId);
+    try {
+      return await _db.runTransaction<bool>((tx) async {
+        final existing = await tx.get(ref);
+        if (existing.exists) return false;
+        tx.set(ref, data);
+        return true;
+      });
+    } catch (error) {
+      AppLogger.error('Notification write failed', error);
+      return false;
+    }
   }
 
   Stream<int> watchUnreadCount(String userId) {
@@ -35,31 +83,41 @@ class NotificationService {
 
   /// Returns whether the notification was written, so callers that rate-limit
   /// can avoid counting a failed send. Most callers ignore the result.
+  ///
+  /// Pass [dedupeKey] for anything that can fire more than once for the same
+  /// event (a publish retry, two screens listening to the same action). The
+  /// key makes the write idempotent.
   Future<bool> push({
     required String userId,
     required String title,
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
+    String? dedupeKey,
   }) async {
     if (userId.isEmpty) return false;
-    try {
-      await _col.add({
-        'userId': userId,
-        'title': title,
-        'body': body,
-        'type': type.name,
-        'read': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'data': data,
-      });
-      return true;
-    } catch (error) {
-      // Notifications are secondary: a rules or network failure must never
-      // roll back the action that triggered them.
-      AppLogger.error('Notification write failed', error);
-      return false;
+    final payload = {
+      'userId': userId,
+      'title': title,
+      'body': body,
+      'type': type.name,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'data': data,
+    };
+    if (dedupeKey == null || dedupeKey.isEmpty) {
+      try {
+        await _col.add(payload);
+        return true;
+      } catch (error) {
+        AppLogger.error('Notification write failed', error);
+        return false;
+      }
     }
+    return _writeOnce(
+      docId: '${_safeKey(userId)}__${_safeKey(dedupeKey)}',
+      data: payload,
+    );
   }
 
   /// Staff channel id. Operational alerts are written once to a shared
@@ -81,15 +139,16 @@ class NotificationService {
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
-  }) =>
-      _notifyChannel(
-        channel: staffChannel,
-        title: title,
-        body: body,
-        type: type,
-        data: data,
-        label: 'Staff',
-      );
+    String? dedupeKey,
+  }) => _notifyChannel(
+    channel: staffChannel,
+    title: title,
+    body: body,
+    type: type,
+    data: data,
+    label: 'Staff',
+    dedupeKey: dedupeKey,
+  );
 
   /// Writes an alert to the City Hall / DSQC desk.
   Future<void> notifyCityHall({
@@ -97,15 +156,16 @@ class NotificationService {
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
-  }) =>
-      _notifyChannel(
-        channel: cityHallChannel,
-        title: title,
-        body: body,
-        type: type,
-        data: data,
-        label: 'City Hall',
-      );
+    String? dedupeKey,
+  }) => _notifyChannel(
+    channel: cityHallChannel,
+    title: title,
+    body: body,
+    type: type,
+    data: data,
+    label: 'City Hall',
+    dedupeKey: dedupeKey,
+  );
 
   /// Writes an alert to the Iswim desk.
   Future<void> notifyIswim({
@@ -113,15 +173,16 @@ class NotificationService {
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
-  }) =>
-      _notifyChannel(
-        channel: iswimChannel,
-        title: title,
-        body: body,
-        type: type,
-        data: data,
-        label: 'Iswim',
-      );
+    String? dedupeKey,
+  }) => _notifyChannel(
+    channel: iswimChannel,
+    title: title,
+    body: body,
+    type: type,
+    data: data,
+    label: 'Iswim',
+    dedupeKey: dedupeKey,
+  );
 
   Future<void> _notifyChannel({
     required String channel,
@@ -130,17 +191,26 @@ class NotificationService {
     required AppNotificationType type,
     required Map<String, dynamic> data,
     required String label,
+    String? dedupeKey,
   }) async {
+    final payload = {
+      'userId': channel,
+      'title': title,
+      'body': body,
+      'type': type.name,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'data': data,
+    };
+    if (dedupeKey != null && dedupeKey.isNotEmpty) {
+      await _writeOnce(
+        docId: '${_safeKey(channel)}__${_safeKey(dedupeKey)}',
+        data: payload,
+      );
+      return;
+    }
     try {
-      await _col.add({
-        'userId': channel,
-        'title': title,
-        'body': body,
-        'type': type.name,
-        'read': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'data': data,
-      });
+      await _col.add(payload);
     } catch (error) {
       AppLogger.error('$label notification write failed', error);
     }
@@ -156,10 +226,13 @@ class NotificationService {
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
+    String? dedupeKey,
   }) async {
     try {
-      final users =
-          await _db.collection('users').where('role', isEqualTo: 'user').get();
+      final users = await _db
+          .collection('users')
+          .where('role', isEqualTo: 'user')
+          .get();
       // A batch holds at most 500 writes, so a large barangay is split. Each
       // batch is isolated: one failure must not drop everyone after it.
       var missed = 0;
@@ -167,7 +240,10 @@ class NotificationService {
         final chunk = users.docs.skip(i).take(_batchLimit).toList();
         final batch = _db.batch();
         for (final user in chunk) {
-          batch.set(_col.doc(), {
+          final ref = (dedupeKey == null || dedupeKey.isEmpty)
+              ? _col.doc()
+              : _col.doc('${_safeKey(user.id)}__${_safeKey(dedupeKey)}');
+          batch.set(ref, {
             'userId': user.id,
             'title': title,
             'body': body,
@@ -186,7 +262,8 @@ class NotificationService {
       }
       if (missed > 0) {
         AppLogger.error(
-            'Resident notice missed $missed of ${users.docs.length} residents');
+          'Resident notice missed $missed of ${users.docs.length} residents',
+        );
       }
     } catch (error) {
       AppLogger.error('Resident notification fan-out failed', error);
@@ -199,20 +276,17 @@ class NotificationService {
         .where('userId', whereIn: [userId, staffChannel])
         .snapshots()
         .map((snap) {
-      final items = snap.docs
-          .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.createdAt ?? DateTime(2000);
-          final bDate = b.createdAt ?? DateTime(2000);
-          return bDate.compareTo(aDate);
+          final items =
+              snap.docs
+                  .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
+                  .toList()
+                ..sort(newestFirst);
+          return collapseDuplicates(items);
         });
-      return items;
-    });
   }
 
-  Stream<int> watchUnreadCountForStaff(String userId) => watchForStaff(userId)
-      .map((items) => items.where((n) => !n.read).length);
+  Stream<int> watchUnreadCountForStaff(String userId) =>
+      watchForStaff(userId).map((items) => items.where((n) => !n.read).length);
 
   /// Marks both personal and shared staff alerts as read.
   Future<void> markAllReadForStaff(String userId) =>
@@ -220,31 +294,27 @@ class NotificationService {
 
   /// Personal alerts plus one shared desk channel (City Hall or Iswim).
   Stream<List<AppNotification>> watchForDesk(String userId, String channel) {
-    return _col
-        .where('userId', whereIn: [userId, channel])
-        .snapshots()
-        .map((snap) {
-      final items = snap.docs
-          .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.createdAt ?? DateTime(2000);
-          final bDate = b.createdAt ?? DateTime(2000);
-          return bDate.compareTo(aDate);
-        });
-      return items;
+    return _col.where('userId', whereIn: [userId, channel]).snapshots().map((
+      snap,
+    ) {
+      final items =
+          snap.docs
+              .map((doc) => AppNotification.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort(newestFirst);
+      return collapseDuplicates(items);
     });
   }
 
   Stream<int> watchUnreadCountForDesk(String userId, String channel) =>
-      watchForDesk(userId, channel)
-          .map((items) => items.where((n) => !n.read).length);
+      watchForDesk(
+        userId,
+        channel,
+      ).map((items) => items.where((n) => !n.read).length);
 
   /// Marks personal and shared desk alerts as read.
   Future<void> markAllReadForDesk(String userId, String channel) async {
-    final all = await _col
-        .where('userId', whereIn: [userId, channel])
-        .get();
+    final all = await _col.where('userId', whereIn: [userId, channel]).get();
     final unread = all.docs.where((doc) => doc.data()['read'] != true).toList();
     if (unread.isEmpty) return;
     final batch = _db.batch();
@@ -254,8 +324,7 @@ class NotificationService {
     await batch.commit();
   }
 
-  Future<void> markRead(String id) =>
-      _col.doc(id).update({'read': true});
+  Future<void> markRead(String id) => _col.doc(id).update({'read': true});
 
   Future<void> markAllRead(String userId) async {
     // Single-field query only: avoids needing a composite index.

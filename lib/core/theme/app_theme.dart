@@ -4,28 +4,29 @@ import 'app_colors.dart';
 
 abstract final class AppTheme {
   static ThemeData get light {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.primary,
-      brightness: Brightness.light,
-    ).copyWith(
-      primary: AppColors.primary,
-      onPrimary: Colors.white,
-      primaryContainer: AppColors.lightGreen,
-      onPrimaryContainer: AppColors.darkGreen,
-      secondary: AppColors.secondary,
-      onSecondary: Colors.white,
-      secondaryContainer: AppColors.lightGreen,
-      onSecondaryContainer: AppColors.darkGreen,
-      surface: AppColors.background,
-      onSurface: AppColors.textDark,
-      onSurfaceVariant: AppColors.inkMuted,
-      outline: AppColors.sage,
-      outlineVariant: AppColors.sage,
-      error: AppColors.error,
-      onError: Colors.white,
-      tertiary: AppColors.warning,
-      onTertiary: AppColors.textDark,
-    );
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: AppColors.primary,
+          onPrimary: Colors.white,
+          primaryContainer: AppColors.lightGreen,
+          onPrimaryContainer: AppColors.darkGreen,
+          secondary: AppColors.secondary,
+          onSecondary: Colors.white,
+          secondaryContainer: AppColors.lightGreen,
+          onSecondaryContainer: AppColors.darkGreen,
+          surface: AppColors.background,
+          onSurface: AppColors.textDark,
+          onSurfaceVariant: AppColors.inkMuted,
+          outline: AppColors.sage,
+          outlineVariant: AppColors.sage,
+          error: AppColors.error,
+          onError: Colors.white,
+          tertiary: AppColors.warning,
+          onTertiary: AppColors.textDark,
+        );
 
     return _base(scheme, GoogleFonts.poppinsTextTheme());
   }
@@ -44,7 +45,7 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: scheme.surface,
       textTheme: text,
       splashFactory: InkSparkle.splashFactory,
-      visualDensity: VisualDensity.standard,
+      visualDensity: VisualDensity.comfortable,
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: EcoPageTransitionsBuilder(),
@@ -60,10 +61,14 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         foregroundColor: AppColors.darkGreen,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
+        toolbarHeight: 58,
+        titleSpacing: 4,
         titleTextStyle: TextStyle(
-          fontSize: 17,
+          fontSize: 18,
           fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
           color: AppColors.darkGreen,
         ),
       ),
@@ -71,7 +76,10 @@ abstract final class AppTheme {
         filled: true,
         fillColor: Colors.white,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
         hintStyle: const TextStyle(
           color: AppColors.inkMuted,
           fontSize: 12.5,
@@ -82,7 +90,10 @@ abstract final class AppTheme {
           fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
-        border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide.none,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: radius,
           borderSide: BorderSide(color: AppColors.sage.withValues(alpha: 0.8)),
@@ -105,24 +116,35 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: scheme.primary,
           foregroundColor: scheme.onPrimary,
-          minimumSize: const Size.fromHeight(50),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
           side: const BorderSide(color: AppColors.primary, width: 1.2),
-          minimumSize: const Size.fromHeight(48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+          minimumSize: const Size.fromHeight(50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: scheme.primary,
-          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       cardTheme: CardThemeData(
@@ -130,7 +152,7 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.lightGreen,
@@ -152,9 +174,21 @@ abstract final class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.darkGreen,
-        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 12.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      ),
+      listTileTheme: const ListTileThemeData(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        minVerticalPadding: 12,
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          minimumSize: const Size(40, 40),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: Colors.white,

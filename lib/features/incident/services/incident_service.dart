@@ -21,7 +21,7 @@ class IncidentService {
     double? latitude,
     double? longitude,
   }) async {
-    await _incidents.add({
+    final ref = await _incidents.add({
       'residentId': residentId,
       'residentName': residentName,
       'category': category.name,
@@ -35,11 +35,12 @@ class IncidentService {
     });
 
     // City Hall is told immediately; the barangay only sees it as a copy.
-    await NotificationService().notifyStaff(
+    await NotificationService().notifyCityHall(
       title: 'Incident reported · ${category.name}',
       body: '$residentName: $description',
       type: AppNotificationType.request,
-      data: {'kind': 'incident', 'channel': 'cityHall'},
+      data: {'kind': 'incident', 'incidentId': ref.id, 'channel': 'cityHall'},
+      dedupeKey: 'incident_${ref.id}',
     );
   }
 
@@ -48,9 +49,10 @@ class IncidentService {
         .orderBy('createdAt', descending: true)
         .limit(50)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => Incident.fromDoc(d.id, d.data()))
-            .toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => Incident.fromDoc(d.id, d.data())).toList(),
+        );
   }
 
   Future<void> updateStatus(String incidentId, IncidentStatus status) async {

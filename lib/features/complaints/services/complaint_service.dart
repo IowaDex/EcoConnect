@@ -79,6 +79,7 @@ class ComplaintService {
       body: '$residentName: ${title.trim()}',
       type: AppNotificationType.request,
       data: {'complaintId': ref.id, 'kind': 'complaintFiled'},
+      dedupeKey: 'complaint_${ref.id}_filed',
     );
 
     return ref.id;
@@ -118,6 +119,10 @@ class ComplaintService {
         'kind': 'complaintResponse',
         'status': status.name,
       },
+      // Every reply is a new event; the index keeps them from collapsing into
+      // one notification while still deduplicating a double submit.
+      dedupeKey:
+          'complaint_${complaint.id}_reply_${complaint.responses.length + 1}',
     );
   }
 
@@ -125,21 +130,21 @@ class ComplaintService {
     required Complaint complaint,
     required ComplaintStatus status,
     required String byName,
-  }) =>
-      respond(
-        complaint: complaint,
-        message: '',
-        status: status,
-        byName: byName,
-      );
+  }) => respond(
+    complaint: complaint,
+    message: '',
+    status: status,
+    byName: byName,
+  );
 
   /// `CMP-2026-123456` — readable, unique enough for a single barangay, and
   /// generated without a counter the resident is not allowed to write.
   String _reference() {
     final now = DateTime.now();
-    final suffix = (now.millisecondsSinceEpoch % 1000000)
-        .toString()
-        .padLeft(6, '0');
+    final suffix = (now.millisecondsSinceEpoch % 1000000).toString().padLeft(
+      6,
+      '0',
+    );
     return 'CMP-${now.year}-$suffix';
   }
 }

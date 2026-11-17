@@ -24,6 +24,8 @@ class AppTextField extends StatelessWidget {
     this.inputFormatters,
     this.autofillHints,
     this.textCapitalization = TextCapitalization.none,
+    this.readOnly = false,
+    this.onTap,
   });
 
   final String label;
@@ -42,6 +44,8 @@ class AppTextField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final Iterable<String>? autofillHints;
   final TextCapitalization textCapitalization;
+  final bool readOnly;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +75,8 @@ class AppTextField extends StatelessWidget {
           inputFormatters: inputFormatters,
           autofillHints: autofillHints,
           textCapitalization: textCapitalization,
+          readOnly: readOnly,
+          onTap: onTap,
           style: const TextStyle(fontSize: 13, color: AppColors.forest),
           cursorColor: AppColors.forest,
           decoration: InputDecoration(

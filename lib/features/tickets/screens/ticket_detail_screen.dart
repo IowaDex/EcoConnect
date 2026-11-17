@@ -51,10 +51,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(
-              content: Text(success),
-              backgroundColor: AppColors.forest,
-            ),
+            SnackBar(content: Text(success), backgroundColor: AppColors.forest),
           );
       }
     } on TicketException catch (e) {
@@ -212,10 +209,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
 
-    final image = await showSignatureSheet(
-      context,
-      signerLabel: signer.label,
-    );
+    final image = await showSignatureSheet(context, signerLabel: signer.label);
     if (image == null || !mounted) return;
 
     await _run(
@@ -500,8 +494,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   ),
                   child: const Row(
                     children: [
-                      Icon(Icons.verified_rounded,
-                          size: 18, color: AppColors.primary),
+                      Icon(
+                        Icons.verified_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       SizedBox(width: 9),
                       Expanded(
                         child: Text(
@@ -554,8 +551,7 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(20),
@@ -563,7 +559,7 @@ class _Header extends StatelessWidget {
                 child: Text(
                   ticket.waveLabel,
                   style: const TextStyle(
-                    fontSize: 8.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
@@ -573,7 +569,7 @@ class _Header extends StatelessWidget {
               Text(
                 ticket.status.label,
                 style: const TextStyle(
-                  fontSize: 9,
+                  fontSize: 10.5,
                   fontWeight: FontWeight.w700,
                   color: AppColors.lime,
                 ),
@@ -620,17 +616,27 @@ class _Details extends StatelessWidget {
         children: [
           _row(Icons.route_rounded, 'Ruta', ticket.route),
           _row(Icons.place_outlined, 'Zone', ticket.zone),
-          _row(Icons.event_rounded, 'Petsa', '${ticket.date} · ${ticket.windowLabel}'),
+          _row(
+            Icons.event_rounded,
+            'Petsa',
+            '${ticket.date} · ${ticket.windowLabel}',
+          ),
           if (ticket.notes.trim().isNotEmpty)
             _row(Icons.sticky_note_2_outlined, 'Notes', ticket.notes),
           if ((ticket.declineReason ?? '').trim().isNotEmpty)
             _row(Icons.block_rounded, 'Decline reason', ticket.declineReason!),
           if ((ticket.revisionReason ?? '').trim().isNotEmpty)
-            _row(Icons.edit_note_rounded, 'Revision reason',
-                ticket.revisionReason!),
+            _row(
+              Icons.edit_note_rounded,
+              'Revision reason',
+              ticket.revisionReason!,
+            ),
           if ((ticket.rejectionReason ?? '').trim().isNotEmpty)
-            _row(Icons.gpp_bad_outlined, 'Rejection reason',
-                ticket.rejectionReason!),
+            _row(
+              Icons.gpp_bad_outlined,
+              'Rejection reason',
+              ticket.rejectionReason!,
+            ),
         ],
       ),
     );
@@ -649,7 +655,7 @@ class _Details extends StatelessWidget {
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: AppColors.inkMuted,
               ),
@@ -698,7 +704,8 @@ class _Timeline extends StatelessWidget {
       (
         label: 'Barangay signature',
         time: ticket.signatureFor(TicketStatusSigner.barangay)?.signedAt,
-        done: ticket.signatureFor(TicketStatusSigner.barangay)?.isPresent ??
+        done:
+            ticket.signatureFor(TicketStatusSigner.barangay)?.isPresent ??
             false,
       ),
       (
@@ -710,7 +717,8 @@ class _Timeline extends StatelessWidget {
         label: 'City Hall signature',
         time: ticket.signatureFor(TicketStatusSigner.cityHall)?.signedAt,
         done:
-            ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ?? false,
+            ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ??
+            false,
       ),
     ];
 
@@ -744,9 +752,7 @@ class _Timeline extends StatelessWidget {
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     size: 14,
-                    color: steps[i].done
-                        ? AppColors.primary
-                        : AppColors.sage,
+                    color: steps[i].done ? AppColors.primary : AppColors.sage,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -754,8 +760,9 @@ class _Timeline extends StatelessWidget {
                       steps[i].label,
                       style: TextStyle(
                         fontSize: 10,
-                        fontWeight:
-                            steps[i].done ? FontWeight.w600 : FontWeight.w400,
+                        fontWeight: steps[i].done
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                         color: steps[i].done
                             ? AppColors.textDark
                             : AppColors.inkMuted,
@@ -765,7 +772,7 @@ class _Timeline extends StatelessWidget {
                   Text(
                     steps[i].done ? format(steps[i].time) : '—',
                     style: const TextStyle(
-                      fontSize: 9,
+                      fontSize: 10.5,
                       color: AppColors.inkMuted,
                     ),
                   ),
@@ -831,9 +838,9 @@ class _AuditTrail extends StatelessWidget {
                           entry.previousStatus == null
                               ? entry.status.label
                               : '${entry.previousStatus!.label} → '
-                                  '${entry.status.label}',
+                                    '${entry.status.label}',
                           style: const TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: AppColors.textDark,
                           ),
@@ -842,7 +849,7 @@ class _AuditTrail extends StatelessWidget {
                           '${entry.byName.isEmpty ? 'System' : entry.byName}'
                           '${entry.note.trim().isEmpty ? '' : ' · ${entry.note}'}',
                           style: const TextStyle(
-                            fontSize: 8.5,
+                            fontSize: 10,
                             height: 1.4,
                             color: AppColors.inkMuted,
                           ),
@@ -853,7 +860,7 @@ class _AuditTrail extends StatelessWidget {
                   Text(
                     format(entry.at),
                     style: const TextStyle(
-                      fontSize: 8,
+                      fontSize: 10,
                       color: AppColors.inkMuted,
                     ),
                   ),
@@ -949,7 +956,7 @@ class _SignatureBox extends StatelessWidget {
                     child: Text(
                       'Pending',
                       style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 10.5,
                         color: AppColors.inkMuted.withValues(alpha: 0.9),
                       ),
                     ),
@@ -963,7 +970,7 @@ class _SignatureBox extends StatelessWidget {
           Text(
             signer.label,
             style: const TextStyle(
-              fontSize: 8.5,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               color: AppColors.forest,
             ),
@@ -972,7 +979,7 @@ class _SignatureBox extends StatelessWidget {
             signature?.isPresent == true
                 ? format(signature!.signedAt)
                 : 'not yet',
-            style: const TextStyle(fontSize: 8, color: AppColors.inkMuted),
+            style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
           ),
         ],
       ),

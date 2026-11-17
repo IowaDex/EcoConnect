@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../dashboard/widgets/role_hero.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../../location/providers/location_provider.dart';
-import '../../notifications/widgets/notification_bell.dart';
 import '../models/garbage_truck.dart';
 import '../models/truck_crew_role.dart';
 import '../providers/truck_provider.dart';
@@ -68,88 +75,125 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
-              child: Row(
-                children: [
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  const NotificationBell(
-                    iconSize: 19,
-                    color: AppColors.inkMuted,
-                  ),
-                  const SizedBox(width: 2),
-                  InkWell(
-                    onTap: _logout,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.logout_rounded,
-                          size: 18, color: AppColors.inkMuted),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            RoleTopBar(onLogout: _logout),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
-                children: [
-                  _RoleBadge(role: role),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Select your truck',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // The registry Iswim maintains, so a plate added this
-                  // morning shows up here without a rebuild.
-                  StreamBuilder<List<GarbageTruck>>(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: StreamBuilder<List<GarbageTruck>>(
                     stream: FleetService().watchTrucks(),
                     builder: (context, snapshot) {
+                      final loading =
+                          snapshot.connectionState == ConnectionState.waiting;
                       final fleet = snapshot.data ?? const <GarbageTruck>[];
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                      final paired = fleet
+                          .where(
+                            (truck) => (truck.driverAccountId ?? '').isNotEmpty,
+                          )
+                          .length;
+
+                      return ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
                         children: [
+                          FadeSlideIn(
+                            index: 0,
+                            child: RoleHero(
+                              icon: Icons.local_shipping_rounded,
+                              eyebrow: 'BATASAN HILLS · CREW',
+                              greeting: greeting(),
+                              title: 'Select your truck',
+                              subtitle:
+                                  'The barangay assigns the plate. Pick yours '
+                                  'and the trip dashboard opens for that '
+                                  'vehicle.',
+                              chip: RoleChip(
+                                label: role.label,
+                                icon: role.icon,
+                              ),
+                              stats: loading
+                                  ? const []
+                                  : [
+                                      RoleStat(
+                                        icon: Icons.local_shipping_rounded,
+                                        label: 'Trucks',
+                                        value: fleet.length,
+                                      ),
+                                      RoleStat(
+                                        icon: Icons.person_outline_rounded,
+                                        label: 'Paired',
+                                        value: paired,
+                                      ),
+                                    ],
+                            ),
+                          ),
+                          const SizedBox(height: EcoSpace.lg),
+                          const SectionLabel('ASSIGNED TRUCKS'),
+                          const SizedBox(height: EcoSpace.xs),
                           Text(
                             '${fleet.length} trucks assigned by Barangay '
                             'Batasan Hills. Tap your plate to open the trip '
                             'dashboard.',
                             style: const TextStyle(
-                              fontSize: 11,
+                              fontSize: 10.5,
                               height: 1.5,
                               color: AppColors.inkMuted,
                             ),
                           ),
-                          const SizedBox(height: 18),
-                          for (final truck in fleet) ...[
-                            _TruckCard(
-                              truck: truck,
-                              selected: trucks.selectedTruck?.id == truck.id,
-                              onTap: () => _open(truck),
+                          const SizedBox(height: EcoSpace.sm),
+                          if (snapshot.hasError)
+                            const EcoBanner(
+                              message:
+                                  'Could not load the fleet. Check your '
+                                  'connection and reopen the app.',
+                              icon: Icons.cloud_off_rounded,
+                              color: AppColors.error,
+                            )
+                          else if (loading)
+                            const _FleetSkeleton()
+                          else if (fleet.isEmpty)
+                            const EmptyState(
+                              icon: Icons.local_shipping_outlined,
+                              title: 'No truck assigned yet',
+                              message:
+                                  'The barangay has not registered a plate '
+                                  'for this crew. Ask the fleet desk to add '
+                                  'one, then reopen this screen.',
+                              compact: true,
+                            )
+                          else
+                            for (var i = 0; i < fleet.length; i++) ...[
+                              FadeSlideIn(
+                                index: i + 1,
+                                child: _TruckCard(
+                                  truck: fleet[i],
+                                  selected:
+                                      trucks.selectedTruck?.id == fleet[i].id,
+                                  onTap: () => _open(fleet[i]),
+                                ),
+                              ),
+                              if (i < fleet.length - 1)
+                                const SizedBox(height: EcoSpace.sm),
+                            ],
+                          const SizedBox(height: EcoSpace.lg),
+                          FadeSlideIn(
+                            index: 2,
+                            child: _RolePreviewSwitch(
+                              role: role,
+                              onChanged: (next) async {
+                                final provider = context.read<TruckProvider>();
+                                final accountRole =
+                                    user?.crewRole ?? TruckCrewRole.driver;
+                                await provider.setRoleOverride(
+                                  next == accountRole ? null : next,
+                                );
+                              },
                             ),
-                            const SizedBox(height: 10),
-                          ],
+                          ),
                         ],
                       );
                     },
                   ),
-                  const SizedBox(height: 6),
-                  _RolePreviewSwitch(
-                    role: role,
-                    onChanged: (next) async {
-                      final provider = context.read<TruckProvider>();
-                      final accountRole = user?.crewRole ?? TruckCrewRole.driver;
-                      await provider.setRoleOverride(
-                        next == accountRole ? null : next,
-                      );
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -159,36 +203,43 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
   }
 }
 
-/// Names who is holding the device. Both roles run the same dashboard.
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role});
-
-  final TruckCrewRole role;
+class _FleetSkeleton extends StatelessWidget {
+  const _FleetSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.mint,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppColors.sage),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(role.icon, size: 14, color: AppColors.forest),
-          const SizedBox(width: 7),
-          Text(
-            role.label,
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
+    return Column(
+      children: [
+        for (var i = 0; i < 3; i++) ...[
+          Container(
+            height: 92,
+            padding: const EdgeInsets.all(EcoSpace.md),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.lg),
+              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
+            ),
+            child: const Row(
+              children: [
+                SkeletonBox(width: 42, height: 42, radius: 21),
+                SizedBox(width: EcoSpace.sm + 3),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 96, height: 13),
+                    SizedBox(height: 8),
+                    SkeletonBox(width: 150, height: 10, radius: 5),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 110, height: 9, radius: 5),
+                  ],
+                ),
+              ],
             ),
           ),
+          if (i < 2) const SizedBox(height: EcoSpace.sm),
         ],
-      ),
+      ],
     );
   }
 }
@@ -206,100 +257,117 @@ class _TruckCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.mint : Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.sage,
-              width: selected ? 1.4 : 1,
+    return HoverLift(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(EcoRadius.lg),
+          child: Ink(
+            padding: const EdgeInsets.fromLTRB(
+              EcoSpace.md,
+              EcoSpace.md,
+              EcoSpace.sm,
+              EcoSpace.md,
             ),
-            boxShadow: AppColors.cardShadow,
-          ),
-          child: Row(
-            children: [
-              Container(
-                height: 42,
-                width: 42,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.primary : AppColors.cream,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.local_shipping_rounded,
-                  size: 20,
-                  color: selected ? Colors.white : AppColors.forest,
-                ),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.mint : Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.lg),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.sage,
+                width: selected ? 1.4 : 1,
               ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          truck.plateNumber,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.4,
-                            color: AppColors.forest,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.cream,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            truck.wheelerLabel,
-                            style: const TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.inkMuted,
+              boxShadow: AppColors.cardShadow,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : AppColors.cream,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.local_shipping_rounded,
+                    size: 20,
+                    color: selected ? Colors.white : AppColors.forest,
+                  ),
+                ),
+                const SizedBox(width: EcoSpace.sm + 3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              truck.plateNumber,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                                color: AppColors.forest,
+                              ),
                             ),
                           ),
+                          const SizedBox(width: EcoSpace.xs),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.cream,
+                              borderRadius: BorderRadius.circular(
+                                EcoRadius.pill,
+                              ),
+                            ),
+                            child: Text(
+                              truck.wheelerLabel,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.inkMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: EcoSpace.xxs),
+                      Text(
+                        truck.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.inkMuted,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      truck.description,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.inkMuted,
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      truck.areaLabel,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.moss,
+                      const SizedBox(height: 2),
+                      Text(
+                        truck.areaLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.moss,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: AppColors.moss,
-              ),
-            ],
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.moss,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -318,25 +386,30 @@ class _RolePreviewSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+      padding: const EdgeInsets.fromLTRB(
+        EcoSpace.md,
+        EcoSpace.sm + 1,
+        EcoSpace.md,
+        EcoSpace.sm + 1,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(EcoRadius.lg),
         border: Border.all(color: AppColors.sage),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Signed in as',
+            'SIGNED IN AS',
             style: TextStyle(
               fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
               color: AppColors.inkMuted,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: EcoSpace.xs),
           Row(
             children: [
               for (final option in TruckCrewRole.values) ...[
@@ -344,19 +417,22 @@ class _RolePreviewSwitch extends StatelessWidget {
                   child: GestureDetector(
                     onTap: () => onChanged(option),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      duration: EcoMotion.base,
+                      curve: EcoMotion.enter,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: EcoSpace.sm,
+                      ),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: option == role
                             ? AppColors.forest
                             : AppColors.cream,
-                        borderRadius: BorderRadius.circular(11),
+                        borderRadius: BorderRadius.circular(EcoRadius.sm + 1),
                       ),
                       child: Text(
                         option.label,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                           color: option == role
                               ? Colors.white
@@ -367,16 +443,16 @@ class _RolePreviewSwitch extends StatelessWidget {
                   ),
                 ),
                 if (option != TruckCrewRole.values.last)
-                  const SizedBox(width: 8),
+                  const SizedBox(width: EcoSpace.sm),
               ],
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: EcoSpace.xs),
           Text(
             role.blurb,
             style: const TextStyle(
-              fontSize: 9,
-              height: 1.4,
+              fontSize: 10.5,
+              height: 1.45,
               color: AppColors.inkMuted,
             ),
           ),

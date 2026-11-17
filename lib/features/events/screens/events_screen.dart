@@ -80,7 +80,9 @@ class _EventsScreenState extends State<EventsScreen> {
             const SizedBox(height: 12),
             Expanded(
               child: StreamBuilder<List<CommunityEvent>>(
-                stream: isStaff ? _service.watchAll() : _service.watchPublished(),
+                stream: isStaff
+                    ? _service.watchAll()
+                    : _service.watchPublished(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const LoadingView(label: 'Loading events');
@@ -261,8 +263,9 @@ class _EventCard extends StatelessWidget {
         children: [
           if (image.isNotEmpty)
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
+              ),
               child: Image.memory(
                 _bytes(image),
                 height: 124,
@@ -349,8 +352,11 @@ class _EventCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          const Icon(Icons.place_outlined,
-                              size: 12, color: AppColors.inkMuted),
+                          const Icon(
+                            Icons.place_outlined,
+                            size: 12,
+                            color: AppColors.inkMuted,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -358,7 +364,7 @@ class _EventCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 9.5,
+                                fontSize: 11,
                                 color: AppColors.inkMuted,
                               ),
                             ),
@@ -368,13 +374,16 @@ class _EventCard extends StatelessWidget {
                       const SizedBox(height: 3),
                       Row(
                         children: [
-                          const Icon(Icons.schedule_rounded,
-                              size: 12, color: AppColors.inkMuted),
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 12,
+                            color: AppColors.inkMuted,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             '${timeLabel(event.startAt)} · ${relativeDay(event.startAt)}',
                             style: const TextStyle(
-                              fontSize: 9.5,
+                              fontSize: 11,
                               color: AppColors.inkMuted,
                             ),
                           ),
@@ -438,13 +447,16 @@ class _ParticipantCountState extends State<_ParticipantCount> {
         if (count == 0) return const SizedBox.shrink();
         return Row(
           children: [
-            const Icon(Icons.groups_rounded,
-                size: 12, color: AppColors.primary),
+            const Icon(
+              Icons.groups_rounded,
+              size: 12,
+              color: AppColors.primary,
+            ),
             const SizedBox(width: 4),
             Text(
               '$count going',
               style: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: AppColors.primary,
               ),
@@ -463,8 +475,18 @@ class _DateBlock extends StatelessWidget {
   final bool completed;
 
   static const _months = [
-    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
   ];
 
   @override
@@ -484,7 +506,7 @@ class _DateBlock extends StatelessWidget {
           Text(
             _months[date.month - 1],
             style: TextStyle(
-              fontSize: 8,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.6,
               color: completed ? AppColors.inkMuted : AppColors.primary,
@@ -602,8 +624,10 @@ class _EventDetailState extends State<_EventDetail> {
           const SizedBox(height: 14),
           _detailRow(Icons.event_rounded, dateTimeLabel(event.startAt)),
           if (event.endAt != null)
-            _detailRow(Icons.event_available_rounded,
-                'Ends ${dateTimeLabel(event.endAt)}'),
+            _detailRow(
+              Icons.event_available_rounded,
+              'Ends ${dateTimeLabel(event.endAt)}',
+            ),
           _detailRow(Icons.place_outlined, event.location),
           if (event.registrationInfo?.trim().isNotEmpty == true)
             _detailRow(Icons.how_to_reg_outlined, event.registrationInfo!),
@@ -692,8 +716,8 @@ class _ParticipantsPanel extends StatefulWidget {
 }
 
 class _ParticipantsPanelState extends State<_ParticipantsPanel> {
-  late final Stream<List<StreetCount>> _counts =
-      EventService().watchStreetCounts(widget.eventId);
+  late final Stream<List<StreetCount>> _counts = EventService()
+      .watchStreetCounts(widget.eventId);
   late final Stream<bool> _joined = widget.currentUid == null
       ? Stream<bool>.value(false)
       : EventService().watchJoined(widget.eventId, widget.currentUid!);
@@ -729,8 +753,11 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.groups_rounded,
-                          size: 18, color: AppColors.primary),
+                      const Icon(
+                        Icons.groups_rounded,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '$total ${total == 1 ? 'resident' : 'residents'} going',
@@ -755,7 +782,7 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
                     const Text(
                       'BY STREET',
                       style: TextStyle(
-                        fontSize: 8.5,
+                        fontSize: 10,
                         letterSpacing: 0.8,
                         fontWeight: FontWeight.w700,
                         color: AppColors.inkMuted,
@@ -771,7 +798,7 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
                           '+${top.length - 4} more '
                           '${top.length - 4 == 1 ? 'street' : 'streets'}',
                           style: const TextStyle(
-                            fontSize: 9,
+                            fontSize: 10.5,
                             color: AppColors.inkMuted,
                           ),
                         ),
@@ -781,15 +808,17 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
                     const SizedBox(height: 14),
                     if (joined)
                       OutlinedButton.icon(
-                        onPressed:
-                            widget.busy ? null : () => widget.onToggle?.call(true),
+                        onPressed: widget.busy
+                            ? null
+                            : () => widget.onToggle?.call(true),
                         icon: const Icon(Icons.event_busy_rounded, size: 16),
                         label: const Text('Cancel my spot'),
                       )
                     else
                       FilledButton.icon(
-                        onPressed:
-                            widget.busy ? null : () => widget.onToggle?.call(false),
+                        onPressed: widget.busy
+                            ? null
+                            : () => widget.onToggle?.call(false),
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -827,17 +856,11 @@ class _ParticipantsPanelState extends State<_ParticipantsPanel> {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: AppColors.textDark,
-              ),
+              style: const TextStyle(fontSize: 10.5, color: AppColors.textDark),
             ),
           ),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 62,
-            child: GrowBar(value: count / max, height: 5),
-          ),
+          SizedBox(width: 62, child: GrowBar(value: count / max, height: 5)),
           const SizedBox(width: 8),
           SizedBox(
             width: 16,
@@ -904,8 +927,7 @@ class _EventEditorState extends State<_EventEditor> {
     _contact = TextEditingController(text: existing?.contact ?? '');
     _category = existing?.category ?? EventCategory.cleanup;
     _status = existing?.status ?? EventStatus.published;
-    _startAt = existing?.startAt ??
-        DateTime.now().add(const Duration(days: 7));
+    _startAt = existing?.startAt ?? DateTime.now().add(const Duration(days: 7));
     _endAt = existing?.endAt;
     _image = existing?.image;
   }
@@ -937,13 +959,7 @@ class _EventEditorState extends State<_EventEditor> {
       initialTime: TimeOfDay.fromDateTime(initial),
     );
     if (time == null) return null;
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   Future<void> _save() async {
@@ -1032,7 +1048,8 @@ class _EventEditorState extends State<_EventEditor> {
                   hintText: 'What will happen and who can join?',
                   alignLabelWithHint: true,
                 ),
-                validator: (value) => (value == null || value.trim().length < 10)
+                validator: (value) =>
+                    (value == null || value.trim().length < 10)
                     ? 'Please describe the event'
                     : null,
               ),
@@ -1131,11 +1148,12 @@ class _EventEditorState extends State<_EventEditor> {
                 ),
                 subtitle: const Text(
                   'Turn off to keep this as a draft.',
-                  style: TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+                  style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
                 ),
                 onChanged: (value) => setState(
-                  () => _status =
-                      value ? EventStatus.published : EventStatus.draft,
+                  () => _status = value
+                      ? EventStatus.published
+                      : EventStatus.draft,
                 ),
               ),
               const SizedBox(height: 10),
@@ -1153,7 +1171,9 @@ class _EventEditorState extends State<_EventEditor> {
                           ),
                         )
                       : Text(
-                          widget.existing == null ? 'Create event' : 'Save changes',
+                          widget.existing == null
+                              ? 'Create event'
+                              : 'Save changes',
                         ),
                 ),
               ),
@@ -1182,8 +1202,11 @@ class _EventEditorState extends State<_EventEditor> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.event_outlined,
-                size: 18, color: AppColors.primary),
+            const Icon(
+              Icons.event_outlined,
+              size: 18,
+              color: AppColors.primary,
+            ),
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1191,7 +1214,7 @@ class _EventEditorState extends State<_EventEditor> {
                 Text(
                   label,
                   style: const TextStyle(
-                    fontSize: 9,
+                    fontSize: 10.5,
                     color: AppColors.inkMuted,
                   ),
                 ),
@@ -1214,8 +1237,11 @@ class _EventEditorState extends State<_EventEditor> {
                 visualDensity: VisualDensity.compact,
               )
             else
-              const Icon(Icons.edit_calendar_outlined,
-                  size: 17, color: AppColors.inkMuted),
+              const Icon(
+                Icons.edit_calendar_outlined,
+                size: 17,
+                color: AppColors.inkMuted,
+              ),
           ],
         ),
       ),

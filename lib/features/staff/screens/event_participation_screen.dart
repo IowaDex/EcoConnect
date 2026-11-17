@@ -87,7 +87,7 @@ class _EventParticipationScreenState extends State<EventParticipationScreen> {
                     children: [
                       _StreetRanking(standings: data.standings),
                       const SizedBox(height: 22),
-                      const _SectionLabel('PER EVENT'),
+                      const SectionLabel('PER EVENT'),
                       const SizedBox(height: 10),
                       for (final event in data.events)
                         Padding(
@@ -133,7 +133,7 @@ class _StreetRanking extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionLabel('STREET RANKING'),
+        const SectionLabel('STREET RANKING'),
         const SizedBox(height: 10),
         EcoCard(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -283,8 +283,11 @@ class _EventRow extends StatelessWidget {
               color: event.category.color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(event.category.icon,
-                size: 18, color: event.category.color),
+            child: Icon(
+              event.category.icon,
+              size: 18,
+              color: event.category.color,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -367,10 +370,7 @@ class _EventRosterSheet extends StatelessWidget {
               Text(
                 '${list.length} '
                 '${list.length == 1 ? 'resident signed up' : 'residents signed up'}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 18),
               if (list.isEmpty)
@@ -383,8 +383,11 @@ class _EventRosterSheet extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      const Icon(Icons.place_rounded,
-                          size: 14, color: AppColors.primary),
+                      const Icon(
+                        Icons.place_rounded,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
@@ -425,25 +428,6 @@ class _EventRosterSheet extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 9,
-        letterSpacing: 0.9,
-        fontWeight: FontWeight.w800,
-        color: AppColors.inkMuted,
       ),
     );
   }

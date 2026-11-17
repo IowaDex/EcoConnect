@@ -45,7 +45,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _sending = true;
       _error = null;
     });
-    final error = await context.read<AuthProvider>().sendPasswordReset(_email.text);
+    final error = await context.read<AuthProvider>().sendPasswordReset(
+      _email.text,
+    );
     if (!mounted) return;
 
     setState(() {
@@ -79,8 +81,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     tooltip: 'Back',
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 16, color: AppColors.forest),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 16,
+                      color: AppColors.forest,
+                    ),
                     onPressed: () => context.go('/login'),
                   ),
                   const SizedBox(width: 8),
@@ -110,7 +115,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         'Enter the email you signed up with and we will send '
                         'you a link to choose a new password.',
                         style: TextStyle(
-                            fontSize: 11, height: 1.5, color: AppColors.inkMuted),
+                          fontSize: 11,
+                          height: 1.5,
+                          color: AppColors.inkMuted,
+                        ),
                       ),
                       const SizedBox(height: 26),
                       AppTextField(
@@ -127,7 +135,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         Text(
                           _error!,
                           style: const TextStyle(
-                              fontSize: 11, color: AppColors.danger),
+                            fontSize: 11,
+                            color: AppColors.danger,
+                          ),
                         ),
                       ],
                       if (_sent) ...[
@@ -143,9 +153,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             'reset link is on its way. Check your inbox and '
                             'spam folder.',
                             style: const TextStyle(
-                                fontSize: 11,
-                                height: 1.5,
-                                color: AppColors.forest),
+                              fontSize: 11,
+                              height: 1.5,
+                              color: AppColors.forest,
+                            ),
                           ),
                         ),
                       ],
@@ -154,8 +165,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         label: _cooldown > 0
                             ? 'Resend in ${_cooldown}s'
                             : _sent
-                                ? 'Resend link'
-                                : 'Send reset link',
+                            ? 'Resend link'
+                            : 'Send reset link',
                         loading: _sending,
                         onPressed: _cooldown > 0 ? null : _send,
                       ),
@@ -166,7 +177,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           child: const Text(
                             'Back to login',
                             style: TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.w700),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),

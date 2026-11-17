@@ -79,3 +79,14 @@ class FleetService {
 
   static String idForPlate(String plate) => _idForPlate(plate);
 }
+
+/// True when [query] appears in the plate, the body, the driver or the zone —
+/// the four things the desk knows about a truck before opening it.
+bool truckMatchesQuery(GarbageTruck truck, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  return truck.plateNumber.toLowerCase().contains(q) ||
+      truck.description.toLowerCase().contains(q) ||
+      truck.driverName.toLowerCase().contains(q) ||
+      truck.zone.toLowerCase().contains(q);
+}

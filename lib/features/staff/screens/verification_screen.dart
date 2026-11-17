@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -122,7 +124,9 @@ class _PendingAccountsTabState extends State<_PendingAccountsTab> {
 
   Future<void> _approve(Map<String, dynamic> account) async {
     try {
-      await context.read<AuthProvider>().approveAccount(account['uid'] as String);
+      await context.read<AuthProvider>().approveAccount(
+        account['uid'] as String,
+      );
       if (!mounted) return;
       AppFeedback.success(
         context,
@@ -210,12 +214,16 @@ class _PendingAccountsTabState extends State<_PendingAccountsTab> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(Icons.place_outlined,
-                          size: 13, color: AppColors.inkMuted),
+                      const Icon(
+                        Icons.place_outlined,
+                        size: 13,
+                        color: AppColors.inkMuted,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          (account['barangay'] as String?) ?? 'Barangay not set',
+                          (account['barangay'] as String?) ??
+                              'Barangay not set',
                           style: const TextStyle(
                             fontSize: 9.5,
                             color: AppColors.inkMuted,
@@ -535,8 +543,11 @@ class _DocumentPreview extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.picture_as_pdf_rounded,
-                size: 26, color: AppColors.error),
+            const Icon(
+              Icons.picture_as_pdf_rounded,
+              size: 26,
+              color: AppColors.error,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -565,6 +576,7 @@ class _DocumentPreview extends StatelessWidget {
 }
 
 enum _ResidentAction {
+  viewId,
   approveRegistration,
   rejectRegistration,
   verify,
@@ -573,18 +585,18 @@ enum _ResidentAction {
 }
 
 String _registrationLabel(String status) => switch (status) {
-      'pending' => 'Registration pending',
-      'approved' => 'Awaiting resident',
-      'declined' => 'Resident declined',
-      _ => 'Registration accepted',
-    };
+  'pending' => 'Registration pending',
+  'approved' => 'Awaiting resident',
+  'declined' => 'Resident declined',
+  _ => 'Registration accepted',
+};
 
 Color _registrationColor(String status) => switch (status) {
-      'pending' => AppColors.warning,
-      'approved' => const Color(0xFF1565C0),
-      'declined' => AppColors.error,
-      _ => AppColors.primary,
-    };
+  'pending' => AppColors.warning,
+  'approved' => const Color(0xFF1565C0),
+  'declined' => AppColors.error,
+  _ => AppColors.primary,
+};
 
 class _ResidentsTab extends StatefulWidget {
   const _ResidentsTab();
@@ -595,12 +607,23 @@ class _ResidentsTab extends StatefulWidget {
 
 class _ResidentsTabState extends State<_ResidentsTab> {
   final _service = VerificationService();
+  final _search = TextEditingController();
   late Future<List<Map<String, dynamic>>> _future;
+  String _query = '';
+  String _filter = 'all';
+  int _page = 0;
+  int _pageSize = 10;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
@@ -684,132 +707,284 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         if (snapshot.hasError) {
           return ErrorView(message: AppFeedback.describe(snapshot.error!));
         }
-        final residents = snapshot.data ?? const [];
-        if (residents.isEmpty) {
-          return const EmptyState(
-            icon: Icons.people_outline_rounded,
-            title: 'No residents yet',
-            message: 'Registered residents appear here for validation.',
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-          itemCount: residents.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) {
-            final user = residents[i];
-            final status = VerificationStatusX.fromName(
-              user['verificationStatus'] as String?,
-            );
-            final accountType = AccountTypeX.fromName(
-              user['accountType'] as String?,
-            );
-            final registration =
-                (user['registrationStatus'] as String?) ?? 'accepted';
-            return EcoCard(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 19,
-                    backgroundColor: AppColors.lightGreen,
-                    child: Text(
-                      ((user['name'] as String?) ?? 'R')
-                          .substring(0, 1)
-                          .toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (user['name'] as String?) ?? 'Resident',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        Text(
-                          '${accountType.shortLabel} · ${(user['barangay'] as String?) ?? 'No barangay'}',
-                          style: const TextStyle(
-                            fontSize: 9,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            StatusBadge(
-                              label: status.label,
-                              color: status.color,
-                              icon: status.icon,
-                              compact: true,
-                            ),
-                            StatusBadge(
-                              label: _registrationLabel(registration),
-                              color: _registrationColor(registration),
-                              compact: true,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  PopupMenuButton<_ResidentAction>(
-                    icon: const Icon(Icons.more_vert_rounded,
-                        size: 18, color: AppColors.inkMuted),
-                    onSelected: (value) => switch (value) {
-                      _ResidentAction.approveRegistration =>
-                        _set(user, VerificationStatus.verified),
-                      _ResidentAction.rejectRegistration =>
-                        _set(user, VerificationStatus.rejected),
-                      _ResidentAction.verify =>
-                        _set(user, VerificationStatus.verified),
-                      _ResidentAction.reject => _set(user, VerificationStatus.rejected),
-                      _ResidentAction.reset =>
-                        _set(user, VerificationStatus.unverified),
-                    },
-                    itemBuilder: (_) => [
-                      if (registration == 'pending') ...[
-                        const PopupMenuItem(
-                          value: _ResidentAction.approveRegistration,
-                          child: Text('Approve registration'),
-                        ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.rejectRegistration,
-                          child: Text('Reject registration'),
-                        ),
-                      ] else ...[
-                        const PopupMenuItem(
-                          value: _ResidentAction.verify,
-                          child: Text('Mark verified'),
-                        ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.reject,
-                          child: Text('Reject'),
-                        ),
-                        const PopupMenuItem(
-                          value: _ResidentAction.reset,
-                          child: Text('Reset to unverified'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
+        final all = snapshot.data ?? const <Map<String, dynamic>>[];
+        final query = _query.trim().toLowerCase();
+        final filtered = all
+            .where((user) {
+              final registration =
+                  (user['registrationStatus'] as String?) ?? 'accepted';
+              final verification =
+                  (user['verificationStatus'] as String?) ?? 'unverified';
+              if (_filter != 'all') {
+                if (_filter == 'unverified') {
+                  if (verification != 'unverified') return false;
+                } else if (registration != _filter) {
+                  return false;
+                }
+              }
+              if (query.isEmpty) return true;
+              final name = ((user['name'] as String?) ?? '').toLowerCase();
+              final email = ((user['email'] as String?) ?? '').toLowerCase();
+              final barangay = ((user['barangay'] as String?) ?? '')
+                  .toLowerCase();
+              return name.contains(query) ||
+                  email.contains(query) ||
+                  barangay.contains(query);
+            })
+            .toList(growable: false);
+        final page = clampPage(_page, filtered.length, _pageSize);
+        final visible = pageSlice(filtered, page, _pageSize);
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+              child: EcoSearchField(
+                controller: _search,
+                hint: 'Search name, email or barangay',
+                onChanged: (value) => setState(() {
+                  _query = value;
+                  _page = 0;
+                }),
               ),
-            );
-          },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: SizedBox(
+                height: 32,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final option in const [
+                      ('all', 'All'),
+                      ('pending', 'Pending'),
+                      ('approved', 'Approved'),
+                      ('accepted', 'Accepted'),
+                      ('declined', 'Declined'),
+                      ('unverified', 'Unverified'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: FilterChip(
+                          label: Text(option.$2),
+                          selected: _filter == option.$1,
+                          onSelected: (_) => setState(() {
+                            _filter = option.$1;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.people_outline_rounded,
+                      title: 'No residents match',
+                      message:
+                          'Change the search or filter to see other accounts.',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final user = visible[i];
+                        final status = VerificationStatusX.fromName(
+                          user['verificationStatus'] as String?,
+                        );
+                        final accountType = AccountTypeX.fromName(
+                          user['accountType'] as String?,
+                        );
+                        final registration =
+                            (user['registrationStatus'] as String?) ??
+                            'accepted';
+                        return EcoCard(
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 19,
+                                backgroundColor: AppColors.lightGreen,
+                                child: Text(
+                                  ((user['name'] as String?) ?? 'R')
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      (user['name'] as String?) ?? 'Resident',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textDark,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${accountType.shortLabel} · ${(user['barangay'] as String?) ?? 'No barangay'}',
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        color: AppColors.inkMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        StatusBadge(
+                                          label: status.label,
+                                          color: status.color,
+                                          icon: status.icon,
+                                          compact: true,
+                                        ),
+                                        StatusBadge(
+                                          label: _registrationLabel(
+                                            registration,
+                                          ),
+                                          color: _registrationColor(
+                                            registration,
+                                          ),
+                                          compact: true,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuButton<_ResidentAction>(
+                                icon: const Icon(
+                                  Icons.more_vert_rounded,
+                                  size: 18,
+                                  color: AppColors.inkMuted,
+                                ),
+                                onSelected: (value) => switch (value) {
+                                  _ResidentAction.viewId => _showId(
+                                    context,
+                                    user,
+                                  ),
+                                  _ResidentAction.approveRegistration => _set(
+                                    user,
+                                    VerificationStatus.verified,
+                                  ),
+                                  _ResidentAction.rejectRegistration => _set(
+                                    user,
+                                    VerificationStatus.rejected,
+                                  ),
+                                  _ResidentAction.verify => _set(
+                                    user,
+                                    VerificationStatus.verified,
+                                  ),
+                                  _ResidentAction.reject => _set(
+                                    user,
+                                    VerificationStatus.rejected,
+                                  ),
+                                  _ResidentAction.reset => _set(
+                                    user,
+                                    VerificationStatus.unverified,
+                                  ),
+                                },
+                                itemBuilder: (_) => [
+                                  if (user['barangayId'] is Map)
+                                    const PopupMenuItem(
+                                      value: _ResidentAction.viewId,
+                                      child: Text('View submitted ID'),
+                                    ),
+                                  if (registration == 'pending') ...[
+                                    const PopupMenuItem(
+                                      value:
+                                          _ResidentAction.approveRegistration,
+                                      child: Text('Approve registration'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: _ResidentAction.rejectRegistration,
+                                      child: Text('Reject registration'),
+                                    ),
+                                  ] else ...[
+                                    const PopupMenuItem(
+                                      value: _ResidentAction.verify,
+                                      child: Text('Mark verified'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: _ResidentAction.reject,
+                                      child: Text('Reject'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: _ResidentAction.reset,
+                                      child: Text('Reset to unverified'),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+              child: EcoPaginationBar(
+                page: page,
+                pageSize: _pageSize,
+                total: filtered.length,
+                onPageChanged: (value) => setState(() => _page = value),
+                onPageSizeChanged: (value) => setState(() {
+                  _pageSize = value;
+                  _page = 0;
+                }),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+
+  /// The resident uploaded this at sign-up; the barangay checks it before
+  /// accepting the registration.
+  void _showId(BuildContext context, Map<String, dynamic> user) {
+    final document = UploadPayload.fromMap(user['barangayId']);
+    if (document == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.creamBright,
+        title: const Text('Submitted ID'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${user['name'] ?? 'Resident'} · ${user['barangay'] ?? ''}',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _DocumentPreview(document: document),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

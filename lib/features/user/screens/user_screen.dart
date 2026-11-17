@@ -2,25 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../auth/providers/auth_provider.dart';
-import '../../location/providers/location_provider.dart';
-import '../../location/widgets/location_controls.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
-import '../../auth/models/account_type.dart';
 import '../../announcements/models/announcement.dart';
 import '../../announcements/services/announcement_service.dart';
+import '../../auth/models/account_type.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../complaints/models/complaint.dart';
+import '../../complaints/services/complaint_service.dart';
+import '../../dashboard/widgets/quick_action_grid.dart';
+import '../../dashboard/widgets/role_hero.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../../events/models/community_event.dart';
 import '../../events/services/event_service.dart';
-import '../widgets/user_avatar.dart';
+import '../../location/providers/location_provider.dart';
+import '../../location/widgets/location_controls.dart';
+import '../../requests/models/collection_request.dart';
+import '../../requests/services/collection_request_service.dart';
 import '../widgets/profile_sheet.dart';
-import '../../notifications/widgets/notification_bell.dart';
+import '../widgets/user_avatar.dart';
 
 class UserScreen extends StatefulWidget {
   const UserScreen({super.key});
@@ -47,78 +54,80 @@ class _UserScreenState extends State<UserScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Hero(user: user, onEditProfile: () => _showProfile(context)),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
-              children: [
-                if (user?.needsRegistrationDecision == true) ...[
-                  const _RegistrationDecisionCard(),
-                  const SizedBox(height: 18),
-                ] else if (user?.registrationPending == true) ...[
-                  const EcoBanner(
-                    message:
-                        'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
-                    icon: Icons.hourglass_top_rounded,
-                    color: AppColors.warning,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const RoleTopBar(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                children: [
+                  FadeSlideIn(
+                    index: 0,
+                    child: _ResidentHero(
+                      user: user,
+                      onEditProfile: () => _showProfile(context),
+                    ),
                   ),
-                  const SizedBox(height: 18),
-                ] else if (user?.registrationDeclined == true) ...[
-                  const EcoBanner(
-                    message:
-                        'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
-                    icon: Icons.info_outline_rounded,
-                    color: AppColors.inkMuted,
+                  if (user?.needsRegistrationDecision == true) ...[
+                    const SizedBox(height: EcoSpace.md),
+                    const _RegistrationDecisionCard(),
+                  ] else if (user?.registrationPending == true) ...[
+                    const SizedBox(height: EcoSpace.md),
+                    const EcoBanner(
+                      message:
+                          'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
+                      icon: Icons.hourglass_top_rounded,
+                      color: AppColors.warning,
+                    ),
+                  ] else if (user?.registrationDeclined == true) ...[
+                    const SizedBox(height: EcoSpace.md),
+                    const EcoBanner(
+                      message:
+                          'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
+                      icon: Icons.info_outline_rounded,
+                      color: AppColors.inkMuted,
+                    ),
+                  ],
+                  if (user?.isGovernment == true &&
+                      !user!.isVerifiedGovernment) ...[
+                    const SizedBox(height: EcoSpace.md),
+                    _VerificationNotice(user: user),
+                  ],
+                  const SizedBox(height: EcoSpace.xl),
+                  const SectionLabel('QUICK ACTIONS'),
+                  const SizedBox(height: EcoSpace.sm),
+                  const QuickActionGrid(actions: _actions),
+                  const SizedBox(height: EcoSpace.xl),
+                  SectionLabel(
+                    'UPCOMING EVENTS',
+                    action: 'View all',
+                    onAction: () => context.go('/events'),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: EcoSpace.sm),
+                  const _EventsStrip(),
+                  const SizedBox(height: EcoSpace.xl),
+                  SectionLabel(
+                    'ANNOUNCEMENTS',
+                    action: 'View all',
+                    onAction: () => context.go('/announcements'),
+                  ),
+                  const SizedBox(height: EcoSpace.sm),
+                  const _LatestAnnouncements(),
+                  const SizedBox(height: EcoSpace.lg),
+                  HoverLift(
+                    child: _ReportPrompt(
+                      onTap: () => context.go('/report-incident'),
+                    ),
+                  ),
+                  const SizedBox(height: EcoSpace.lg),
+                  const LocationControls(),
                 ],
-                if (user?.isGovernment == true &&
-                    !user!.isVerifiedGovernment) ...[
-                  _VerificationNotice(user: user),
-                  const SizedBox(height: 18),
-                ],
-                const _SectionLabel(title: 'QUICK ACTIONS'),
-                const SizedBox(height: 10),
-                const _ResidentQuickActions(),
-                const SizedBox(height: 24),
-                _SectionLabel(
-                  title: 'UPCOMING EVENTS',
-                  action: 'View all',
-                  onAction: () => context.go('/events'),
-                ),
-                const SizedBox(height: 10),
-                const _EventsStrip(),
-                const SizedBox(height: 24),
-                _SectionLabel(
-                  title: 'ANNOUNCEMENTS',
-                  action: 'View all',
-                  onAction: () => context.go('/announcements'),
-                ),
-                const SizedBox(height: 10),
-                const _LatestAnnouncements(),
-                const SizedBox(height: 20),
-                HoverLift(
-                  child: _TrackPrompt(onTap: () => context.go('/tracking')),
-                ),
-                const SizedBox(height: 12),
-                HoverLift(
-                  child: _ReportPrompt(
-                    onTap: () => context.go('/report-incident'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                HoverLift(
-                  child: _WalletPrompt(onTap: () => context.go('/wallet')),
-                ),
-                const SizedBox(height: 18),
-                const LocationControls(),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 0,
@@ -127,6 +136,54 @@ class _UserScreenState extends State<UserScreen> {
       ),
     );
   }
+
+  static const _actions = <QuickAction>[
+    QuickAction(
+      label: 'Upload waste',
+      icon: Icons.add_a_photo_outlined,
+      route: '/waste-upload',
+    ),
+    QuickAction(
+      label: 'Track truck',
+      icon: Icons.local_shipping_rounded,
+      route: '/tracking',
+    ),
+    QuickAction(
+      label: 'Request pickup',
+      icon: Icons.assignment_outlined,
+      route: '/request-collection',
+    ),
+    QuickAction(
+      label: 'Uncollected',
+      icon: Icons.report_problem_outlined,
+      route: '/request-collection?wave=2',
+    ),
+    QuickAction(
+      label: 'My requests',
+      icon: Icons.fact_check_outlined,
+      route: '/my-requests',
+    ),
+    QuickAction(
+      label: 'My uploads',
+      icon: Icons.photo_library_outlined,
+      route: '/waste-history',
+    ),
+    QuickAction(
+      label: 'Events',
+      icon: Icons.event_available_outlined,
+      route: '/events',
+    ),
+    QuickAction(
+      label: 'Announcements',
+      icon: Icons.campaign_outlined,
+      route: '/announcements',
+    ),
+    QuickAction(
+      label: 'Complaints',
+      icon: Icons.report_outlined,
+      route: '/my-complaints',
+    ),
+  ];
 
   void _onNav(BuildContext context, int index) {
     switch (index) {
@@ -144,369 +201,112 @@ class _UserScreenState extends State<UserScreen> {
   void _showProfile(BuildContext context) => showProfileSheet(context);
 }
 
-/// Dark hero panel: wordmark, avatar, greeting and the two quick pills.
-class _Hero extends StatelessWidget {
-  const _Hero({required this.user, required this.onEditProfile});
+/// The resident hero. Both counters come from the same streams the request
+/// and complaint lists use, so the figures and the lists cannot disagree.
+class _ResidentHero extends StatefulWidget {
+  const _ResidentHero({required this.user, required this.onEditProfile});
 
   final AppUser? user;
   final VoidCallback onEditProfile;
 
   @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    final address = user?.fullAddress ?? 'No address on file';
-    final hasAddress = address != 'No address on file';
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(22, topInset + 16, 22, 22),
-      decoration: const BoxDecoration(
-        gradient: AppColors.forestGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const BrandWordmark(fontSize: 12, color: AppColors.creamBright),
-              const Spacer(),
-              NotificationBell(
-                iconSize: 19,
-                color: AppColors.creamBright,
-                circleColor: AppColors.creamBright.withValues(alpha: 0.14),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              UserAvatar(
-                photoUrl: user?.photoUrl,
-                size: 62,
-                background: AppColors.creamBright,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome back,',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.creamBright.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      user?.displayName ?? 'EcoConnect user',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 19,
-                        height: 1.1,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.creamBright,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      user?.email ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.creamBright.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Flexible(
-                child: HoverLift(
-                  child: _HeroPill(
-                    label: hasAddress ? address : 'No address yet',
-                    icon: Icons.location_on_outlined,
-                    onTap: onEditProfile,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              HoverLift(
-                child: _HeroPill(label: 'Edit profile', onTap: onEditProfile),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  State<_ResidentHero> createState() => _ResidentHeroState();
 }
 
-/// Outline pill used inside the dark hero.
-class _HeroPill extends StatelessWidget {
-  const _HeroPill({required this.label, required this.onTap, this.icon});
+class _ResidentHeroState extends State<_ResidentHero> {
+  Stream<List<CollectionRequest>>? _requests;
+  Stream<List<Complaint>>? _complaints;
 
-  final String label;
-  final VoidCallback onTap;
-  final IconData? icon;
+  @override
+  void initState() {
+    super.initState();
+    _bind(widget.user?.uid);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResidentHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user?.uid != widget.user?.uid) _bind(widget.user?.uid);
+  }
+
+  void _bind(String? uid) {
+    if (uid == null || uid.isEmpty) {
+      _requests = null;
+      _complaints = null;
+      return;
+    }
+    _requests = CollectionRequestService().watchMine(uid);
+    _complaints = ComplaintService().watchMine(uid);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: AppColors.creamBright.withValues(alpha: 0.45),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 13, color: AppColors.creamBright),
-              const SizedBox(width: 6),
-            ],
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.creamBright,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final requests = _requests;
+    final complaints = _complaints;
+
+    if (requests == null || complaints == null) return _hero();
+
+    return StreamBuilder<List<CollectionRequest>>(
+      stream: requests,
+      builder: (context, requestSnapshot) {
+        final openRequests =
+            (requestSnapshot.data ?? const <CollectionRequest>[])
+                .where((request) => request.status.isOpen)
+                .length;
+        return StreamBuilder<List<Complaint>>(
+          stream: complaints,
+          builder: (context, complaintSnapshot) {
+            final openComplaints =
+                (complaintSnapshot.data ?? const <Complaint>[])
+                    .where((complaint) => complaint.status.isOpen)
+                    .length;
+            return _hero(
+              openRequests: openRequests,
+              openComplaints: openComplaints,
+            );
+          },
+        );
+      },
     );
   }
-}
 
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.title, this.action, this.onAction});
+  Widget _hero({int openRequests = 0, int openComplaints = 0}) {
+    final user = widget.user;
+    final address = user?.fullAddress;
 
-  final String title;
-  final String? action;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: AppColors.forest,
-          ),
+    return RoleHero(
+      icon: Icons.person_rounded,
+      eyebrow: 'RESIDENT · BATASAN HILLS',
+      greeting: greeting(),
+      title: user?.displayName ?? 'EcoConnect user',
+      subtitle: address == null || address.trim().isEmpty
+          ? 'Add your address so staff can find your pickup point.'
+          : address,
+      leading: UserAvatar(
+        photoUrl: user?.photoUrl,
+        size: 56,
+        background: AppColors.creamBright,
+      ),
+      stats: [
+        RoleStat(
+          icon: Icons.assignment_rounded,
+          label: 'Open requests',
+          value: openRequests,
+          accent: AppColors.warning,
         ),
-        const Spacer(),
-        if (action != null)
-          GestureDetector(
-            onTap: onAction,
-            child: Text(
-              action!,
-              style: const TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w500,
-                color: AppColors.forest,
-              ),
-            ),
-          ),
+        RoleStat(
+          icon: Icons.report_rounded,
+          label: 'Open complaints',
+          value: openComplaints,
+        ),
       ],
-    );
-  }
-}
-
-class _ReportPrompt extends StatelessWidget {
-  const _ReportPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.cream,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+      actions: [
+        RoleActionPill(
+          label: 'Edit profile',
+          icon: Icons.edit_outlined,
+          onTap: widget.onEditProfile,
         ),
-        child: Row(
-          children: [
-            Container(
-              height: 38,
-              width: 38,
-              decoration: const BoxDecoration(
-                color: AppColors.mint,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.report_outlined,
-                  size: 18, color: AppColors.forest),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Report an incident',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Missed pickup, dumping or a full bin',
-                    style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.moss),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WalletPrompt extends StatelessWidget {
-  const _WalletPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.mint.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.forest.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 38,
-              width: 38,
-              decoration: const BoxDecoration(
-                color: AppColors.forest,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.recycling_rounded,
-                  size: 18, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Recycling wallet',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Your points from the barangay drop-off station',
-                    style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.moss),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackPrompt extends StatelessWidget {
-  const _TrackPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.cream,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 38,
-              width: 38,
-              decoration: const BoxDecoration(
-                color: AppColors.mint,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.near_me_rounded,
-                  size: 18, color: AppColors.forest),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Track the truck',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'See where your collector is right now',
-                    style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                size: 20, color: AppColors.moss),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }
@@ -531,7 +331,8 @@ class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
       final ok = await AppFeedback.confirm(
         context,
         title: 'Decline the approval?',
-        message: 'Your registration will be withdrawn and barangay staff '
+        message:
+            'Your registration will be withdrawn and barangay staff '
             'will be told. Contact them if you want to restart it.',
         confirmLabel: 'Decline',
         icon: Icons.info_outline_rounded,
@@ -539,8 +340,9 @@ class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
       if (!ok || !mounted) return;
     }
     setState(() => _busy = true);
-    final error =
-        await context.read<AuthProvider>().answerRegistration(accepted: accepted);
+    final error = await context.read<AuthProvider>().answerRegistration(
+      accepted: accepted,
+    );
     if (!mounted) return;
     setState(() => _busy = false);
     if (error != null) {
@@ -569,8 +371,11 @@ class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
                   color: AppColors.mint,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.how_to_reg_rounded,
-                    size: 18, color: AppColors.forest),
+                child: const Icon(
+                  Icons.how_to_reg_rounded,
+                  size: 18,
+                  color: AppColors.forest,
+                ),
               ),
               const SizedBox(width: 11),
               const Expanded(
@@ -591,7 +396,7 @@ class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
             'the approval was sent to the wrong person or you are not a '
             'resident. Your answer is recorded with the date and time.',
             style: TextStyle(
-              fontSize: 9.5,
+              fontSize: 10,
               height: 1.5,
               color: AppColors.inkMuted,
             ),
@@ -659,128 +464,67 @@ class _VerificationNotice extends StatelessWidget {
   }
 }
 
-class _ResidentQuickActions extends StatelessWidget {
-  const _ResidentQuickActions();
+class _ReportPrompt extends StatelessWidget {
+  const _ReportPrompt({required this.onTap});
 
-  static const _actions = <({
-    String label,
-    IconData icon,
-    String route,
-    Color color,
-  })>[
-    (
-      label: 'Upload waste',
-      icon: Icons.add_a_photo_outlined,
-      route: '/waste-upload',
-      color: AppColors.primary,
-    ),
-    (
-      label: 'Request pickup',
-      icon: Icons.assignment_outlined,
-      route: '/request-collection',
-      color: Color(0xFF00695C),
-    ),
-    (
-      label: 'My requests',
-      icon: Icons.fact_check_outlined,
-      route: '/my-requests',
-      color: Color(0xFF6A1B9A),
-    ),
-    (
-      label: 'My uploads',
-      icon: Icons.photo_library_outlined,
-      route: '/waste-history',
-      color: Color(0xFFEF6C00),
-    ),
-    (
-      label: 'Events',
-      icon: Icons.event_available_outlined,
-      route: '/events',
-      color: Color(0xFF1565C0),
-    ),
-    (
-      label: 'Announcements',
-      icon: Icons.campaign_outlined,
-      route: '/announcements',
-      color: Color(0xFF558B2F),
-    ),
-    (
-      label: 'Complaints',
-      icon: Icons.report_outlined,
-      route: '/my-complaints',
-      color: Color(0xFFD32F2F),
-    ),
-  ];
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth > 520 ? 6 : 3;
-        final width = (constraints.maxWidth - (columns - 1) * 10) / columns;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.cream,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+        ),
+        child: Row(
           children: [
-            for (var i = 0; i < _actions.length; i++)
-              SizedBox(
-                width: width,
-                child: FadeSlideIn(
-                  index: i,
-                  offset: 10,
-                  child: HoverLift(
-                    child: InkWell(
-                      onTap: () => context.push(_actions[i].route),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 13,
-                          horizontal: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: AppColors.sage.withValues(alpha: 0.75),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              height: 34,
-                              width: 34,
-                              decoration: BoxDecoration(
-                                color: _actions[i].color.withValues(alpha: 0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _actions[i].icon,
-                                size: 17,
-                                color: _actions[i].color,
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              _actions[i].label,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              style: const TextStyle(
-                                fontSize: 9,
-                                height: 1.25,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+            Container(
+              height: 38,
+              width: 38,
+              decoration: const BoxDecoration(
+                color: AppColors.mint,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.report_outlined,
+                size: 18,
+                color: AppColors.forest,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Report an incident',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.forest,
                     ),
                   ),
-                ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Missed pickup, dumping or a full bin',
+                    style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
+                  ),
+                ],
               ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.moss,
+            ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -814,14 +558,13 @@ class _EventsStrip extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
             child: Row(
               children: [
-                Icon(Icons.event_outlined,
-                    size: 20, color: AppColors.inkMuted),
+                Icon(Icons.event_outlined, size: 20, color: AppColors.inkMuted),
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'No upcoming events yet. New community programs appear here.',
                     style: TextStyle(
-                      fontSize: 9.5,
+                      fontSize: 10,
                       height: 1.45,
                       color: AppColors.inkMuted,
                     ),
@@ -869,7 +612,7 @@ class _EventsStrip extends StatelessWidget {
                           Text(
                             relativeDay(event.startAt),
                             style: const TextStyle(
-                              fontSize: 8,
+                              fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primary,
                             ),
@@ -891,8 +634,11 @@ class _EventsStrip extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.place_outlined,
-                              size: 10, color: AppColors.inkMuted),
+                          const Icon(
+                            Icons.place_outlined,
+                            size: 10,
+                            color: AppColors.inkMuted,
+                          ),
                           const SizedBox(width: 3),
                           Expanded(
                             child: Text(
@@ -900,7 +646,7 @@ class _EventsStrip extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 8,
+                                fontSize: 9,
                                 color: AppColors.inkMuted,
                               ),
                             ),
@@ -947,14 +693,17 @@ class _LatestAnnouncements extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
             child: Row(
               children: [
-                Icon(Icons.campaign_outlined,
-                    size: 20, color: AppColors.inkMuted),
+                Icon(
+                  Icons.campaign_outlined,
+                  size: 20,
+                  color: AppColors.inkMuted,
+                ),
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'No announcements yet. Barangay updates will appear here.',
                     style: TextStyle(
-                      fontSize: 9.5,
+                      fontSize: 10,
                       height: 1.45,
                       color: AppColors.inkMuted,
                     ),
@@ -986,7 +735,7 @@ class _LatestAnnouncements extends StatelessWidget {
                         Text(
                           timeAgo(items[i].publishAt ?? items[i].createdAt),
                           style: const TextStyle(
-                            fontSize: 8.5,
+                            fontSize: 9,
                             color: AppColors.inkMuted,
                           ),
                         ),
@@ -1010,7 +759,7 @@ class _LatestAnnouncements extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 9.5,
+                        fontSize: 10,
                         height: 1.5,
                         color: AppColors.inkMuted,
                       ),

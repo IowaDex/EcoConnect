@@ -98,6 +98,41 @@ test('only the owner reads or writes their login session, with a valid shape', a
   await assertSucceeds(deleteDoc(doc(as('root'), 'sessions/alice')));
 });
 
+test('Iswim provisions its own logins and crew, but never an admin or City Hall', async () => {
+  const profile = (role) => ({
+    name: 'New account',
+    email: 'new@ecoconnect.test',
+    role,
+    accountStatus: 'active',
+    emailVerified: true,
+    accountType: 'government',
+    verificationStatus: 'verified',
+  });
+  await assertSucceeds(setDoc(doc(as('ivy'), 'users/new_driver'), profile('driver')));
+  await assertSucceeds(setDoc(doc(as('ivy'), 'users/new_iswim'), profile('iswim')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/new_admin'), profile('admin')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/new_cityhall'), profile('cityHall')));
+  // A driver cannot mint another login.
+  await assertFails(setDoc(doc(as('dan'), 'users/another_driver'), profile('driver')));
+});
+
+test('only Iswim may create an account', async () => {
+  const profile = (role) => ({
+    name: 'New account',
+    email: 'new@ecoconnect.test',
+    role,
+    accountStatus: 'active',
+    emailVerified: true,
+    accountType: 'government',
+    verificationStatus: 'verified',
+  });
+  // City Hall and the barangay desk have no provisioning path at all.
+  await assertFails(setDoc(doc(as('carl'), 'users/ch_driver'), profile('driver')));
+  await assertFails(setDoc(doc(as('root'), 'users/br_driver'), profile('driver')));
+  await assertFails(setDoc(doc(as('carl'), 'users/ch_admin'), profile('admin')));
+  await assertFails(setDoc(doc(as('root'), 'users/br_admin'), profile('admin')));
+});
+
 test('a device replaced by a newer login is refused everywhere, the new one is not', async () => {
   const claim = (id, authTime) => ({sessionId: id, startedAt: Timestamp.now(), platform: 'android', authTime});
   const oldDevice = () => asSignedInAt('alice', 1000);
@@ -297,15 +332,46 @@ test('ending a run lets the driver clear the published position', async () => {
   await assertFails(setDoc(doc(as('alice'), 'routes/dan'), end, {merge: true}));
 });
 
+const residentId = {dataUrl: 'data:image/jpeg;base64,AAAA', mimeType: 'image/jpeg'};
+
 test('signup cannot choose the admin role', async () => {
   await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin', accountStatus: 'active'}));
-  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'active'}));
+  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {
+    name: 'Eve', role: 'user', accountStatus: 'active',
+    barangay: 'Batasan Hills', barangayId: residentId,
+  }));
+});
+
+test('only Batasan Hills residents can register', async () => {
+  // A resident from another barangay is refused even with every other field
+  // correct: the deployment serves one barangay.
+  await assertFails(setDoc(doc(as('r1'), 'users/r1'), {
+    name: 'R', role: 'user', accountStatus: 'active', barangay: 'Commonwealth',
+  }));
+  await assertFails(setDoc(doc(as('r2'), 'users/r2'), {
+    name: 'R', role: 'user', accountStatus: 'active',
+  }));
+  // Batasan Hills without an ID is still refused: the barangay has nothing
+  // to check the claim against.
+  await assertFails(setDoc(doc(as('r2b'), 'users/r2b'), {
+    name: 'R', role: 'user', accountStatus: 'active', barangay: 'Batasan Hills',
+  }));
+  await assertSucceeds(setDoc(doc(as('r3'), 'users/r3'), {
+    name: 'R', role: 'user', accountStatus: 'active',
+    barangay: 'Batasan Hills', barangayId: residentId,
+  }));
 });
 
 test('signup cannot skip approval, self-credit points or upload a huge photo', async () => {
   await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active'}));
-  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'active', points: 999}));
-  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'active', photoUrl: 'x'.repeat(150000)}));
+  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {
+    name: 'U', role: 'user', accountStatus: 'active', barangay: 'Batasan Hills',
+    barangayId: residentId, points: 999,
+  }));
+  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {
+    name: 'U', role: 'user', accountStatus: 'active', barangay: 'Batasan Hills',
+    barangayId: residentId, photoUrl: 'x'.repeat(150000),
+  }));
   await assertSucceeds(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
 });
 

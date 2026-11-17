@@ -5,8 +5,11 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
@@ -17,8 +20,39 @@ import '../services/manual_service.dart';
 
 /// Manual library. Iswim publishes revisions here; City Hall reads and
 /// acknowledges them. No other role has access.
-class ManualsScreen extends StatelessWidget {
+class ManualsScreen extends StatefulWidget {
   const ManualsScreen({super.key});
+
+  @override
+  State<ManualsScreen> createState() => _ManualsScreenState();
+}
+
+class _ManualsScreenState extends State<ManualsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  ManualStatus? _statusFilter;
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<Manual> _filter(List<Manual> manuals) {
+    final q = _query.trim().toLowerCase();
+    return manuals.where((manual) {
+      if (_statusFilter != null && manual.status != _statusFilter) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return manual.title.toLowerCase().contains(q) ||
+          manual.summary.toLowerCase().contains(q) ||
+          manual.category.label.toLowerCase().contains(q) ||
+          'v${manual.version}'.contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +105,7 @@ class ManualsScreen extends StatelessWidget {
         stream: ManualService().watchManuals(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snapshot.hasError) {
             return EmptyState(
@@ -95,15 +129,94 @@ class ManualsScreen extends StatelessWidget {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
+          final filtered = _filter(manuals);
+          final page = clampPage(_page, filtered.length, _pageSize);
+          final visible = pageSlice(filtered, page, _pageSize);
+
+          return Column(
             children: [
-              const SectionHeader(title: 'Latest revisions'),
-              const SizedBox(height: 8),
-              for (final manual in manuals) ...[
-                _ManualCard(manual: manual),
-                const SizedBox(height: 10),
-              ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search title, category, version',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
+                ),
+              ),
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  children: [
+                    for (final option in <ManualStatus?>[
+                      null,
+                      ...ManualStatus.values,
+                    ]) ...[
+                      ChoiceChip(
+                        label: Text(
+                          option?.label ?? 'All',
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                        selected: _statusFilter == option,
+                        onSelected: (_) => setState(() {
+                          _statusFilter = option;
+                          _page = 0;
+                        }),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                  ],
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No manuals match your filters.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          18,
+                          4,
+                          18,
+                          isIswim ? 88 : 20,
+                        ),
+                        children: [
+                          const SectionHeader(title: 'Latest revisions'),
+                          const SizedBox(height: 8),
+                          for (final manual in visible) ...[
+                            _ManualCard(manual: manual),
+                            const SizedBox(height: 10),
+                          ],
+                        ],
+                      ),
+              ),
+              if (filtered.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: filtered.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
             ],
           );
         },
@@ -118,10 +231,8 @@ class ManualsScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ManualForm(
-        byId: user.uid,
-        byName: user.displayName ?? 'Iswim',
-      ),
+      builder: (_) =>
+          _ManualForm(byId: user.uid, byName: user.displayName ?? 'Iswim'),
     );
   }
 }
@@ -179,8 +290,11 @@ class _ManualCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 19, color: AppColors.moss),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 19,
+                color: AppColors.moss,
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -331,9 +445,8 @@ class _ManualFormState extends State<_ManualForm> {
                 controller: _title,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(labelText: 'Manual title'),
-                validator: (value) => (value ?? '').trim().isEmpty
-                    ? 'Enter a title'
-                    : null,
+                validator: (value) =>
+                    (value ?? '').trim().isEmpty ? 'Enter a title' : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<ManualCategory>(
@@ -343,8 +456,10 @@ class _ManualFormState extends State<_ManualForm> {
                   for (final category in ManualCategory.values)
                     DropdownMenuItem(
                       value: category,
-                      child: Text(category.label,
-                          style: const TextStyle(fontSize: 12)),
+                      child: Text(
+                        category.label,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                 ],
                 onChanged: (value) =>

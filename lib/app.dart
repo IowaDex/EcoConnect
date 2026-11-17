@@ -9,7 +9,6 @@ import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/landing/screens/landing_screen.dart';
 import 'features/user/screens/user_screen.dart';
-import 'features/user/screens/wallet_screen.dart';
 import 'features/driver/screens/truck_picker_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
 import 'features/driver/screens/driver_routes_screen.dart';
@@ -88,7 +87,6 @@ const _residentRoutes = {
   '/user',
   '/tracking',
   '/report-incident',
-  '/wallet',
   '/community',
   '/ask-ai',
   '/alerts',
@@ -126,6 +124,7 @@ const _iswimRoutes = {
   '/memo',
   '/manuals',
   '/manual-requests',
+  '/accounts',
   ..._sharedRoutes,
 };
 
@@ -134,7 +133,6 @@ const _cityHallRoutes = {
   '/tickets',
   '/trucks',
   '/fleet',
-  '/accounts',
   '/delays',
   '/memos',
   '/memo',
@@ -153,7 +151,6 @@ const _staffRoutes = {
   '/admin',
   '/incidents',
   '/pending-accounts',
-  '/accounts',
   '/routes',
   '/dropoff',
   '/tracking',
@@ -174,23 +171,23 @@ const _staffRoutes = {
 };
 
 String _homeFor(UserRole role) => switch (role) {
-      UserRole.admin => '/admin-dashboard',
-      // A driver already owns a truck, so the dashboard opens straight away.
-      // A guide has no truck of his own and is bounced to the fleet list from
-      // inside the dashboard.
-      UserRole.driver => '/driver',
-      UserRole.iswim => '/iswim',
-      UserRole.cityHall => '/cityhall',
-      UserRole.user => '/user',
-    };
+  UserRole.admin => '/admin-dashboard',
+  // A driver already owns a truck, so the dashboard opens straight away.
+  // A guide has no truck of his own and is bounced to the fleet list from
+  // inside the dashboard.
+  UserRole.driver => '/driver',
+  UserRole.iswim => '/iswim',
+  UserRole.cityHall => '/cityhall',
+  UserRole.user => '/user',
+};
 
 Set<String> _allowedFor(UserRole role) => switch (role) {
-      UserRole.admin => _staffRoutes,
-      UserRole.driver => _driverRoutes,
-      UserRole.iswim => _iswimRoutes,
-      UserRole.cityHall => _cityHallRoutes,
-      UserRole.user => _residentRoutes,
-    };
+  UserRole.admin => _staffRoutes,
+  UserRole.driver => _driverRoutes,
+  UserRole.iswim => _iswimRoutes,
+  UserRole.cityHall => _cityHallRoutes,
+  UserRole.user => _residentRoutes,
+};
 
 /// Detail screens live under a collection path (`/community-post/{id}`), so a
 /// plain set lookup would reject them. A prefixed match keeps the guard while
@@ -237,9 +234,9 @@ String? authRedirect({
 /// navigator would tear the screen down and rebuild it, restarting the truck
 /// animation and the copy reveal in front of the user.
 Page<void> _heroPage() => const MaterialPage<void>(
-      key: ValueKey<String>('ecoconnect-hero'),
-      child: LandingScreen(),
-    );
+  key: ValueKey<String>('ecoconnect-hero'),
+  child: LandingScreen(),
+);
 
 class EcoConnectApp extends StatefulWidget {
   const EcoConnectApp({super.key});
@@ -294,11 +291,13 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/trucks/:id/history',
-          builder: (_, state) => TruckHistoryScreen(
-            truckId: state.pathParameters['id'] ?? '',
-          ),
+          builder: (_, state) =>
+              TruckHistoryScreen(truckId: state.pathParameters['id'] ?? ''),
         ),
-        GoRoute(path: '/iswim', builder: (_, __) => const IswimDashboardScreen()),
+        GoRoute(
+          path: '/iswim',
+          builder: (_, __) => const IswimDashboardScreen(),
+        ),
         GoRoute(
           path: '/iswim/new-ticket',
           builder: (_, __) => const CreateTicketScreen(),
@@ -316,7 +315,8 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(
           path: '/delays',
           builder: (context, __) => DelayListScreen(
-            canForward: context.read<AuthProvider>().currentUser?.role ==
+            canForward:
+                context.read<AuthProvider>().currentUser?.role ==
                 UserRole.cityHall,
           ),
         ),
@@ -399,8 +399,10 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/report-incident',
           builder: (_, __) => const ReportIncidentScreen(),
         ),
-        GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
-        GoRoute(path: '/community', builder: (_, __) => const CommunityScreen()),
+        GoRoute(
+          path: '/community',
+          builder: (_, __) => const CommunityScreen(),
+        ),
         GoRoute(
           path: '/community-post/:id',
           builder: (_, state) =>
@@ -456,7 +458,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/request-collection',
-          builder: (_, __) => const RequestFormScreen(),
+          builder: (_, state) => RequestFormScreen(
+            uncollected: state.uri.queryParameters['wave'] == '2',
+          ),
         ),
         GoRoute(
           path: '/my-requests',
@@ -481,9 +485,8 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(path: '/manuals', builder: (_, __) => const ManualsScreen()),
         GoRoute(
           path: '/manuals/:id',
-          builder: (_, state) => ManualDetailScreen(
-            manualId: state.pathParameters['id'] ?? '',
-          ),
+          builder: (_, state) =>
+              ManualDetailScreen(manualId: state.pathParameters['id'] ?? ''),
         ),
         GoRoute(
           path: '/manual-requests',

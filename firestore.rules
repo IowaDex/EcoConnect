@@ -70,6 +70,15 @@ service cloud.firestore {
         || (data.photoUrl is string && data.photoUrl.size() < 150000);
     }
 
+    // A resident sign-up carries one ID photo so the barangay can confirm the
+    // person really lives in Batasan Hills. The map must be a data URL under
+    // the same size ceiling as any other upload.
+    function residentIdOk(data) {
+      return data.barangayId is map
+        && data.barangayId.dataUrl is string
+        && data.barangayId.dataUrl.size() < 900000;
+    }
+
     // The resident answers the barangay's registration approval. Either the
     // fields are untouched, or the write is exactly the one allowed transition
     // (approved -> accepted / declined) stamped with the server time.
@@ -134,21 +143,24 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Iswim needs the driver directory to issue tickets; City Hall needs it
-      // to provision the accounts Iswim asks for.
+      // Iswim needs the driver directory to issue tickets.
       allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
-      // Three ways a profile is born:
+      // Two ways a profile is born:
       //  1. self sign-up — residents go active, drivers wait for approval, and
       //     nobody self-credits points or self-verifies a government account;
-      //  2. City Hall provisions a government login. The crew never signs
-      //     itself up: the login is made on a secondary app, so the profile is
-      //     written by the desk and arrives already active;
-      //  3. the barangay desk makes its own crews — but it cannot mint another
-      //     super admin or an Iswim account.
+      //  2. Iswim provisions its own logins and the crew accounts it assigns
+      //     to trucks. It is the only desk allowed to create a login: the
+      //     barangay and City Hall have no account-creation path at all, and
+      //     Iswim cannot mint an admin or a City Hall account.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
         && ((request.resource.data.role == 'user'
-              && request.resource.data.accountStatus == 'active')
+              && request.resource.data.accountStatus == 'active'
+              // EcoConnect serves one barangay. A self-registered resident
+              // must name Batasan Hills, whatever the client sends, and must
+              // attach an ID for the barangay to check.
+              && request.resource.data.get('barangay', '') == 'Batasan Hills'
+              && residentIdOk(request.resource.data))
             || (request.resource.data.role == 'driver'
               && request.resource.data.accountStatus == 'pending'))
         && (!('accountType' in request.resource.data)
@@ -160,18 +172,12 @@ service cloud.firestore {
                       : 'unverified'))
         && !('points' in request.resource.data)
         && photoOk(request.resource.data))
-        || (isCityHall()
+        || (isIswim()
           && !isRemoved(userId)
-          && request.resource.data.role in ['iswim', 'driver', 'admin', 'cityHall']
+          && request.resource.data.role in ['iswim', 'driver']
           && request.resource.data.accountStatus == 'active'
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
-          && !('points' in request.resource.data)
-          && photoOk(request.resource.data))
-        || (isAdmin()
-          && !isRemoved(userId)
-          && request.resource.data.role in ['driver', 'admin']
-          && request.resource.data.accountStatus == 'active'
           && !('points' in request.resource.data)
           && photoOk(request.resource.data));
       allow update: if (isSelf(userId)
@@ -350,7 +356,7 @@ service cloud.firestore {
       allow read: if signedIn()
         && (isAdmin() || isCityHall() || resource.data.residentId == request.auth.uid);
       allow create: if isSelf(request.resource.data.residentId);
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() || isCityHall();
     }
 
     // Barangay announcements. Residents read published posts, staff manage all.

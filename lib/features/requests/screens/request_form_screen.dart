@@ -26,7 +26,11 @@ import '../services/collection_request_service.dart';
 /// personnel. The same rule is enforced by Firestore, so a modified client
 /// cannot submit a special request from a resident account.
 class RequestFormScreen extends StatefulWidget {
-  const RequestFormScreen({super.key});
+  const RequestFormScreen({super.key, this.uncollected = false});
+
+  /// Wave 2: the resident is reporting garbage that was not collected. The
+  /// report still goes to the barangay first for verification.
+  final bool uncollected;
 
   @override
   State<RequestFormScreen> createState() => _RequestFormScreenState();
@@ -54,6 +58,11 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
     _location.text = user?.fullAddress == 'No address on file'
         ? ''
         : (user?.fullAddress ?? '');
+    if (widget.uncollected) {
+      _title.text = 'Uncollected garbage';
+      _category = WasteCategory.residual;
+      _preferred = DateTime.now();
+    }
   }
 
   @override
@@ -123,6 +132,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
           preferredDate: _preferred,
           remarks: _remarks.text,
           images: _images,
+          wave: widget.uncollected ? 2 : 1,
         ),
         message: 'Sending your collection request',
       );
@@ -168,8 +178,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
         child: Column(
           children: [
             AppPageHeader(
-              title: canSpecial ? 'Collection request' : 'Request a collection',
-              subtitle: canSpecial
+              title: widget.uncollected
+                  ? 'Report uncollected garbage'
+                  : canSpecial
+                  ? 'Collection request'
+                  : 'Request a collection',
+              subtitle: widget.uncollected
+                  ? 'The barangay verifies the report before City Hall decides.'
+                  : canSpecial
                   ? 'Standard or special pickup for government personnel.'
                   : 'Tell the barangay what needs to be collected.',
               onBack: () => context.go('/user'),
@@ -189,6 +205,17 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (widget.uncollected) ...[
+                        const EcoBanner(
+                          message:
+                              'This is a Wave 2 report. Barangay staff will '
+                              'verify it, then forward it to City Hall for a '
+                              'decision. You will be notified at every step.',
+                          icon: Icons.report_problem_outlined,
+                          color: AppColors.warning,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       if (canSpecial) ...[
                         _KindSelector(
                           kind: _kind,

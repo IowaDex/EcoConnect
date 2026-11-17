@@ -14,6 +14,7 @@ class AppBottomNav extends StatelessWidget {
     required this.onTap,
     this.dark = false,
     this.onAskAi,
+    this.items,
   });
 
   final int currentIndex;
@@ -25,6 +26,9 @@ class AppBottomNav extends StatelessWidget {
   /// Opens the assistant. When null the bar has no middle button.
   final VoidCallback? onAskAi;
 
+  /// Destinations for the current role. Defaults to the resident layout.
+  final List<({IconData icon, String label})>? items;
+
   static const _items = <({IconData icon, String label})>[
     (icon: Icons.home_rounded, label: 'Home'),
     (icon: Icons.local_shipping_rounded, label: 'Track'),
@@ -35,6 +39,7 @@ class AppBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = dark ? AppColors.cream : AppColors.creamBright;
+    final destinations = items ?? _items;
 
     final bar = Container(
       height: 62,
@@ -53,12 +58,12 @@ class AppBottomNav extends StatelessWidget {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < _items.length; i++) ...[
+          for (var i = 0; i < destinations.length; i++) ...[
             if (onAskAi != null && i == 2) const _AskAiSlot(),
             Expanded(
               child: _NavItem(
-                icon: _items[i].icon,
-                label: _items[i].label,
+                icon: destinations[i].icon,
+                label: destinations[i].label,
                 selected: i == currentIndex,
                 onTap: () => onTap(i),
               ),
@@ -158,7 +163,9 @@ class _AskAiButtonState extends State<_AskAiButton> {
               border: Border.all(color: AppColors.creamBright, width: 3),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.forest.withValues(alpha: _hovered ? 0.42 : 0.30),
+                  color: AppColors.forest.withValues(
+                    alpha: _hovered ? 0.42 : 0.30,
+                  ),
                   blurRadius: _hovered ? 22 : 16,
                   offset: const Offset(0, 7),
                 ),
@@ -217,8 +224,8 @@ class _NavItemState extends State<_NavItem> {
             color: widget.selected
                 ? AppColors.mint
                 : (_hovered
-                    ? AppColors.mint.withValues(alpha: 0.45)
-                    : Colors.transparent),
+                      ? AppColors.mint.withValues(alpha: 0.45)
+                      : Colors.transparent),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -238,8 +245,9 @@ class _NavItemState extends State<_NavItem> {
                 style: TextStyle(
                   fontSize: 8.5,
                   height: 1,
-                  fontWeight:
-                      widget.selected ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: widget.selected
+                      ? FontWeight.w700
+                      : FontWeight.w500,
                   color: color,
                 ),
               ),

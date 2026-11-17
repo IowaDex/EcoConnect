@@ -22,6 +22,17 @@ class RouteActivationException implements Exception {
   String toString() => message;
 }
 
+/// Raised when a new assignment would overlap a run the same driver already
+/// has on that day.
+class RouteConflictException implements Exception {
+  const RouteConflictException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Driver collection runs.
 ///
 /// - routePlans/{planId} — staff assignment (zone, day, shift window).
@@ -52,7 +63,8 @@ class RouteService {
   @visibleForTesting
   static CollectionRoute? pickFeaturedRoute(List<CollectionRoute> routes) {
     if (routes.isEmpty) return null;
-    final sorted = [...routes]..sort((a, b) {
+    final sorted = [...routes]
+      ..sort((a, b) {
         if (a.isStale != b.isStale) return a.isStale ? 1 : -1;
         final aSeen = a.lastSeenAt ?? DateTime(2000);
         final bSeen = b.lastSeenAt ?? DateTime(2000);
@@ -67,10 +79,12 @@ class RouteService {
     return _routes
         .where('status', whereIn: ['inTransit', 'delayed', 'paused'])
         .snapshots()
-        .map((snap) => snap.docs
-            .map((doc) => CollectionRoute.fromDoc(doc.id, doc.data()))
-            .whereType<CollectionRoute>()
-            .toList());
+        .map(
+          (snap) => snap.docs
+              .map((doc) => CollectionRoute.fromDoc(doc.id, doc.data()))
+              .whereType<CollectionRoute>()
+              .toList(),
+        );
   }
 
   Stream<CollectionRoute?> watchDriverRoute(String driverId) {
@@ -94,9 +108,9 @@ class RouteService {
 
     void emit() {
       final plan = latestPlan;
-      controller.add(plan?.withStops(
-        mergeAssignedStops(plan.stops, latestPoints),
-      ));
+      controller.add(
+        plan?.withStops(mergeAssignedStops(plan.stops, latestPoints)),
+      );
     }
 
     void watchPoints(String driverId) {
@@ -104,28 +118,30 @@ class RouteService {
       pointsDriverId = driverId;
       latestPoints = const [];
       pointSub?.cancel();
-      pointSub = _points.watchForDriver(driverId).listen(
-        (points) {
-          latestPoints = points;
-          emit();
-        },
-        onError: (_) {},
-      );
+      pointSub = _points.watchForDriver(driverId).listen((points) {
+        latestPoints = points;
+        emit();
+      }, onError: (_) {});
     }
 
     controller = StreamController<RoutePlan?>(
       onListen: () {
-        planSub = _plans.doc(planId).snapshots().listen(
-          (snap) {
-            final data = snap.data();
-            latestPlan = data == null ? null : RoutePlan.fromDoc(snap.id, data);
-            final plan = latestPlan;
-            if (plan != null) watchPoints(plan.driverId);
-            emit();
-          },
-          onError: controller.addError,
-          onDone: controller.close,
-        );
+        planSub = _plans
+            .doc(planId)
+            .snapshots()
+            .listen(
+              (snap) {
+                final data = snap.data();
+                latestPlan = data == null
+                    ? null
+                    : RoutePlan.fromDoc(snap.id, data);
+                final plan = latestPlan;
+                if (plan != null) watchPoints(plan.driverId);
+                emit();
+              },
+              onError: controller.addError,
+              onDone: controller.close,
+            );
       },
       onCancel: () async {
         await planSub?.cancel();
@@ -147,21 +163,73 @@ class RouteService {
         .where('date', isEqualTo: today)
         .snapshots()
         .map((snap) {
-      final open = snap.docs
-          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
-          .where((plan) =>
-              plan.status == RoutePlanStatus.scheduled ||
-              plan.status == RoutePlanStatus.active)
-          .toList()
-        ..sort((a, b) => a.windowStart.compareTo(b.windowStart));
-      return open.isEmpty ? null : open.first;
-    });
+          final open =
+              snap.docs
+                  .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+                  .where(
+                    (plan) =>
+                        plan.status == RoutePlanStatus.scheduled ||
+                        plan.status == RoutePlanStatus.active,
+                  )
+                  .toList()
+                ..sort((a, b) => a.windowStart.compareTo(b.windowStart));
+          return open.isEmpty ? null : open.first;
+        });
     return _withAssignedStops(plans, _points.watchForDriver(driverId));
   }
 
   /// Collection points assigned to [driverId] as stops, for ad-hoc runs.
   Future<List<RouteStop>> stopsForDriver(String driverId) async {
     return mergeAssignedStops(const [], await _points.forDriver(driverId));
+  }
+
+  /// Today and every future run assigned to [driverId], soonest first.
+  ///
+  /// Firestore would need a composite index for `driverId ==` plus a range on
+  /// `date`, and a driver only ever has a handful of plans, so the filter and
+  /// sort happen here on a single-field query.
+  Stream<List<RoutePlan>> watchUpcomingPlans(String driverId) {
+    final today = routeDateKey(DateTime.now());
+    return _plans.where('driverId', isEqualTo: driverId).snapshots().map((
+      snap,
+    ) {
+      final plans =
+          snap.docs
+              .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+              .where(
+                (plan) =>
+                    plan.date.compareTo(today) >= 0 &&
+                    (plan.status == RoutePlanStatus.scheduled ||
+                        plan.status == RoutePlanStatus.active),
+              )
+              .toList()
+            ..sort(_byDateThenWindow);
+      return plans;
+    });
+  }
+
+  /// Assignments after today, for the staff dispatch board.
+  Stream<List<RoutePlan>> watchPlansAhead() {
+    final today = routeDateKey(DateTime.now());
+    return _plans.snapshots().map((snap) {
+      final plans =
+          snap.docs
+              .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+              .where(
+                (plan) =>
+                    plan.date.compareTo(today) > 0 &&
+                    plan.status == RoutePlanStatus.scheduled,
+              )
+              .toList()
+            ..sort(_byDateThenWindow);
+      return plans;
+    });
+  }
+
+  static int _byDateThenWindow(RoutePlan a, RoutePlan b) {
+    final byDate = a.date.compareTo(b.date);
+    if (byDate != 0) return byDate;
+    return a.windowStart.compareTo(b.windowStart);
   }
 
   /// Turns assigned [points] into stops and appends them after [planStops],
@@ -287,29 +355,33 @@ class RouteService {
   Stream<List<RoutePlan>> watchPlansForToday() {
     final today = routeDateKey(DateTime.now());
     return _plans.where('date', isEqualTo: today).snapshots().map((snap) {
-      final plans = snap.docs
-          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final byWindow = a.windowStart.compareTo(b.windowStart);
-          return byWindow != 0 ? byWindow : a.driverName.compareTo(b.driverName);
-        });
+      final plans =
+          snap.docs.map((doc) => RoutePlan.fromDoc(doc.id, doc.data())).toList()
+            ..sort((a, b) {
+              final byWindow = a.windowStart.compareTo(b.windowStart);
+              return byWindow != 0
+                  ? byWindow
+                  : a.driverName.compareTo(b.driverName);
+            });
       return plans;
     });
   }
 
   /// A driver's finished runs, newest first, for the Completed tab.
   Stream<List<RoutePlan>> watchCompletedPlans(String driverId) {
-    return _plans.where('driverId', isEqualTo: driverId).snapshots().map((snap) {
-      final plans = snap.docs
-          .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
-          .where((plan) => plan.status == RoutePlanStatus.completed)
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.completedAt ?? a.createdAt ?? DateTime(2000);
-          final bDate = b.completedAt ?? b.createdAt ?? DateTime(2000);
-          return bDate.compareTo(aDate);
-        });
+    return _plans.where('driverId', isEqualTo: driverId).snapshots().map((
+      snap,
+    ) {
+      final plans =
+          snap.docs
+              .map((doc) => RoutePlan.fromDoc(doc.id, doc.data()))
+              .where((plan) => plan.status == RoutePlanStatus.completed)
+              .toList()
+            ..sort((a, b) {
+              final aDate = a.completedAt ?? a.createdAt ?? DateTime(2000);
+              final bDate = b.completedAt ?? b.createdAt ?? DateTime(2000);
+              return bDate.compareTo(aDate);
+            });
       return plans;
     });
   }
@@ -326,13 +398,37 @@ class RouteService {
     bool adHoc = false,
     String? createdBy,
   }) async {
+    final dayKey = routeDateKey(date);
+    // Reject an overlapping window before writing: two runs for the same
+    // driver at the same time can never be completed.
+    final existing = await _plans
+        .where('driverId', isEqualTo: driverId)
+        .where('date', isEqualTo: dayKey)
+        .get();
+    for (final doc in existing.docs) {
+      final plan = RoutePlan.fromDoc(doc.id, doc.data());
+      if (plan.status != RoutePlanStatus.scheduled &&
+          plan.status != RoutePlanStatus.active) {
+        continue;
+      }
+      final overlaps =
+          windowStart.compareTo(plan.windowEnd) < 0 &&
+          plan.windowStart.compareTo(windowEnd) < 0;
+      if (overlaps) {
+        throw RouteConflictException(
+          '${plan.driverName} already has ${plan.zone} from '
+          '${plan.windowStart} to ${plan.windowEnd} on ${plan.date}.',
+        );
+      }
+    }
+
     final ref = _plans.doc();
     final plan = RoutePlan(
       id: ref.id,
       driverId: driverId,
       driverName: driverName,
       zone: zone,
-      date: routeDateKey(date),
+      date: dayKey,
       windowStart: windowStart,
       windowEnd: windowEnd,
       stops: stops,
@@ -340,14 +436,44 @@ class RouteService {
       createdBy: createdBy,
     );
     await ref.set(plan.toMap());
+
+    // A driver must hear about a new duty even if the app is closed when the
+    // barangay assigns it. The deterministic key keeps a retry from stacking
+    // a second copy.
+    if (!adHoc) {
+      await _notifications.push(
+        userId: driverId,
+        title: 'New duty assignment',
+        body: '$zone · ${routeDateLabel(date)} · $windowStart–$windowEnd',
+        type: AppNotificationType.route,
+        data: {'planId': plan.id, 'kind': 'planAssigned'},
+        dedupeKey: 'plan_${plan.id}_assigned',
+      );
+    }
     return plan;
   }
 
   Future<void> cancelPlan(String planId) async {
+    final doc = await _plans.doc(planId).get();
+    final plan = doc.data() == null
+        ? null
+        : RoutePlan.fromDoc(doc.id, doc.data()!);
     await _plans.doc(planId).update({
       'status': RoutePlanStatus.cancelled.name,
       'cancelledAt': FieldValue.serverTimestamp(),
     });
+    if (plan != null) {
+      await _notifications.push(
+        userId: plan.driverId,
+        title: 'Duty assignment cancelled',
+        body:
+            '${plan.zone} on ${plan.date} (${plan.windowLabel}) was '
+            'cancelled by the barangay.',
+        type: AppNotificationType.route,
+        data: {'planId': planId, 'kind': 'planCancelled'},
+        dedupeKey: 'plan_${planId}_cancelled',
+      );
+    }
   }
 
   /// Activates [planId] for [driverId] and publishes their live position.
@@ -428,7 +554,8 @@ class RouteService {
       final current = routeSnap.data();
       if (current != null) {
         final status = RouteStatusX.fromName(current['status'] as String?);
-        final running = status == RouteStatus.inTransit ||
+        final running =
+            status == RouteStatus.inTransit ||
             status == RouteStatus.delayed ||
             status == RouteStatus.paused;
         if (running && !CollectionRoute.isStaleData(current)) {
@@ -440,41 +567,37 @@ class RouteService {
       }
 
       final sessionId = '${driverId}_${now.millisecondsSinceEpoch}';
-      tx.set(
-        routeRef,
-        {
-          'driverName': driverName,
-          'phone': phone,
-          'zone': plan.zone,
-          'status': RouteStatus.inTransit.name,
-          'lat': latitude,
-          'lng': longitude,
-          'etaMinutes': 12,
-          'planId': plan.id,
-          'sessionId': sessionId,
-          'startedAt': FieldValue.serverTimestamp(),
-          'pausedAt': null,
-          'resumedAt': null,
-          'completedAt': null,
-          'locationState': 'ok',
-          'lastKnownLat': latitude,
-          'lastKnownLng': longitude,
-          'locationUpdatedAt': FieldValue.serverTimestamp(),
-          // Which vehicle is running, and the point the 100 m radius is
-          // measured from. Staff read these on the live routes board.
-          if (truckPlate != null) 'truckPlate': truckPlate,
-          if (truckWheelers != null) 'truckWheelers': truckWheelers,
-          if (crewRole != null) 'crewRole': crewRole,
-          'geofenceLat': geofenceLat ?? latitude,
-          'geofenceLng': geofenceLng ?? longitude,
-          'geofenceRadius': 100,
-          'geofenceState': 'ok',
-          'connectionState': 'ok',
-          'updatedAt': FieldValue.serverTimestamp(),
-          'lastSeenAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      tx.set(routeRef, {
+        'driverName': driverName,
+        'phone': phone,
+        'zone': plan.zone,
+        'status': RouteStatus.inTransit.name,
+        'lat': latitude,
+        'lng': longitude,
+        'etaMinutes': 12,
+        'planId': plan.id,
+        'sessionId': sessionId,
+        'startedAt': FieldValue.serverTimestamp(),
+        'pausedAt': null,
+        'resumedAt': null,
+        'completedAt': null,
+        'locationState': 'ok',
+        'lastKnownLat': latitude,
+        'lastKnownLng': longitude,
+        'locationUpdatedAt': FieldValue.serverTimestamp(),
+        // Which vehicle is running, and the point the 100 m radius is
+        // measured from. Staff read these on the live routes board.
+        if (truckPlate != null) 'truckPlate': truckPlate,
+        if (truckWheelers != null) 'truckWheelers': truckWheelers,
+        if (crewRole != null) 'crewRole': crewRole,
+        'geofenceLat': geofenceLat ?? latitude,
+        'geofenceLng': geofenceLng ?? longitude,
+        'geofenceRadius': 100,
+        'geofenceState': 'ok',
+        'connectionState': 'ok',
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       tx.update(planRef, {
         'status': RoutePlanStatus.active.name,
         'sessionId': sessionId,
@@ -487,7 +610,10 @@ class RouteService {
   /// `locationState`: the driver screen owns that field and a heartbeat would
   /// overwrite a reported GPS problem with 'ok'.
   Future<void> pushPosition(
-      String driverId, double latitude, double longitude) async {
+    String driverId,
+    double latitude,
+    double longitude,
+  ) async {
     await _routes.doc(driverId).set({
       'lat': latitude,
       'lng': longitude,

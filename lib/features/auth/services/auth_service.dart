@@ -6,6 +6,7 @@ import '../../driver/models/truck_crew_role.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
 import 'session_service.dart';
+import '../../../core/constants/service_area.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/image_payload.dart';
 export '../models/user.dart';
@@ -18,6 +19,7 @@ enum AuthErrorType {
   accountRemoved,
   accountPending,
   accountSuspended,
+  outOfArea,
 }
 
 class AuthException implements Exception {
@@ -29,8 +31,7 @@ class AuthService {
   static final AuthService _instance = AuthService._internal();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final SessionService _sessions =
-      SessionService(_currentAuthTime);
+  late final SessionService _sessions = SessionService(_currentAuthTime);
   bool _loggingIn = false;
 
   factory AuthService() {
@@ -51,7 +52,10 @@ class AuthService {
   /// Returns null when there is no profile: an admin deleted it, or signup
   /// hasn't written it yet.
   Future<AppUser?> _getAppUser(User firebaseUser) async {
-    final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
+    final doc = await _firestore
+        .collection('users')
+        .doc(firebaseUser.uid)
+        .get();
     final data = doc.data();
     if (data == null) return null;
     final roleStr = data['role'] ?? 'user';
@@ -59,7 +63,8 @@ class AuthService {
     return AppUser(
       uid: firebaseUser.uid,
       email: firebaseUser.email,
-      displayName: firebaseUser.displayName ?? firebaseUser.email?.split('@').first,
+      displayName:
+          firebaseUser.displayName ?? firebaseUser.email?.split('@').first,
       // Either the person clicked the link Firebase mailed, or the desk that
       // provisioned the account marked it verified. Rules stop a resident from
       // setting that flag on their own profile.
@@ -74,6 +79,7 @@ class AuthService {
       // accepted, so nobody is asked to re-approve an old account.
       registrationStatus: data['registrationStatus'] as String? ?? 'accepted',
       age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
+      birthdate: _asDate(data['birthdate']),
       phone: data['phone'] as String?,
       photoUrl: data['photoUrl'] as String?,
       houseStreet: data['houseStreet'] as String?,
@@ -81,13 +87,23 @@ class AuthService {
       city: data['city'] as String?,
       province: data['province'] as String?,
       accountType: AccountTypeX.fromName(data['accountType'] as String?),
-      verificationStatus:
-          VerificationStatusX.fromName(data['verificationStatus'] as String?),
+      verificationStatus: VerificationStatusX.fromName(
+        data['verificationStatus'] as String?,
+      ),
       rejectionReason: data['rejectionReason'] as String?,
       crewRole: TruckCrewRoleX.fromName(data['crewRole'] as String?),
       // Provisioned drivers open straight onto the truck City Hall linked.
       assignedTruckId: data['assignedTruckId'] as String?,
     );
+  }
+
+  /// Date of birth is written as an ISO string, but an older profile or a
+  /// hand-edited document may hold a Firestore timestamp.
+  static DateTime? _asDate(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
   }
 
   /// Re-reads the signed-in profile. Used after staff approve a verification
@@ -179,6 +195,7 @@ class AuthService {
         body: '$name registered and is waiting for review.',
         type: AppNotificationType.account,
         data: {'uid': uid},
+        dedupeKey: 'registration_$uid',
       );
     }
 
@@ -222,6 +239,15 @@ class AuthService {
       if (appUser.accountStatus == 'suspended') {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.accountSuspended);
+      }
+
+      // One barangay only. A resident record that names another barangay is
+      // refused here even if it was created before the restriction existed.
+      if (appUser.role == UserRole.user &&
+          (appUser.barangay ?? '').trim().isNotEmpty &&
+          !ServiceArea.covers(appUser.barangay)) {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.outOfArea);
       }
 
       // Residents must verify their email. Drivers and staff are provisioned
@@ -363,7 +389,7 @@ class AuthService {
       body: accepted
           ? '${name ?? 'A resident'} accepted the barangay approval.'
           : '${name ?? 'A resident'} declined the barangay approval. '
-              'The registration is withdrawn.',
+                'The registration is withdrawn.',
       type: AppNotificationType.account,
       data: {'uid': uid},
     );
@@ -377,26 +403,23 @@ class AuthService {
         .get();
     return snapshot.docs
         .map((doc) => {'uid': doc.id, ...doc.data()})
-        .where((driver) =>
-            (driver['accountStatus'] as String? ?? 'active') == 'active')
+        .where(
+          (driver) =>
+              (driver['accountStatus'] as String? ?? 'active') == 'active',
+        )
         .toList();
   }
 
   // Get all users (for admin panel)
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     final snapshot = await _firestore.collection('users').get();
-    return snapshot.docs.map((doc) => {
-      'uid': doc.id,
-      ...doc.data(),
-    }).toList();
+    return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
   }
 
   // Update user role (for admin)
   Future<void> updateUserRole(String uid, UserRole role) async {
     await _audit('role:${role.name}', uid);
-    await _firestore.collection('users').doc(uid).update({
-      'role': role.name,
-    });
+    await _firestore.collection('users').doc(uid).update({'role': role.name});
   }
 
   // Delete all of a user's data (for admin). The login account itself can only

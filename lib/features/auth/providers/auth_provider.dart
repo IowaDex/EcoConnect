@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
+import '../../../core/constants/service_area.dart';
 import '../../../core/utils/image_payload.dart';
 
 // Screens get these types through the provider, not the service.
@@ -22,6 +23,7 @@ class AuthProvider extends ChangeNotifier {
   bool _sessionReplaced = false;
 
   AppUser? get currentUser => _currentUser;
+
   /// False until Firebase has restored (or ruled out) the saved session.
   bool get isInitialized => _isInitialized;
   bool get isLoading => _isLoading;
@@ -39,27 +41,35 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _initAuth() {
-    _authService.authStateChanges.listen((AppUser? user) {
-      // Do not auto-login unverified users
-      final blocked = user != null &&
-          (user.isPendingApproval ||
-              (!user.emailVerified && user.role == UserRole.user));
-      _currentUser = blocked ? null : user;
-      _isInitialized = true;
-      // A login claims its own session first; login() starts the watch then.
-      if (_currentUser != null && !_authService.isClaimingSession) {
-        _watchSession(_currentUser!.uid);
-      } else if (_currentUser == null) {
-        _stopWatchingSession();
-      }
-      notifyListeners();
-    }, onError: (Object e) {
-      // e.g. offline with no cached profile: fall back to the login screen.
-      AppLogger.error('Could not restore session', e);
-      _currentUser = null;
-      _isInitialized = true;
-      notifyListeners();
-    });
+    _authService.authStateChanges.listen(
+      (AppUser? user) {
+        // Do not auto-login unverified users, or a resident recorded outside
+        // the one barangay this deployment serves.
+        final blocked =
+            user != null &&
+            (user.isPendingApproval ||
+                (!user.emailVerified && user.role == UserRole.user) ||
+                (user.role == UserRole.user &&
+                    (user.barangay ?? '').trim().isNotEmpty &&
+                    !ServiceArea.covers(user.barangay)));
+        _currentUser = blocked ? null : user;
+        _isInitialized = true;
+        // A login claims its own session first; login() starts the watch then.
+        if (_currentUser != null && !_authService.isClaimingSession) {
+          _watchSession(_currentUser!.uid);
+        } else if (_currentUser == null) {
+          _stopWatchingSession();
+        }
+        notifyListeners();
+      },
+      onError: (Object e) {
+        // e.g. offline with no cached profile: fall back to the login screen.
+        AppLogger.error('Could not restore session', e);
+        _currentUser = null;
+        _isInitialized = true;
+        notifyListeners();
+      },
+    );
   }
 
   Future<bool> signUp({
@@ -100,17 +110,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> login({required String email, required String password}) async {
     _setLoading(true);
     _clearError();
     _loginErrorType = null;
 
     try {
-      final user =
-          await _authService.login(email: email, password: password);
+      final user = await _authService.login(email: email, password: password);
       _watchSession(user.uid);
       return true;
     } on AuthException catch (e) {
@@ -133,6 +139,11 @@ class AuthProvider extends ChangeNotifier {
           );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
+        case AuthErrorType.outOfArea:
+          _setError(
+            'EcoConnect serves Barangay Batasan Hills, Quezon City only. '
+            'This account is registered in another barangay.',
+          );
       }
       AppLogger.error('Login rejected', e.type);
       return false;
@@ -164,8 +175,9 @@ class AuthProvider extends ChangeNotifier {
     if (user == null) return 'You are not signed in.';
     try {
       await _authService.answerRegistration(uid: user.uid, accepted: accepted);
-      _currentUser =
-          user.copyWith(registrationStatus: accepted ? 'accepted' : 'declined');
+      _currentUser = user.copyWith(
+        registrationStatus: accepted ? 'accepted' : 'declined',
+      );
       notifyListeners();
       return null;
     } catch (e) {
@@ -174,7 +186,8 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAllUsers() => _authService.getAllUsers();
+  Future<List<Map<String, dynamic>>> getAllUsers() =>
+      _authService.getAllUsers();
 
   Future<List<Map<String, dynamic>>> getDrivers() => _authService.getDrivers();
 
@@ -186,8 +199,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> deleteUser(
     String uid, {
     required Future<void> Function() deleteLocationData,
-  }) =>
-      _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
+  }) => _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
 
   /// Re-reads the profile so verification changes appear without a sign-out.
   Future<void> refreshUser() async {
@@ -211,7 +223,8 @@ class AuthProvider extends ChangeNotifier {
       return switch (e.code) {
         'invalid-email' => 'Please enter a valid email address.',
         'too-many-requests' => 'Too many attempts. Please try again later.',
-        'network-request-failed' => 'No connection. Check your internet and retry.',
+        'network-request-failed' =>
+          'No connection. Check your internet and retry.',
         _ => 'Could not send the reset email. Please try again.',
       };
     } catch (e) {

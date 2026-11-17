@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../services/memo_service.dart';
 import '../widgets/memo_widgets.dart';
@@ -75,9 +82,9 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
   List<({String value, String label})> _channelsFor(UserRole? role) =>
       switch (role) {
         UserRole.cityHall => const [
-            (value: 'iswim', label: 'Iswim'),
-            (value: 'barangay', label: 'Barangay'),
-          ],
+          (value: 'iswim', label: 'Iswim'),
+          (value: 'barangay', label: 'Barangay'),
+        ],
         UserRole.iswim => const [(value: 'cityHall', label: 'City Hall')],
         UserRole.admin => const [(value: 'cityHall', label: 'City Hall')],
         _ => const [(value: 'cityHall', label: 'City Hall')],
@@ -156,142 +163,621 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
   }
 
   static String _roleKey(UserRole role) => switch (role) {
-        UserRole.cityHall => 'cityHall',
-        UserRole.iswim => 'iswim',
-        _ => 'barangay',
-      };
+    UserRole.cityHall => 'cityHall',
+    UserRole.iswim => 'iswim',
+    _ => 'barangay',
+  };
 
   @override
   Widget build(BuildContext context) {
-    final channels = _channelsFor(context.watch<AuthProvider>().currentUser?.role);
+    final channels = _channelsFor(
+      context.watch<AuthProvider>().currentUser?.role,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          _editing ? 'Edit memo' : 'New memo',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              children: [
+                AppPageHeader(
+                  title: _editing ? 'Edit memo' : 'New memo',
+                  subtitle: _editing
+                      ? 'Correct the details before the receiving desk opens it.'
+                      : 'Pick a document type, then write the message.',
+                  onBack: () => context.pop(),
+                ),
+                Expanded(
+                  child: _loading
+                      ? const LoadingView(label: 'Loading memo')
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(20, 2, 20, 24),
+                          children: [
+                            if (_editing)
+                              const FadeSlideIn(
+                                index: 0,
+                                child: EcoNote(
+                                  message:
+                                      'This memo has not been received yet, so it can still be corrected.',
+                                ),
+                              )
+                            else ...[
+                              FadeSlideIn(
+                                index: 0,
+                                child: _KindPicker(
+                                  selected: _kind,
+                                  onChanged: (kind) =>
+                                      setState(() => _kind = kind),
+                                ),
+                              ),
+                              AnimatedSize(
+                                duration: EcoMotion.base,
+                                curve: EcoMotion.enter,
+                                alignment: Alignment.topCenter,
+                                child: _kind == MemoKind.announcement
+                                    ? const _AnnouncementNote()
+                                    : const SizedBox(width: double.infinity),
+                              ),
+                              const SizedBox(height: EcoSpace.lg),
+                              FadeSlideIn(
+                                index: 1,
+                                child: _RecipientPicker(
+                                  channels: channels,
+                                  selected: _channel,
+                                  onChanged: (value) =>
+                                      setState(() => _channel = value),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: EcoSpace.lg),
+                            FadeSlideIn(
+                              index: 2,
+                              child: EcoCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const SectionHeader(
+                                      title: 'Message',
+                                      subtitle:
+                                          'The receiving desk reads exactly what you write here.',
+                                    ),
+                                    const SizedBox(height: EcoSpace.sm + 2),
+                                    ValueListenableBuilder<TextEditingValue>(
+                                      valueListenable: _subject,
+                                      builder: (context, value, _) => TextField(
+                                        controller: _subject,
+                                        textCapitalization:
+                                            TextCapitalization.sentences,
+                                        textInputAction: TextInputAction.next,
+                                        decoration: InputDecoration(
+                                          labelText: 'Subject',
+                                          hintText: 'What is this about?',
+                                          fillColor: AppColors.creamBright,
+                                          counterText: value.text.trim().isEmpty
+                                              ? null
+                                              : '${value.text.trim().length} characters',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: EcoSpace.sm + 2),
+                                    ValueListenableBuilder<TextEditingValue>(
+                                      valueListenable: _body,
+                                      builder: (context, value, _) => TextField(
+                                        controller: _body,
+                                        minLines: 5,
+                                        maxLines: 12,
+                                        textCapitalization:
+                                            TextCapitalization.sentences,
+                                        decoration: InputDecoration(
+                                          labelText: 'Body',
+                                          hintText:
+                                              'Write the details the receiving desk needs.',
+                                          alignLabelWithHint: true,
+                                          fillColor: AppColors.creamBright,
+                                          counterText: value.text.trim().isEmpty
+                                              ? null
+                                              : '${value.text.trim().length} characters',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: EcoSpace.md),
+                            FadeSlideIn(
+                              index: 3,
+                              child: EcoCard(
+                                padding: const EdgeInsets.all(EcoSpace.md),
+                                child: ImagePickerField(
+                                  value: _attachment,
+                                  onChanged: (value) =>
+                                      setState(() => _attachment = value),
+                                  label: 'Attachment',
+                                  helper:
+                                      'Optional · JPG, PNG or PDF up to 600 KB',
+                                  documentMode: true,
+                                  previewHeight: 100,
+                                  enabled: !_busy,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+                if (!_loading)
+                  _SendBar(
+                    subject: _subject,
+                    body: _body,
+                    busy: _busy,
+                    editing: _editing,
+                    onSend: _send,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(strokeWidth: 2.4))
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+    );
+  }
+}
+
+/// Four document types, each with a plain-language explanation.
+class _KindPicker extends StatelessWidget {
+  const _KindPicker({required this.selected, required this.onChanged});
+
+  final MemoKind selected;
+  final ValueChanged<MemoKind> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('DOCUMENT TYPE'),
+        const SizedBox(height: EcoSpace.sm),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = (constraints.maxWidth - EcoSpace.sm) / 2;
+            return Wrap(
+              spacing: EcoSpace.sm,
+              runSpacing: EcoSpace.sm,
               children: [
-                if (_editing)
-                  const EcoNote(
-                    message:
-                        'This memo has not been received yet, so it can still be corrected.',
-                  )
-                else ...[
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final kind in MemoKind.values)
-                        ChoiceChip(
-                          label: Text(kind.label),
-                          selected: _kind == kind,
-                          onSelected: (_) => setState(() => _kind = kind),
-                        ),
-                    ],
+                for (final kind in MemoKind.values)
+                  SizedBox(
+                    width: width,
+                    height: 104,
+                    child: _KindOption(
+                      kind: kind,
+                      selected: selected == kind,
+                      onTap: () => onChanged(kind),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final channel in channels)
-                        ChoiceChip(
-                          label: Text('To ${channel.label}'),
-                          selected: _channel == channel.value,
-                          onSelected: (_) =>
-                              setState(() => _channel = channel.value),
-                        ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _subject,
-                  decoration: const InputDecoration(
-                    labelText: 'Subject',
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _body,
-                  maxLines: 7,
-                  decoration: const InputDecoration(
-                    labelText: 'Body',
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ImagePickerField(
-                  value: _attachment,
-                  onChanged: (value) => setState(() => _attachment = value),
-                  label: 'Attachment (optional)',
-                  helper: 'JPG, PNG or PDF · up to 600 KB',
-                  documentMode: true,
-                  previewHeight: 130,
-                  enabled: !_busy,
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: _busy ? null : _send,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _KindOption extends StatelessWidget {
+  const _KindOption({
+    required this.kind,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final MemoKind kind;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static IconData _iconFor(MemoKind kind) => switch (kind) {
+    MemoKind.memo => Icons.sticky_note_2_outlined,
+    MemoKind.endorsement => Icons.forward_to_inbox_rounded,
+    MemoKind.announcement => Icons.campaign_outlined,
+    MemoKind.manualRequest => Icons.menu_book_outlined,
+  };
+
+  static String _blurbFor(MemoKind kind) => switch (kind) {
+    MemoKind.memo => 'A formal note to another desk.',
+    MemoKind.endorsement => 'Forward a case for approval.',
+    MemoKind.announcement => 'A circular for the whole office.',
+    MemoKind.manualRequest => 'Request a manual or reference.',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? Colors.white : AppColors.forest;
+
+    return HoverLift(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(EcoRadius.md),
+          child: AnimatedContainer(
+            duration: EcoMotion.fast,
+            curve: EcoMotion.enter,
+            padding: const EdgeInsets.all(EcoSpace.sm + 2),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.forest : Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.md),
+              border: Border.all(
+                color: selected ? AppColors.forest : AppColors.sage,
+                width: selected ? 1.4 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.forest.withValues(alpha: 0.20),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ]
+                  : AppColors.cardShadow,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      height: 30,
+                      width: 30,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.white.withValues(alpha: 0.16)
+                            : AppColors.mint,
+                        borderRadius: BorderRadius.circular(EcoRadius.sm),
+                      ),
+                      child: Icon(
+                        _iconFor(kind),
+                        size: 16,
+                        color: selected ? Colors.white : AppColors.forest,
                       ),
                     ),
-                    child: _busy
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(_editing ? 'Save changes' : 'Send'),
+                    const Spacer(),
+                    AnimatedOpacity(
+                      opacity: selected ? 1 : 0,
+                      duration: EcoMotion.fast,
+                      child: const Icon(
+                        Icons.check_circle_rounded,
+                        size: 15,
+                        color: AppColors.lime,
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  kind.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: foreground,
                   ),
                 ),
-                if (_kind == MemoKind.announcement && !_editing) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Iswim announcements are also emailed to the District Officer '
-                    'automatically (recorded in the City Hall email log).',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 9,
-                      height: 1.5,
-                      color: AppColors.inkMuted,
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  _blurbFor(kind),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 8.8,
+                    height: 1.35,
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.74)
+                        : AppColors.inkMuted,
                   ),
-                ],
+                ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Where the memo goes. With one reachable desk this is a statement, not a
+/// choice; with two, the cards become selectable.
+class _RecipientPicker extends StatelessWidget {
+  const _RecipientPicker({
+    required this.channels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<({String value, String label})> channels;
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final single = channels.length == 1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('SEND TO'),
+        const SizedBox(height: EcoSpace.sm),
+        for (var i = 0; i < channels.length; i++) ...[
+          _RecipientCard(
+            label: channels[i].label,
+            detail: single
+                ? 'The only desk this account can address.'
+                : 'Delivered to the ${channels[i].label} desk.',
+            selected: selected == channels[i].value,
+            onTap: single ? null : () => onChanged(channels[i].value),
+          ),
+          if (i < channels.length - 1) const SizedBox(height: EcoSpace.xs),
+        ],
+      ],
+    );
+  }
+}
+
+class _RecipientCard extends StatelessWidget {
+  const _RecipientCard({
+    required this.label,
+    required this.detail,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String detail;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = AnimatedContainer(
+      duration: EcoMotion.fast,
+      curve: EcoMotion.enter,
+      padding: const EdgeInsets.all(EcoSpace.sm + 2),
+      decoration: BoxDecoration(
+        color: selected ? AppColors.mint : Colors.white,
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+        border: Border.all(
+          color: selected ? AppColors.primary : AppColors.sage,
+          width: selected ? 1.4 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : AppColors.cream,
+              borderRadius: BorderRadius.circular(EcoRadius.sm),
+            ),
+            child: Icon(
+              Icons.account_balance_rounded,
+              size: 17,
+              color: selected ? Colors.white : AppColors.forest,
+            ),
+          ),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.forest,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  detail,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    height: 1.35,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (selected)
+            const Icon(
+              Icons.check_circle_rounded,
+              size: 16,
+              color: AppColors.primary,
+            ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return content;
+    return HoverLift(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(EcoRadius.md),
+          child: content,
+        ),
+      ),
+    );
+  }
+}
+
+class _AnnouncementNote extends StatelessWidget {
+  const _AnnouncementNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: EcoSpace.sm),
+      padding: const EdgeInsets.all(EcoSpace.sm + 2),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.campaign_outlined, size: 16, color: AppColors.forest),
+          SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Text(
+              'Iswim announcements are also emailed to the District Officer '
+              'automatically (recorded in the City Hall email log).',
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.45,
+                color: AppColors.forest,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The action bar stays pinned so the primary action is always in reach.
+class _SendBar extends StatelessWidget {
+  const _SendBar({
+    required this.subject,
+    required this.body,
+    required this.busy,
+    required this.editing,
+    required this.onSend,
+  });
+
+  final TextEditingController subject;
+  final TextEditingController body;
+  final bool busy;
+  final bool editing;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+      decoration: BoxDecoration(
+        color: AppColors.creamBright,
+        border: Border(
+          top: BorderSide(color: AppColors.sage.withValues(alpha: 0.6)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.forest.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: AnimatedBuilder(
+        animation: Listenable.merge([subject, body]),
+        builder: (context, _) {
+          final ready =
+              subject.text.trim().isNotEmpty && body.text.trim().isNotEmpty;
+          final caption = busy
+              ? 'Sending your memo…'
+              : ready
+              ? (editing ? 'Ready to save' : 'Ready to send')
+              : 'Add a subject and body to send';
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedSwitcher(
+                duration: EcoMotion.fast,
+                child: Row(
+                  key: ValueKey('$ready-$busy'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      busy
+                          ? Icons.outbox_rounded
+                          : ready
+                          ? Icons.check_circle_outline_rounded
+                          : Icons.edit_note_rounded,
+                      size: 13,
+                      color: ready ? AppColors.moss : AppColors.inkMuted,
+                    ),
+                    const SizedBox(width: EcoSpace.xs),
+                    Text(
+                      caption,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                        color: ready ? AppColors.moss : AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: EcoSpace.xs),
+              SizedBox(
+                height: 50,
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: ready && !busy ? onSend : null,
+                  icon: busy
+                      ? const SizedBox(
+                          height: 17,
+                          width: 17,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 17),
+                  label: Text(
+                    busy
+                        ? 'Sending…'
+                        : (editing ? 'Save changes' : 'Send memo'),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.forest,
+                    disabledBackgroundColor: AppColors.sage,
+                    disabledForegroundColor: AppColors.inkMuted,
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(EcoRadius.md),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
 /// Inbox and sent history of memos for one desk.
 class MemoInboxScreen extends StatefulWidget {
-  const MemoInboxScreen({super.key, required this.channel, required this.title});
+  const MemoInboxScreen({
+    super.key,
+    required this.channel,
+    required this.title,
+  });
 
   final String channel;
   final String title;
@@ -303,11 +789,40 @@ class MemoInboxScreen extends StatefulWidget {
 class _MemoInboxScreenState extends State<MemoInboxScreen> {
   int _tab = 0;
 
+  final _search = TextEditingController();
+  String _query = '';
+
   // Cached so switching tabs (or any rebuild) does not resubscribe to
   // Firestore and flash the loading state.
   Stream<List<Memo>>? _inbox;
   Stream<List<Memo>>? _sent;
   String? _streamKey;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the memos a desk clerk can find by typing what they remember.
+  List<Memo> _filter(List<Memo> memos) {
+    if (_query.trim().isEmpty) return memos;
+    return memos.where((memo) => memoMatchesQuery(memo, _query)).toList();
+  }
+
+  void _clearSearch() {
+    _search.clear();
+    setState(() => _query = '');
+  }
+
+  void _switchTab(int value) {
+    // A query typed for the inbox should not silently hide the outbox.
+    _search.clear();
+    setState(() {
+      _tab = value;
+      _query = '';
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -328,28 +843,6 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/cityhall');
-            }
-          },
-        ),
-        title: Text(
-          widget.title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
       floatingActionButton: user == null
           ? null
           : FloatingActionButton.extended(
@@ -358,42 +851,171 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
               ),
               backgroundColor: AppColors.forest,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.edit_note_rounded, size: 18),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(EcoRadius.lg),
+              ),
+              icon: const Icon(Icons.edit_note_rounded, size: 19),
               label: const Text(
                 'Compose',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
             ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-            child: Row(
-              children: [
-                _tabButton(0, 'Inbox'),
-                const SizedBox(width: 8),
-                _tabButton(1, 'Sent'),
-              ],
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: StreamBuilder<List<Memo>>(
+              stream: _inbox,
+              builder: (context, inboxSnap) {
+                return StreamBuilder<List<Memo>>(
+                  stream: _sent,
+                  builder: (context, sentSnap) {
+                    final inbox = inboxSnap.data ?? const <Memo>[];
+                    final sent = sentSnap.data ?? const <Memo>[];
+                    final inboxLoading =
+                        inboxSnap.connectionState == ConnectionState.waiting;
+                    final sentLoading =
+                        _sent != null &&
+                        sentSnap.connectionState == ConnectionState.waiting;
+                    final inboxTab = _tab == 0;
+                    final pending = inbox
+                        .where((memo) => !memo.isSigned)
+                        .length;
+                    final acknowledged = sent
+                        .where((memo) => memo.isSigned)
+                        .length;
+                    final showSummary = inboxTab
+                        ? !inboxSnap.hasError &&
+                              (inboxLoading || inbox.isNotEmpty)
+                        : !sentSnap.hasError &&
+                              (sentLoading || sent.isNotEmpty);
+                    final source = inboxTab ? inbox : sent;
+                    final searching = _query.trim().isNotEmpty;
+                    final visible = _filter(source);
+
+                    return Column(
+                      children: [
+                        AppPageHeader(
+                          title: widget.title,
+                          subtitle: inboxTab
+                              ? 'Memos addressed to this desk, newest first.'
+                              : 'Everything this desk has sent, with its delivery status.',
+                          onBack: () {
+                            if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go('/cityhall');
+                            }
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: _DeskSwitch(
+                            tab: _tab,
+                            inboxCount: inboxLoading ? null : inbox.length,
+                            sentCount: sentLoading ? null : sent.length,
+                            onChanged: _switchTab,
+                          ),
+                        ),
+                        if (showSummary) ...[
+                          const SizedBox(height: EcoSpace.sm),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: AnimatedSwitcher(
+                              duration: EcoMotion.base,
+                              child: inboxTab
+                                  ? _InboxSummary(
+                                      key: const ValueKey('inbox-summary'),
+                                      pending: pending,
+                                      loading: inboxLoading,
+                                    )
+                                  : _SentSummary(
+                                      key: const ValueKey('sent-summary'),
+                                      acknowledged: acknowledged,
+                                      total: sent.length,
+                                      loading: sentLoading,
+                                    ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: EcoSpace.md),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: EcoSearchField(
+                            controller: _search,
+                            hint: inboxTab
+                                ? 'Search subject, sender or kind'
+                                : 'Search subject, recipient or kind',
+                            onChanged: (value) =>
+                                setState(() => _query = value),
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: EcoMotion.fast,
+                          curve: EcoMotion.enter,
+                          alignment: Alignment.topCenter,
+                          child: searching
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    EcoSpace.xs + 2,
+                                    20,
+                                    0,
+                                  ),
+                                  child: EcoResultCount(
+                                    shown: visible.length,
+                                    total: source.length,
+                                    singular: 'memo',
+                                    plural: 'memos',
+                                  ),
+                                )
+                              : const SizedBox(width: double.infinity),
+                        ),
+                        const SizedBox(height: EcoSpace.sm),
+                        Expanded(
+                          child: _MemoList(
+                            memos: visible,
+                            loading: inboxTab ? inboxLoading : sentLoading,
+                            error: inboxTab ? inboxSnap.error : sentSnap.error,
+                            emptyTitle: searching
+                                ? 'No memo matches'
+                                : inboxTab
+                                ? 'No memos in the inbox'
+                                : 'Nothing sent yet',
+                            emptyMessage: searching
+                                ? 'Nothing in this desk mentions '
+                                      '"${_query.trim()}". Try a shorter word, '
+                                      'a name or a kind.'
+                                : inboxTab
+                                ? 'Memos addressed to this desk appear here in real time.'
+                                : 'Memos sent from this desk are listed here with their status.',
+                            emptyActionLabel: searching
+                                ? 'Clear search'
+                                : inboxTab
+                                ? null
+                                : 'Compose a memo',
+                            onEmptyAction: searching
+                                ? _clearSearch
+                                : inboxTab || user == null
+                                ? null
+                                : () => context.push(
+                                    '/memos/new?channel=${_composeChannel(user.role)}',
+                                  ),
+                            highlightUnsigned: inboxTab,
+                            emptyIcon: searching
+                                ? Icons.search_off_rounded
+                                : Icons.mail_outline_rounded,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
             ),
           ),
-          Expanded(
-            child: _tab == 0
-                ? _MemoList(
-                    stream: _inbox!,
-                    emptyTitle: 'No memos in the inbox',
-                    emptyMessage:
-                        'Memos addressed to this desk appear here in real time.',
-                  )
-                : _MemoList(
-                    stream: _sent ??
-                        const Stream<List<Memo>>.empty(),
-                    emptyTitle: 'Nothing sent yet',
-                    emptyMessage:
-                        'Memos sent from this desk are listed here with their '
-                        'status.',
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -409,34 +1031,127 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
   }
 
   static String _roleKey(UserRole role) => switch (role) {
-        UserRole.cityHall => 'cityHall',
-        UserRole.iswim => 'iswim',
-        _ => 'barangay',
-      };
+    UserRole.cityHall => 'cityHall',
+    UserRole.iswim => 'iswim',
+    _ => 'barangay',
+  };
+}
 
-  Widget _tabButton(int item, String label) {
-    final selected = item == _tab;
+/// Segmented Inbox / Sent switch with live counts.
+class _DeskSwitch extends StatelessWidget {
+  const _DeskSwitch({
+    required this.tab,
+    required this.inboxCount,
+    required this.sentCount,
+    required this.onChanged,
+  });
+
+  final int tab;
+  final int? inboxCount;
+  final int? sentCount;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(EcoSpace.xxs),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+      ),
+      child: Row(
+        children: [
+          _DeskSegment(
+            icon: Icons.inbox_rounded,
+            label: 'Inbox',
+            count: inboxCount,
+            selected: tab == 0,
+            onTap: () => onChanged(0),
+          ),
+          _DeskSegment(
+            icon: Icons.send_rounded,
+            label: 'Sent',
+            count: sentCount,
+            selected: tab == 1,
+            onTap: () => onChanged(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeskSegment extends StatelessWidget {
+  const _DeskSegment({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int? count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _tab = item),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          alignment: Alignment.center,
+          duration: EcoMotion.fast,
+          curve: EcoMotion.enter,
+          padding: const EdgeInsets.symmetric(vertical: EcoSpace.sm),
           decoration: BoxDecoration(
-            color: selected ? AppColors.forest : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? AppColors.forest : AppColors.sage,
-            ),
+            color: selected ? AppColors.forest : Colors.transparent,
+            borderRadius: BorderRadius.circular(EcoRadius.pill),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : AppColors.inkMuted,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? Colors.white : AppColors.inkMuted,
+              ),
+              const SizedBox(width: EcoSpace.xs),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : AppColors.inkMuted,
+                ),
+              ),
+              if (count != null && count! > 0) ...[
+                const SizedBox(width: EcoSpace.xs),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : AppColors.mint,
+                    borderRadius: BorderRadius.circular(EcoRadius.pill),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? Colors.white : AppColors.forest,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -444,82 +1159,332 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
   }
 }
 
-class _MemoList extends StatelessWidget {
-  const _MemoList({
-    required this.stream,
-    required this.emptyTitle,
-    required this.emptyMessage,
+/// What needs attention in the inbox, or the all-clear.
+class _InboxSummary extends StatelessWidget {
+  const _InboxSummary({
+    super.key,
+    required this.pending,
+    required this.loading,
   });
 
-  final Stream<List<Memo>> stream;
-  final String emptyTitle;
-  final String emptyMessage;
+  final int pending;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Memo>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2.4));
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                AppFeedback.describe(snapshot.error!),
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 10.5, color: AppColors.error),
-              ),
-            ),
-          );
-        }
-        final memos = snapshot.data ?? const <Memo>[];
-        if (memos.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.mail_outline_rounded,
-                      size: 40, color: AppColors.sage),
-                  const SizedBox(height: 12),
-                  Text(
-                    emptyTitle,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
+    final clear = pending == 0;
+    final tint = clear ? AppColors.moss : AppColors.warning;
+
+    return Container(
+      padding: const EdgeInsets.all(EcoSpace.sm + 2),
+      decoration: BoxDecoration(
+        color: clear
+            ? AppColors.mint
+            : AppColors.warning.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+        border: Border.all(
+          color: clear
+              ? AppColors.sage
+              : AppColors.warning.withValues(alpha: 0.45),
+        ),
+      ),
+      child: loading
+          ? const Row(
+              children: [
+                SkeletonBox(width: 34, height: 34, radius: 10),
+                SizedBox(width: EcoSpace.sm),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 168, height: 11),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 220, height: 9, radius: 4),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Container(
+                  height: 34,
+                  width: 34,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(EcoRadius.sm),
+                  ),
+                  child: Icon(
+                    clear
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.mark_email_unread_outlined,
+                    size: 17,
+                    color: tint,
+                  ),
+                ),
+                const SizedBox(width: EcoSpace.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        clear
+                            ? 'You are all caught up'
+                            : '$pending waiting for acknowledgement',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.forest,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        clear
+                            ? 'No memo needs your signature right now.'
+                            : 'Open a memo to review it and sign.',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          height: 1.35,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!clear)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning,
+                      borderRadius: BorderRadius.circular(EcoRadius.pill),
+                    ),
+                    child: Text(
+                      '$pending',
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    emptyMessage,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      height: 1.5,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(20, 2, 20, 96),
-          itemCount: memos.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 9),
-          itemBuilder: (context, i) => FadeSlideIn(
-            index: i,
-            offset: 10,
-            child: MemoCard(memo: memos[i]),
+    );
+  }
+}
+
+/// How much of the outbox the receiving desks have acknowledged.
+class _SentSummary extends StatelessWidget {
+  const _SentSummary({
+    super.key,
+    required this.acknowledged,
+    required this.total,
+    required this.loading,
+  });
+
+  final int acknowledged;
+  final int total;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = total == 0 ? 0.0 : acknowledged / total;
+
+    return Container(
+      padding: const EdgeInsets.all(EcoSpace.sm + 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: loading
+          ? const Row(
+              children: [
+                SkeletonBox(width: 34, height: 34, radius: 10),
+                SizedBox(width: EcoSpace.sm),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 168, height: 11),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 220, height: 9, radius: 4),
+                  ],
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      height: 34,
+                      width: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.mint,
+                        borderRadius: BorderRadius.circular(EcoRadius.sm),
+                      ),
+                      child: const Icon(
+                        Icons.done_all_rounded,
+                        size: 17,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                    const SizedBox(width: EcoSpace.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$acknowledged of $total acknowledged',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'The rest are waiting for the receiving desk.',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              height: 1.35,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${(ratio * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.moss,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: EcoSpace.sm),
+                GrowBar(value: ratio),
+              ],
+            ),
+    );
+  }
+}
+
+class _MemoList extends StatelessWidget {
+  const _MemoList({
+    required this.memos,
+    required this.loading,
+    required this.error,
+    required this.emptyTitle,
+    required this.emptyMessage,
+    this.emptyActionLabel,
+    this.onEmptyAction,
+    this.highlightUnsigned = false,
+    this.emptyIcon = Icons.mail_outline_rounded,
+  });
+
+  final List<Memo> memos;
+  final bool loading;
+  final Object? error;
+  final String emptyTitle;
+  final String emptyMessage;
+  final String? emptyActionLabel;
+  final VoidCallback? onEmptyAction;
+  final bool highlightUnsigned;
+  final IconData emptyIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    if (error != null) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
+        children: [
+          EcoBanner(
+            message: AppFeedback.describe(error!),
+            icon: Icons.cloud_off_rounded,
+            color: AppColors.error,
           ),
-        );
-      },
+        ],
+      );
+    }
+    if (loading) return const _MemoSkeleton();
+    if (memos.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
+        children: [
+          const SizedBox(height: EcoSpace.xl),
+          EmptyState(
+            icon: emptyIcon,
+            title: emptyTitle,
+            message: emptyMessage,
+            actionLabel: emptyActionLabel,
+            onAction: onEmptyAction,
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 96),
+      itemCount: memos.length,
+      separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
+      itemBuilder: (context, i) => FadeSlideIn(
+        index: i,
+        offset: 10,
+        child: MemoCard(
+          memo: memos[i],
+          needsAction: highlightUnsigned && !memos[i].isSigned,
+        ),
+      ),
+    );
+  }
+}
+
+class _MemoSkeleton extends StatelessWidget {
+  const _MemoSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 96),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 3,
+      separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
+      itemBuilder: (context, i) => Container(
+        padding: const EdgeInsets.all(EcoSpace.md),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(EcoRadius.lg),
+          border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SkeletonBox(width: 34, height: 34, radius: 10),
+                SizedBox(width: EcoSpace.sm),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 78, height: 9, radius: 4),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 188, height: 12, radius: 6),
+                  ],
+                ),
+              ],
+            ),
+            SizedBox(height: EcoSpace.sm + 2),
+            SkeletonBox(width: double.infinity, height: 10, radius: 5),
+            SizedBox(height: 7),
+            SkeletonBox(width: 214, height: 10, radius: 5),
+            SizedBox(height: EcoSpace.sm + 2),
+            SkeletonBox(width: 160, height: 9, radius: 4),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -542,14 +1507,17 @@ class EcoNote extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded,
-              size: 15, color: AppColors.warning),
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 15,
+            color: AppColors.warning,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
               style: const TextStyle(
-                fontSize: 9.5,
+                fontSize: 11,
                 height: 1.45,
                 color: AppColors.textDark,
               ),

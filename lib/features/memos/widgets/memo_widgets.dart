@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
@@ -23,16 +24,16 @@ class MemoStatusBadge extends StatelessWidget {
   final bool compact;
 
   Color get _color => switch (status) {
-        MemoStatus.sent => const Color(0xFF1565C0),
-        MemoStatus.received => AppColors.warning,
-        MemoStatus.acknowledged => AppColors.primary,
-      };
+    MemoStatus.sent => const Color(0xFF1565C0),
+    MemoStatus.received => AppColors.warning,
+    MemoStatus.acknowledged => AppColors.primary,
+  };
 
   IconData get _icon => switch (status) {
-        MemoStatus.sent => Icons.outbox_rounded,
-        MemoStatus.received => Icons.mark_email_read_outlined,
-        MemoStatus.acknowledged => Icons.verified_rounded,
-      };
+    MemoStatus.sent => Icons.outbox_rounded,
+    MemoStatus.received => Icons.mark_email_read_outlined,
+    MemoStatus.acknowledged => Icons.verified_rounded,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +87,7 @@ class MemoAttachmentCard extends StatelessWidget {
                       attachment.bytes == 0
                           ? 'Attached file'
                           : '${attachment.sizeKb.toStringAsFixed(0)} KB · '
-                              '${attachment.isPdf ? 'PDF' : 'image'}',
+                                '${attachment.isPdf ? 'PDF' : 'image'}',
                       style: const TextStyle(
                         fontSize: 8.5,
                         color: AppColors.inkMuted,
@@ -118,10 +119,7 @@ class MemoAttachmentCard extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: () => _open(context),
                     icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                    label: const Text(
-                      'Open',
-                      style: TextStyle(fontSize: 10.5),
-                    ),
+                    label: const Text('Open', style: TextStyle(fontSize: 10.5)),
                   ),
                 ),
               ),
@@ -219,100 +217,170 @@ class MemoAttachmentChip extends StatelessWidget {
 /// One memo in a list: kind, status, subject, a preview of the body and the
 /// sender → recipient line. Tapping opens the full record.
 class MemoCard extends StatelessWidget {
-  const MemoCard({super.key, required this.memo});
+  const MemoCard({super.key, required this.memo, this.needsAction});
 
   final Memo memo;
 
+  /// Overrides the amber "needs attention" treatment. The inbox passes true
+  /// for every unacknowledged memo, including ones the desk has not opened.
+  final bool? needsAction;
+
+  static IconData _iconFor(MemoKind kind) => switch (kind) {
+    MemoKind.memo => Icons.sticky_note_2_outlined,
+    MemoKind.endorsement => Icons.forward_to_inbox_rounded,
+    MemoKind.announcement => Icons.campaign_outlined,
+    MemoKind.manualRequest => Icons.menu_book_outlined,
+  };
+
   @override
   Widget build(BuildContext context) {
+    final action = needsAction ?? memo.status == MemoStatus.received;
+    final unopened = action && memo.status == MemoStatus.sent;
+    final accent = action ? AppColors.warning : AppColors.forest;
+
     return HoverLift(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: () => context.push('/memo/${memo.id}'),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(EcoRadius.lg),
           child: Ink(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(EcoSpace.md),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.sage),
+              color: action
+                  ? AppColors.warning.withValues(alpha: 0.04)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(EcoRadius.lg),
+              border: Border.all(
+                color: action
+                    ? AppColors.warning.withValues(alpha: 0.45)
+                    : AppColors.sage,
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                      height: 34,
+                      width: 34,
                       decoration: BoxDecoration(
-                        color: AppColors.mint,
-                        borderRadius: BorderRadius.circular(20),
+                        color: action
+                            ? AppColors.warning.withValues(alpha: 0.14)
+                            : AppColors.mint,
+                        borderRadius: BorderRadius.circular(EcoRadius.sm),
                       ),
-                      child: Text(
-                        memo.kind.label,
-                        style: const TextStyle(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.forest,
-                        ),
+                      child: Icon(_iconFor(memo.kind), size: 17, color: accent),
+                    ),
+                    const SizedBox(width: EcoSpace.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (action) ...[
+                                Container(
+                                  height: 6,
+                                  width: 6,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.warning,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  '${memo.kind.label} · '
+                                  '${timeAgo(memo.createdAt)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.3,
+                                    color: AppColors.inkMuted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            memo.subject,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    MemoStatusBadge(status: memo.status),
-                    const Spacer(),
-                    Text(
-                      timeAgo(memo.createdAt),
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
+                    const SizedBox(width: EcoSpace.xs),
+                    if (unopened)
+                      const StatusBadge(
+                        label: 'New',
+                        color: Color(0xFF1565C0),
+                        icon: Icons.fiber_new_rounded,
+                      )
+                    else
+                      MemoStatusBadge(status: memo.status),
                   ],
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  memo.subject,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-                const SizedBox(height: 3),
+                const SizedBox(height: EcoSpace.sm),
                 Text(
                   memo.body,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 9.5,
+                    fontSize: 10.5,
                     height: 1.45,
-                    color: AppColors.textDark,
+                    color: AppColors.inkMuted,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: EcoSpace.sm + 2),
+                Container(
+                  height: 1,
+                  color: AppColors.sage.withValues(alpha: 0.55),
+                ),
+                const SizedBox(height: EcoSpace.xs + 2),
                 Row(
                   children: [
-                    const Icon(Icons.person_outline_rounded,
-                        size: 11, color: AppColors.inkMuted),
-                    const SizedBox(width: 3),
-                    Flexible(
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      size: 12,
+                      color: AppColors.inkMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
                       child: Text(
                         '${memo.fromName} → ${memo.recipientLabel}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 8.5,
+                          fontSize: 9,
                           color: AppColors.inkMuted,
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    if (memo.attachment != null)
-                      MemoAttachmentChip(attachment: memo.attachment!),
+                    if (memo.attachment != null) ...[
+                      const SizedBox(width: EcoSpace.sm),
+                      Flexible(
+                        child: MemoAttachmentChip(attachment: memo.attachment!),
+                      ),
+                    ],
+                    const SizedBox(width: EcoSpace.xxs),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: AppColors.moss,
+                    ),
                   ],
                 ),
               ],

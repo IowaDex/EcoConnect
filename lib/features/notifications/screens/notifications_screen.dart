@@ -37,25 +37,20 @@ class NotificationsScreen extends StatelessWidget {
             AppPageHeader(
               title: 'Notifications',
               subtitle: 'Route, request and verification updates.',
-              onBack: () => context.go(
-                switch (user.role) {
-                  UserRole.admin => '/admin-dashboard',
-                  UserRole.driver => '/driver',
-                  UserRole.user => '/user',
-                  UserRole.iswim => '/iswim',
-                  UserRole.cityHall => '/cityhall',
-                },
-              ),
+              onBack: () => context.go(switch (user.role) {
+                UserRole.admin => '/admin-dashboard',
+                UserRole.driver => '/driver',
+                UserRole.user => '/user',
+                UserRole.iswim => '/iswim',
+                UserRole.cityHall => '/cityhall',
+              }),
               actions: [
                 IconButton(
                   onPressed: () async {
                     try {
                       await (deskChannel == null
                           ? service.markAllRead(user.uid)
-                          : service.markAllReadForDesk(
-                              user.uid,
-                              deskChannel,
-                            ));
+                          : service.markAllReadForDesk(user.uid, deskChannel));
                       if (context.mounted) {
                         AppFeedback.success(context, 'All notifications read');
                       }
@@ -93,9 +88,12 @@ class NotificationsScreen extends StatelessWidget {
                           'Route changes, approvals and announcements will appear here.',
                     );
                   }
-                  final today = items.where((n) => _isToday(n.createdAt)).toList();
-                  final earlier =
-                      items.where((n) => !_isToday(n.createdAt)).toList();
+                  final today = items
+                      .where((n) => _isToday(n.createdAt))
+                      .toList();
+                  final earlier = items
+                      .where((n) => !_isToday(n.createdAt))
+                      .toList();
 
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(18, 0, 18, 26),
@@ -140,10 +138,7 @@ class NotificationsScreen extends StatelessWidget {
         date.day == now.day;
   }
 
-  Future<void> _delete(
-    BuildContext context,
-    AppNotification item,
-  ) async {
+  Future<void> _delete(BuildContext context, AppNotification item) async {
     try {
       await NotificationService().delete(item.id);
     } catch (e) {
@@ -170,6 +165,45 @@ class NotificationsScreen extends StatelessWidget {
     if (item.data['kind'] == 'memo' && memoId is String && memoId.isNotEmpty) {
       context.push('/memo/$memoId');
       return;
+    }
+
+    // Some alerts carry a kind that points at a specific record. Routing on
+    // the kind is more precise than routing on the notification type alone.
+    final kind = item.data['kind'];
+    if (kind is String) {
+      final ticketId = item.data['ticketId'];
+      if (kind.startsWith('ticket') &&
+          ticketId is String &&
+          ticketId.isNotEmpty) {
+        context.push('/tickets/$ticketId');
+        return;
+      }
+      if (kind == 'incident') {
+        context.push('/incidents');
+        return;
+      }
+      if (kind == 'complaintFiled' || kind == 'complaintResponse') {
+        context.push(
+          role == UserRole.cityHall ? '/complaints' : '/my-complaints',
+        );
+        return;
+      }
+      if (kind == 'planAssigned' || kind == 'planCancelled') {
+        context.push(role == UserRole.driver ? '/driver-routes' : '/routes');
+        return;
+      }
+      if (kind.startsWith('delay')) {
+        context.push('/delays');
+        return;
+      }
+      if (kind.startsWith('manual')) {
+        context.push(
+          kind.toLowerCase().contains('request')
+              ? '/manual-requests'
+              : '/manuals',
+        );
+        return;
+      }
     }
 
     // Desk roles have their own destinations; residents and drivers keep the
@@ -212,8 +246,9 @@ class NotificationsScreen extends StatelessWidget {
       case AppNotificationType.event:
         context.push('/events');
       case AppNotificationType.points:
-        // Residents see the balance and history in their wallet.
-        if (!isStaff) context.push('/wallet');
+        // Recycling points are no longer a resident-facing screen; the
+        // notification stays as a record of the drop-off.
+        break;
       case AppNotificationType.account:
       case AppNotificationType.system:
         break;

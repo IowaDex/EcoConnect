@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/section_header.dart';
 
 /// Notification list opened from the bell in the home hero.
 class AlertsScreen extends StatelessWidget {
@@ -44,54 +46,20 @@ class AlertsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 22, 6),
-              child: Row(
-                children: [
-                  InkWell(
-                    onTap: () => Navigator.of(context).pop(),
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 16,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Alerts',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                ],
-              ),
+            AppPageHeader(
+              title: 'Notifications',
+              subtitle: 'Updates from your barangay and collection crew.',
+              onBack: () => Navigator.of(context).pop(),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 8, 22, 16),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
+                  for (var i = 0; i < _items.length; i++) ...[
+                    FadeSlideIn(
+                      index: i,
+                      child: _AlertTile(alert: _items[i]),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Updates from your barangay and collection crew.',
-                    style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
-                  ),
-                  const SizedBox(height: 18),
-                  for (final item in _items) ...[
-                    _AlertTile(alert: item),
                     const SizedBox(height: 10),
                   ],
                 ],
@@ -133,7 +101,7 @@ class _AlertTile extends StatelessWidget {
         color: alert.unread
             ? AppColors.mint.withValues(alpha: 0.55)
             : AppColors.cream,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: alert.unread
               ? AppColors.forest.withValues(alpha: 0.22)
@@ -169,7 +137,7 @@ class _AlertTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 11.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: AppColors.forest,
                         ),
@@ -190,8 +158,8 @@ class _AlertTile extends StatelessWidget {
                 Text(
                   alert.body,
                   style: const TextStyle(
-                    fontSize: 10,
-                    height: 1.45,
+                    fontSize: 11.5,
+                    height: 1.5,
                     color: AppColors.forest,
                   ),
                 ),
@@ -199,7 +167,7 @@ class _AlertTile extends StatelessWidget {
                 Text(
                   alert.time,
                   style: const TextStyle(
-                    fontSize: 8.5,
+                    fontSize: 10,
                     color: AppColors.inkMuted,
                   ),
                 ),

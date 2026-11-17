@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../auth/services/session_actions.dart';
 import '../../location/repositories/location_repository.dart';
 import '../services/user_data_cleanup.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/confirm_logout.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 
@@ -123,12 +123,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   static String _roleLabel(UserRole role) => switch (role) {
-        UserRole.admin => 'Barangay staff',
-        UserRole.driver => 'Driver',
-        UserRole.user => 'Resident',
-        UserRole.iswim => 'Iswim',
-        UserRole.cityHall => 'City Hall (DSQC)',
-      };
+    UserRole.admin => 'Barangay staff',
+    UserRole.driver => 'Driver',
+    UserRole.user => 'Resident',
+    UserRole.iswim => 'Iswim',
+    UserRole.cityHall => 'City Hall (DSQC)',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -149,11 +149,15 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     tooltip: 'Back',
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 16, color: AppColors.forest),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 16,
+                      color: AppColors.forest,
+                    ),
                     // Disabled mid-delete so a half-done delete is not left behind.
-                    onPressed:
-                        _isLoading ? null : () => context.go('/admin-dashboard'),
+                    onPressed: _isLoading
+                        ? null
+                        : () => context.go('/admin-dashboard'),
                   ),
                   const SizedBox(width: 10),
                   const BrandWordmark(fontSize: 10.5),
@@ -161,8 +165,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.refresh_rounded,
-                        size: 18, color: AppColors.inkMuted),
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      size: 18,
+                      color: AppColors.inkMuted,
+                    ),
                     onPressed: _isLoading ? null : _loadUsers,
                   ),
                 ],
@@ -235,16 +242,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               const Text(
                 'Access denied',
                 style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.danger),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.danger,
+                ),
               ),
               const SizedBox(height: 14),
               FilledButton(
-                onPressed: () async {
-                  final auth = context.read<AuthProvider>();
-                  if (await confirmLogout(context)) auth.logout();
-                },
+                onPressed: () => confirmAndLogout(context),
                 child: const Text('Logout'),
               ),
             ],
@@ -303,8 +308,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               roleEnum == UserRole.admin
                   ? Icons.badge_outlined
                   : roleEnum == UserRole.driver
-                      ? Icons.local_shipping_outlined
-                      : Icons.person_outline,
+                  ? Icons.local_shipping_outlined
+                  : Icons.person_outline,
               size: 18,
               color: AppColors.forest,
             ),
@@ -330,7 +335,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontSize: 10, color: AppColors.inkMuted),
+                    fontSize: 10,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
               ],
             ),
@@ -355,10 +362,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   color: AppColors.forest,
                 ),
                 items: UserRole.values
-                    .map((r) => DropdownMenuItem(
-                          value: r,
-                          child: Text(_roleLabel(r)),
-                        ))
+                    .map(
+                      (r) => DropdownMenuItem(
+                        value: r,
+                        child: Text(_roleLabel(r)),
+                      ),
+                    )
                     .toList(),
                 onChanged: (newRole) {
                   if (newRole != null && newRole != roleEnum) {
@@ -370,8 +379,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           // Hidden on your own row so an admin cannot lock themselves out.
           if (!isSelf)
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded,
-                  size: 20, color: AppColors.danger),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: AppColors.danger,
+              ),
               onPressed: () => _deleteUser(uid),
             )
           else
