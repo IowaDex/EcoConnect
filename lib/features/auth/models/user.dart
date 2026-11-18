@@ -118,9 +118,10 @@ class AppUser {
       role == UserRole.user &&
       verificationStatus != VerificationStatus.verified;
 
-  /// A pending account cannot write `sessions/{uid}` — the rules require an
-  /// active account — so the device claim waits until the barangay approves.
-  bool get canClaimSession => !isPendingApproval;
+  /// Only an active account may claim `sessions/{uid}`: the rules require
+  /// `accountStatus == 'active'`, so a pending, declined or suspended account
+  /// waits instead of being signed out by a refused claim.
+  bool get canClaimSession => accountStatus == 'active';
 
   /// Age in whole years, derived from [birthdate] when it is available.
   int? get ageYears {

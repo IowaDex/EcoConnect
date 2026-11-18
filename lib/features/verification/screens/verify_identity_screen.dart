@@ -53,6 +53,9 @@ class _VerifyIdentityScreenState extends State<VerifyIdentityScreen> {
       );
       if (!mounted) return;
       setState(() => _document = null);
+      // The profile now says 'pending'; carry that to the dashboard behind.
+      await context.read<AuthProvider>().refreshUser();
+      if (!mounted) return;
       AppFeedback.success(
         context,
         'ID submitted. Barangay staff will review it shortly.',

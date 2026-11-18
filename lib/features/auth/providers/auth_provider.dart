@@ -199,13 +199,6 @@ class AuthProvider extends ChangeNotifier {
           _setError('This account has been removed by an administrator.');
         case AuthErrorType.needsEmailVerification:
           _setError('Confirm your email to finish signing up.');
-        case AuthErrorType.accountDeclined:
-          final reason = e.reason?.trim();
-          _setError(
-            'Barangay Batasan Hills did not approve your registration'
-            '${reason == null || reason.isEmpty ? '.' : ': $reason'} '
-            'Please contact the barangay staff.',
-          );
       }
       AppLogger.error('Login rejected', e.type);
       return false;
@@ -272,10 +265,10 @@ class AuthProvider extends ChangeNotifier {
       final current = _currentUser;
       if (refreshed == null || refreshed.uid != current?.uid) return;
 
-      // The barangay can withdraw a registration while the resident is signed
-      // in. End the session instead of leaving a dead dashboard open.
-      if (refreshed.accountStatus == 'declined' ||
-          refreshed.accountStatus == 'suspended') {
+      // A rejected ID keeps the session: the resident fixes the photo from
+      // the dashboard instead of being signed out of the only screen that can
+      // send it. A suspension still ends the session on the spot.
+      if (refreshed.accountStatus == 'suspended') {
         await logout();
         return;
       }
