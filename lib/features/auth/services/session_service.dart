@@ -17,7 +17,7 @@ class SessionService {
   /// `_authTime` returns the sign-in time (epoch seconds) of the current login
   /// token, which the rules compare against.
   SessionService(this._authTime, {FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   static const _prefix = 'session_id_';
 
@@ -109,10 +109,9 @@ class SessionService {
       onListen: () async {
         final prefs = await SharedPreferences.getInstance();
         if (cancelled) return;
-        sub = _doc(uid).snapshots().listen(
-              (snap) => onSnapshot(prefs, snap),
-              onError: fail,
-            );
+        sub = _doc(
+          uid,
+        ).snapshots().listen((snap) => onSnapshot(prefs, snap), onError: fail);
       },
       onCancel: () {
         cancelled = true;

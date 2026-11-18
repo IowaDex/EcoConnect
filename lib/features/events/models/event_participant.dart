@@ -66,13 +66,13 @@ class EventParticipant {
   String get streetLabel => street.trim().isEmpty ? 'Street not set' : street;
 
   Map<String, dynamic> toMap() => {
-        'uid': uid,
-        'name': name,
-        'street': street,
-        'streetKey': streetKey,
-        'barangay': barangay,
-        'joinedAt': FieldValue.serverTimestamp(),
-      };
+    'uid': uid,
+    'name': name,
+    'street': street,
+    'streetKey': streetKey,
+    'barangay': barangay,
+    'joinedAt': FieldValue.serverTimestamp(),
+  };
 
   static EventParticipant fromDoc(String uid, Map<String, dynamic> data) {
     final street = (data['street'] as String?) ?? '';
@@ -88,8 +88,9 @@ class EventParticipant {
           ? streetKeyOf(street)
           : ((data['streetKey'] as String?) ?? ''),
       barangay: (data['barangay'] as String?) ?? '',
-      joinedAt:
-          data['joinedAt'] is Timestamp ? (data['joinedAt'] as Timestamp).toDate() : null,
+      joinedAt: data['joinedAt'] is Timestamp
+          ? (data['joinedAt'] as Timestamp).toDate()
+          : null,
     );
   }
 }
@@ -153,6 +154,6 @@ class StreetStanding {
   final int events;
 
   /// Leaderboard score. Ten points per attendance keeps the numbers readable
-  /// next to the recycling points residents already earn.
+  /// across a barangay-wide event.
   int get points => attendances * 10;
 }

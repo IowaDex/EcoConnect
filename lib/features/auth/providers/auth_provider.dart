@@ -23,6 +23,7 @@ class AuthProvider extends ChangeNotifier {
   bool _sessionReplaced = false;
 
   AppUser? get currentUser => _currentUser;
+
   /// False until Firebase has restored (or ruled out) the saved session.
   bool get isInitialized => _isInitialized;
   bool get isLoading => _isLoading;
@@ -40,27 +41,37 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _initAuth() {
-    _authService.authStateChanges.listen((AppUser? user) {
-      // Do not auto-login unverified users
-      final blocked = user != null &&
-          (user.isPendingApproval ||
-              (!user.emailVerified && user.role == UserRole.user));
-      _currentUser = blocked ? null : user;
-      _isInitialized = true;
-      // A login claims its own session first; login() starts the watch then.
-      if (_currentUser != null && !_authService.isClaimingSession) {
-        _watchSession(_currentUser!.uid);
-      } else if (_currentUser == null) {
-        _stopWatchingSession();
-      }
-      notifyListeners();
-    }, onError: (Object e) {
-      // e.g. offline with no cached profile: fall back to the login screen.
-      AppLogger.error('Could not restore session', e);
-      _currentUser = null;
-      _isInitialized = true;
-      notifyListeners();
-    });
+    _authService.authStateChanges.listen(
+      (AppUser? user) {
+        // Do not auto-login unverified users. A resident whose email is
+        // confirmed may stay signed in while the barangay checks their ID:
+        // the dashboard is locked to truck tracking until approval.
+        final blocked =
+            user != null &&
+            ((user.isPendingApproval && user.role != UserRole.user) ||
+                (!user.emailVerified && user.role == UserRole.user));
+        _currentUser = blocked ? null : user;
+        _isInitialized = true;
+        // A login claims its own session first; login() starts the watch then.
+        // A pending account has no session record yet (the rules require an
+        // active account), so there is nothing to watch.
+        if (_currentUser != null &&
+            _currentUser!.canClaimSession &&
+            !_authService.isClaimingSession) {
+          _watchSession(_currentUser!.uid);
+        } else if (_currentUser == null) {
+          _stopWatchingSession();
+        }
+        notifyListeners();
+      },
+      onError: (Object e) {
+        // e.g. offline with no cached profile: fall back to the login screen.
+        AppLogger.error('Could not restore session', e);
+        _currentUser = null;
+        _isInitialized = true;
+        notifyListeners();
+      },
+    );
   }
 
   Future<bool> signUp({
@@ -109,9 +120,11 @@ class AuthProvider extends ChangeNotifier {
       await _authService.resendVerificationLink();
       return true;
     } on FirebaseAuthException catch (e) {
-      _setError(e.code == 'too-many-requests'
-          ? 'Too many emails sent. Please wait a few minutes.'
-          : 'Could not send the email. Please try again.');
+      _setError(
+        e.code == 'too-many-requests'
+            ? 'Too many emails sent. Please wait a few minutes.'
+            : 'Could not send the email. Please try again.',
+      );
       return false;
     } catch (_) {
       _setError('Could not send the email. Please try again.');
@@ -131,11 +144,13 @@ class AuthProvider extends ChangeNotifier {
       // Say what failed, so a rules or network problem is visible.
       // FirebaseAuthException is a FirebaseException too.
       final code = e is FirebaseException ? e.code : e.runtimeType.toString();
-      _setError(code == 'permission-denied'
-          ? 'The server refused to record your confirmation '
-              '(permission-denied). Ask the admin to deploy the latest '
-              'Firestore rules, then try again.'
-          : 'Could not confirm your email ($code). Please try again.');
+      _setError(
+        code == 'permission-denied'
+            ? 'The server refused to record your confirmation '
+                  '(permission-denied). Ask the admin to deploy the latest '
+                  'Firestore rules, then try again.'
+            : 'Could not confirm your email ($code). Please try again.',
+      );
       return false;
     } finally {
       _setLoading(false);
@@ -144,18 +159,18 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> cancelPendingSignup() => _authService.cancelPendingSignup();
 
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
+  /// True once Firebase sees the emailed link as clicked. Used by the
+  /// confirmation screen to move on without another tap.
+  Future<bool> checkEmailVerified() => _authService.checkEmailVerified();
+
+  Future<bool> login({required String email, required String password}) async {
     _setLoading(true);
     _clearError();
     _loginErrorType = null;
 
     try {
-      final user =
-          await _authService.login(email: email, password: password);
-      _watchSession(user.uid);
+      final user = await _authService.login(email: email, password: password);
+      if (user.canClaimSession) _watchSession(user.uid);
       return true;
     } on AuthException catch (e) {
       _loginErrorType = e.type;
@@ -174,6 +189,11 @@ class AuthProvider extends ChangeNotifier {
         case AuthErrorType.accountSuspended:
           _setError(
             'This account is suspended. Ask City Hall to restore your access.',
+          );
+        case AuthErrorType.outOfArea:
+          _setError(
+            'EcoConnect is only available to residents of Barangay '
+            'Batasan Hills, Quezon City.',
           );
         case AuthErrorType.accountRemoved:
           _setError('This account has been removed by an administrator.');
@@ -212,8 +232,9 @@ class AuthProvider extends ChangeNotifier {
     if (user == null) return 'You are not signed in.';
     try {
       await _authService.answerRegistration(uid: user.uid, accepted: accepted);
-      _currentUser =
-          user.copyWith(registrationStatus: accepted ? 'accepted' : 'declined');
+      _currentUser = user.copyWith(
+        registrationStatus: accepted ? 'accepted' : 'declined',
+      );
       notifyListeners();
       return null;
     } catch (e) {
@@ -222,7 +243,11 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAllUsers() => _authService.getAllUsers();
+  Future<List<Map<String, dynamic>>> getAllUsers() =>
+      _authService.getAllUsers();
+
+  Stream<List<Map<String, dynamic>>> watchResidents() =>
+      _authService.watchResidents();
 
   Future<List<Map<String, dynamic>>> getDrivers() => _authService.getDrivers();
 
@@ -238,16 +263,36 @@ class AuthProvider extends ChangeNotifier {
   Future<void> deleteUser(
     String uid, {
     required Future<void> Function() deleteLocationData,
-  }) =>
-      _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
+  }) => _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
 
   /// Re-reads the profile so verification changes appear without a sign-out.
   Future<void> refreshUser() async {
     try {
       final refreshed = await _authService.refreshProfile();
-      if (refreshed != null && refreshed.uid == _currentUser?.uid) {
-        _currentUser = refreshed;
-        notifyListeners();
+      final current = _currentUser;
+      if (refreshed == null || refreshed.uid != current?.uid) return;
+
+      // The barangay can withdraw a registration while the resident is signed
+      // in. End the session instead of leaving a dead dashboard open.
+      if (refreshed.accountStatus == 'declined' ||
+          refreshed.accountStatus == 'suspended') {
+        await logout();
+        return;
+      }
+
+      final couldClaim = current!.canClaimSession;
+      _currentUser = refreshed;
+      notifyListeners();
+
+      // Approved while signed in: a pending account skipped the session claim
+      // at login, so claim this device now that the rules allow it.
+      if (!couldClaim && refreshed.canClaimSession) {
+        try {
+          await _authService.claimSession(refreshed.uid);
+          _watchSession(refreshed.uid);
+        } catch (e) {
+          AppLogger.error('Session claim after approval failed', e);
+        }
       }
     } catch (e) {
       AppLogger.error('Profile refresh failed', e);
@@ -263,7 +308,8 @@ class AuthProvider extends ChangeNotifier {
       return switch (e.code) {
         'invalid-email' => 'Please enter a valid email address.',
         'too-many-requests' => 'Too many attempts. Please try again later.',
-        'network-request-failed' => 'No connection. Check your internet and retry.',
+        'network-request-failed' =>
+          'No connection. Check your internet and retry.',
         _ => 'Could not send the reset email. Please try again.',
       };
     } catch (e) {

@@ -106,7 +106,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   }
                   final post = snapshot.data;
                   if (post == null) {
-                    return const Center(child: Text('This post is unavailable.'));
+                    return const Center(
+                      child: Text('This post is unavailable.'),
+                    );
                   }
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
@@ -293,7 +295,9 @@ class _AuthorRow extends StatelessWidget {
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.mint,
                         borderRadius: BorderRadius.circular(8),
@@ -405,7 +409,9 @@ class _CommentTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.creamBright,
                 borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+                border: Border.all(
+                  color: AppColors.sage.withValues(alpha: 0.7),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

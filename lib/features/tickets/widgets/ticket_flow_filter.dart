@@ -22,75 +22,75 @@ enum TicketFlowStage {
 
 extension TicketFlowStageX on TicketFlowStage {
   String get label => switch (this) {
-        TicketFlowStage.withDriver => 'With driver',
-        TicketFlowStage.onTheRoad => 'On the road',
-        TicketFlowStage.barangay => 'Barangay',
-        TicketFlowStage.iswim => 'Your signature',
-        TicketFlowStage.cityHall => 'City Hall',
-        TicketFlowStage.completed => 'Completed',
-        TicketFlowStage.notCompleted => 'Not completed',
-      };
+    TicketFlowStage.withDriver => 'With driver',
+    TicketFlowStage.onTheRoad => 'On the road',
+    TicketFlowStage.barangay => 'Barangay',
+    TicketFlowStage.iswim => 'Your signature',
+    TicketFlowStage.cityHall => 'City Hall',
+    TicketFlowStage.completed => 'Completed',
+    TicketFlowStage.notCompleted => 'Not completed',
+  };
 
   /// One line explaining the stage, used by the empty state.
   String get description => switch (this) {
-        TicketFlowStage.withDriver =>
-          'Tickets waiting for the driver to accept, start or revise the trip.',
-        TicketFlowStage.onTheRoad => 'Tickets whose trip is happening now.',
-        TicketFlowStage.barangay =>
-          'Tickets waiting for the barangay to verify the trip.',
-        TicketFlowStage.iswim => 'Tickets waiting for your signature.',
-        TicketFlowStage.cityHall =>
-          'Tickets you signed that are waiting for City Hall.',
-        TicketFlowStage.completed =>
-          'Tickets signed by the driver, barangay, Iswim and City Hall.',
-        TicketFlowStage.notCompleted =>
-          'Tickets declined, missed, cancelled or rejected before completion.',
-      };
+    TicketFlowStage.withDriver =>
+      'Tickets waiting for the driver to accept, start or revise the trip.',
+    TicketFlowStage.onTheRoad => 'Tickets whose trip is happening now.',
+    TicketFlowStage.barangay =>
+      'Tickets waiting for the barangay to verify the trip.',
+    TicketFlowStage.iswim => 'Tickets waiting for your signature.',
+    TicketFlowStage.cityHall =>
+      'Tickets you signed that are waiting for City Hall.',
+    TicketFlowStage.completed =>
+      'Tickets signed by the driver, barangay, Iswim and City Hall.',
+    TicketFlowStage.notCompleted =>
+      'Tickets declined, missed, cancelled or rejected before completion.',
+  };
 
   IconData get icon => switch (this) {
-        TicketFlowStage.withDriver => Icons.person_outline_rounded,
-        TicketFlowStage.onTheRoad => Icons.local_shipping_outlined,
-        TicketFlowStage.barangay => Icons.account_balance_outlined,
-        TicketFlowStage.iswim => Icons.draw_outlined,
-        TicketFlowStage.cityHall => Icons.apartment_rounded,
-        TicketFlowStage.completed => Icons.check_circle_outline_rounded,
-        TicketFlowStage.notCompleted => Icons.cancel_outlined,
-      };
+    TicketFlowStage.withDriver => Icons.person_outline_rounded,
+    TicketFlowStage.onTheRoad => Icons.local_shipping_outlined,
+    TicketFlowStage.barangay => Icons.account_balance_outlined,
+    TicketFlowStage.iswim => Icons.draw_outlined,
+    TicketFlowStage.cityHall => Icons.apartment_rounded,
+    TicketFlowStage.completed => Icons.check_circle_outline_rounded,
+    TicketFlowStage.notCompleted => Icons.cancel_outlined,
+  };
 
   Color get color => switch (this) {
-        TicketFlowStage.withDriver => AppColors.warning,
-        TicketFlowStage.onTheRoad => AppColors.moss,
-        TicketFlowStage.barangay => AppColors.secondary,
-        TicketFlowStage.iswim => AppColors.primary,
-        TicketFlowStage.cityHall => AppColors.primary,
-        TicketFlowStage.completed => AppColors.primary,
-        TicketFlowStage.notCompleted => AppColors.error,
-      };
+    TicketFlowStage.withDriver => AppColors.warning,
+    TicketFlowStage.onTheRoad => AppColors.moss,
+    TicketFlowStage.barangay => AppColors.secondary,
+    TicketFlowStage.iswim => AppColors.primary,
+    TicketFlowStage.cityHall => AppColors.primary,
+    TicketFlowStage.completed => AppColors.primary,
+    TicketFlowStage.notCompleted => AppColors.error,
+  };
 
   bool matches(TicketStatus status) => switch (this) {
-        TicketFlowStage.withDriver =>
-          status == TicketStatus.issued ||
-              status == TicketStatus.accepted ||
-              status == TicketStatus.revisionRequired,
-        TicketFlowStage.onTheRoad => status == TicketStatus.running,
-        TicketFlowStage.barangay => status == TicketStatus.submitted,
-        TicketFlowStage.iswim => status == TicketStatus.barangaySigned,
-        TicketFlowStage.cityHall => status == TicketStatus.iswimSigned,
-        TicketFlowStage.completed => status == TicketStatus.completed,
-        TicketFlowStage.notCompleted =>
-          status == TicketStatus.declined ||
-              status == TicketStatus.missed ||
-              status == TicketStatus.cancelled ||
-              status == TicketStatus.rejected,
-      };
+    TicketFlowStage.withDriver =>
+      status == TicketStatus.issued ||
+          status == TicketStatus.accepted ||
+          status == TicketStatus.revisionRequired,
+    TicketFlowStage.onTheRoad => status == TicketStatus.running,
+    TicketFlowStage.barangay => status == TicketStatus.submitted,
+    TicketFlowStage.iswim => status == TicketStatus.barangaySigned,
+    TicketFlowStage.cityHall => status == TicketStatus.iswimSigned,
+    TicketFlowStage.completed => status == TicketStatus.completed,
+    TicketFlowStage.notCompleted =>
+      status == TicketStatus.declined ||
+          status == TicketStatus.missed ||
+          status == TicketStatus.cancelled ||
+          status == TicketStatus.rejected,
+  };
 }
 
 /// How many tickets sit in each stage. The sum always equals the number of
 /// tickets handed in, because every status belongs to exactly one stage.
 Map<TicketFlowStage, int> ticketStageCounts(List<TripTicket> tickets) => {
-      for (final stage in TicketFlowStage.values)
-        stage: tickets.where((ticket) => stage.matches(ticket.status)).length,
-    };
+  for (final stage in TicketFlowStage.values)
+    stage: tickets.where((ticket) => stage.matches(ticket.status)).length,
+};
 
 /// The tickets in [stage], or every ticket when [stage] is null.
 List<TripTicket> ticketsInStage(
@@ -132,8 +132,7 @@ class TicketFlowFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns =
-            constraints.maxWidth >= _fourColumnBreakpoint ? 4 : 2;
+        final columns = constraints.maxWidth >= _fourColumnBreakpoint ? 4 : 2;
         final width = (constraints.maxWidth - _gap * (columns - 1)) / columns;
 
         return Wrap(
@@ -209,11 +208,7 @@ class _FlowChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 13,
-              color: selected ? Colors.white : accent,
-            ),
+            Icon(icon, size: 13, color: selected ? Colors.white : accent),
             const SizedBox(width: 7),
             Expanded(
               child: Text(

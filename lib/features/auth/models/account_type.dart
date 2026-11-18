@@ -27,25 +27,25 @@ enum VerificationStatus { unverified, pending, verified, rejected }
 
 extension VerificationStatusX on VerificationStatus {
   String get label => switch (this) {
-        VerificationStatus.unverified => 'Unverified',
-        VerificationStatus.pending => 'Pending verification',
-        VerificationStatus.verified => 'Verified',
-        VerificationStatus.rejected => 'Rejected',
-      };
+    VerificationStatus.unverified => 'Unverified',
+    VerificationStatus.pending => 'Pending verification',
+    VerificationStatus.verified => 'Verified',
+    VerificationStatus.rejected => 'Rejected',
+  };
 
   Color get color => switch (this) {
-        VerificationStatus.unverified => AppColors.inkMuted,
-        VerificationStatus.pending => AppColors.warning,
-        VerificationStatus.verified => AppColors.primary,
-        VerificationStatus.rejected => AppColors.error,
-      };
+    VerificationStatus.unverified => AppColors.inkMuted,
+    VerificationStatus.pending => AppColors.warning,
+    VerificationStatus.verified => AppColors.primary,
+    VerificationStatus.rejected => AppColors.error,
+  };
 
   IconData get icon => switch (this) {
-        VerificationStatus.unverified => Icons.help_outline_rounded,
-        VerificationStatus.pending => Icons.hourglass_top_rounded,
-        VerificationStatus.verified => Icons.verified_rounded,
-        VerificationStatus.rejected => Icons.gpp_bad_outlined,
-      };
+    VerificationStatus.unverified => Icons.help_outline_rounded,
+    VerificationStatus.pending => Icons.hourglass_top_rounded,
+    VerificationStatus.verified => Icons.verified_rounded,
+    VerificationStatus.rejected => Icons.gpp_bad_outlined,
+  };
 
   static VerificationStatus fromName(String? name) =>
       VerificationStatus.values.firstWhere(

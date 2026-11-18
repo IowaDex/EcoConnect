@@ -26,10 +26,7 @@ import '../services/collection_request_service.dart';
 /// checked by the barangay at sign-up. Firestore enforces the same rule (only
 /// approved residents, never crews).
 class RequestFormScreen extends StatefulWidget {
-  const RequestFormScreen({
-    super.key,
-    this.initialKind = RequestKind.resident,
-  });
+  const RequestFormScreen({super.key, this.initialKind = RequestKind.resident});
 
   /// Wave 2: the resident is reporting garbage that was not collected. The
   /// report still goes to the barangay first for verification.
@@ -142,16 +139,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
             color: AppColors.primary,
           ),
           title: const Text('Request submitted'),
-          content: Text(
-            switch (_kind) {
-              RequestKind.special =>
-                'Barangay staff will review your special collection request and assign a schedule.',
-              RequestKind.uncollected =>
-                'Barangay Batasan Hills will check your report and ask City Hall for a second (wave 2) collection.',
-              RequestKind.resident =>
-                'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
-            },
-          ),
+          content: Text(switch (_kind) {
+            RequestKind.special =>
+              'Barangay staff will review your special collection request and assign a schedule.',
+            RequestKind.uncollected =>
+              'Barangay Batasan Hills will check your report and ask City Hall for a second (wave 2) collection.',
+            RequestKind.resident =>
+              'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+          }),
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(),

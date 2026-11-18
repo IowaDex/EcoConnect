@@ -45,10 +45,12 @@ class EmailLogScreen extends StatelessWidget {
     if (saved == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$').hasMatch(saved)) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('That is not a valid email address.'),
-        backgroundColor: AppColors.error,
-      ));
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('That is not a valid email address.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
       return;
     }
     try {
@@ -57,10 +59,12 @@ class EmailLogScreen extends StatelessWidget {
         const SnackBar(content: Text('District Officer email saved')),
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text('Could not save the address: $e'),
-        backgroundColor: AppColors.error,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not save the address: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
@@ -78,23 +82,27 @@ class EmailLogScreen extends StatelessWidget {
       path: officerEmail,
       query: _encodeQuery({
         'subject': '[EcoConnect · Iswim] ${entry.subject}',
-        'body': '${entry.body}\n\n— Posted by ${entry.byName} (Iswim) in '
+        'body':
+            '${entry.body}\n\n— Posted by ${entry.byName} (Iswim) in '
             'EcoConnect, Barangay Batasan Hills.',
       }),
     );
     final opened = await launchUrl(uri);
     if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No email app is set up on this device.'),
-        backgroundColor: AppColors.error,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No email app is set up on this device.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
   /// mailto: needs %20 for spaces, not the + that Uri.queryParameters uses.
   static String _encodeQuery(Map<String, String> params) => params.entries
-      .map((e) =>
-          '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+      .map(
+        (e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}',
+      )
       .join('&');
 
   @override
@@ -110,8 +118,10 @@ class EmailLogScreen extends StatelessWidget {
             backgroundColor: AppColors.creamBright,
             elevation: 0,
             leading: IconButton(
-              icon:
-                  const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: AppColors.forest,
+              ),
               onPressed: () {
                 if (context.canPop()) {
                   context.pop();
@@ -142,12 +152,16 @@ class EmailLogScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                       side: const BorderSide(color: AppColors.sage),
                     ),
-                    leading: const Icon(Icons.badge_outlined,
-                        color: AppColors.forest),
+                    leading: const Icon(
+                      Icons.badge_outlined,
+                      color: AppColors.forest,
+                    ),
                     title: const Text(
                       'District Officer email',
-                      style:
-                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     subtitle: Text(
                       officerEmail ?? 'Not set — tap to add',
@@ -253,9 +267,12 @@ class _EntryCard extends StatelessWidget {
                 sentAt == null
                     ? '—'
                     : '${sentAt.month}/${sentAt.day} '
-                        '${sentAt.hour.toString().padLeft(2, '0')}:'
-                        '${sentAt.minute.toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
+                          '${sentAt.hour.toString().padLeft(2, '0')}:'
+                          '${sentAt.minute.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  color: AppColors.inkMuted,
+                ),
               ),
             ],
           ),

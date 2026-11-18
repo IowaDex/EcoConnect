@@ -11,50 +11,46 @@ enum AppNotificationType {
   route,
   announcement,
   event,
-  points,
   system,
   complaint,
 }
 
 extension AppNotificationTypeX on AppNotificationType {
   String get label => switch (this) {
-        AppNotificationType.account => 'Account',
-        AppNotificationType.verification => 'Verification',
-        AppNotificationType.waste => 'Waste',
-        AppNotificationType.request => 'Collection',
-        AppNotificationType.route => 'Route',
-        AppNotificationType.announcement => 'Announcement',
-        AppNotificationType.event => 'Event',
-        AppNotificationType.points => 'Points',
-        AppNotificationType.system => 'System',
-        AppNotificationType.complaint => 'Complaint',
-      };
+    AppNotificationType.account => 'Account',
+    AppNotificationType.verification => 'Verification',
+    AppNotificationType.waste => 'Waste',
+    AppNotificationType.request => 'Collection',
+    AppNotificationType.route => 'Route',
+    AppNotificationType.announcement => 'Announcement',
+    AppNotificationType.event => 'Event',
+    AppNotificationType.system => 'System',
+    AppNotificationType.complaint => 'Complaint',
+  };
 
   IconData get icon => switch (this) {
-        AppNotificationType.account => Icons.person_outline_rounded,
-        AppNotificationType.verification => Icons.verified_user_outlined,
-        AppNotificationType.waste => Icons.delete_outline_rounded,
-        AppNotificationType.request => Icons.assignment_outlined,
-        AppNotificationType.route => Icons.local_shipping_outlined,
-        AppNotificationType.announcement => Icons.campaign_outlined,
-        AppNotificationType.event => Icons.event_outlined,
-        AppNotificationType.points => Icons.stars_rounded,
-        AppNotificationType.system => Icons.notifications_none_rounded,
-        AppNotificationType.complaint => Icons.report_outlined,
-      };
+    AppNotificationType.account => Icons.person_outline_rounded,
+    AppNotificationType.verification => Icons.verified_user_outlined,
+    AppNotificationType.waste => Icons.delete_outline_rounded,
+    AppNotificationType.request => Icons.assignment_outlined,
+    AppNotificationType.route => Icons.local_shipping_outlined,
+    AppNotificationType.announcement => Icons.campaign_outlined,
+    AppNotificationType.event => Icons.event_outlined,
+    AppNotificationType.system => Icons.notifications_none_rounded,
+    AppNotificationType.complaint => Icons.report_outlined,
+  };
 
   Color get color => switch (this) {
-        AppNotificationType.account => const Color(0xFF1565C0),
-        AppNotificationType.verification => AppColors.primary,
-        AppNotificationType.waste => const Color(0xFF00695C),
-        AppNotificationType.request => const Color(0xFF6A1B9A),
-        AppNotificationType.route => const Color(0xFFEF6C00),
-        AppNotificationType.announcement => const Color(0xFF00838F),
-        AppNotificationType.event => const Color(0xFF558B2F),
-        AppNotificationType.points => const Color(0xFFF9A825),
-        AppNotificationType.system => AppColors.inkMuted,
-        AppNotificationType.complaint => const Color(0xFFC62828),
-      };
+    AppNotificationType.account => const Color(0xFF1565C0),
+    AppNotificationType.verification => AppColors.primary,
+    AppNotificationType.waste => const Color(0xFF00695C),
+    AppNotificationType.request => const Color(0xFF6A1B9A),
+    AppNotificationType.route => const Color(0xFFEF6C00),
+    AppNotificationType.announcement => const Color(0xFF00838F),
+    AppNotificationType.event => const Color(0xFF558B2F),
+    AppNotificationType.system => AppColors.inkMuted,
+    AppNotificationType.complaint => const Color(0xFFC62828),
+  };
 
   static AppNotificationType fromName(String? name) =>
       AppNotificationType.values.firstWhere(

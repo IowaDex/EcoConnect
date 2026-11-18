@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -12,8 +14,35 @@ import '../models/app_notification.dart';
 import '../services/notification_service.dart';
 
 /// In-app notification centre shared by residents, drivers and staff.
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the alerts whose title, body or kind matches the search box.
+  List<AppNotification> _filter(List<AppNotification> items) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((n) {
+      return n.title.toLowerCase().contains(q) ||
+          n.body.toLowerCase().contains(q) ||
+          n.type.label.toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,37 +118,101 @@ class NotificationsScreen extends StatelessWidget {
                           'Route changes, approvals and announcements will appear here.',
                     );
                   }
-                  final today = items
+                  final filtered = _filter(items);
+                  final page = clampPage(_page, filtered.length, _pageSize);
+                  final visible = pageSlice(filtered, page, _pageSize);
+                  final today = visible
                       .where((n) => _isToday(n.createdAt))
                       .toList();
-                  final earlier = items
+                  final earlier = visible
                       .where((n) => !_isToday(n.createdAt))
                       .toList();
 
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 26),
+                  return Column(
                     children: [
-                      if (today.isNotEmpty) ...[
-                        const SectionHeader(title: 'Today'),
-                        const SizedBox(height: 8),
-                        for (final item in today)
-                          _NotificationTile(
-                            notification: item,
-                            onTap: () => _open(context, item, user.role),
-                            onDelete: () => _delete(context, item),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                        child: EcoSearchField(
+                          controller: _search,
+                          hint: 'Search alerts',
+                          onChanged: (value) => setState(() {
+                            _query = value;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 2, 18, 0),
+                        child: EcoResultCount(
+                          shown: filtered.length,
+                          total: items.length,
+                          singular: 'alert',
+                          plural: 'alerts',
+                        ),
+                      ),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(28),
+                                  child: Text(
+                                    'No alert matches your search.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  8,
+                                  18,
+                                  10,
+                                ),
+                                children: [
+                                  if (today.isNotEmpty) ...[
+                                    const SectionHeader(title: 'Today'),
+                                    const SizedBox(height: 8),
+                                    for (final item in today)
+                                      _NotificationTile(
+                                        notification: item,
+                                        onTap: () =>
+                                            _open(context, item, user.role),
+                                        onDelete: () => _delete(context, item),
+                                      ),
+                                  ],
+                                  if (earlier.isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    const SectionHeader(title: 'Earlier'),
+                                    const SizedBox(height: 8),
+                                    for (final item in earlier)
+                                      _NotificationTile(
+                                        notification: item,
+                                        onTap: () =>
+                                            _open(context, item, user.role),
+                                        onDelete: () => _delete(context, item),
+                                      ),
+                                  ],
+                                ],
+                              ),
+                      ),
+                      if (filtered.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                          child: EcoPaginationBar(
+                            page: page,
+                            pageSize: _pageSize,
+                            total: filtered.length,
+                            onPageChanged: (next) =>
+                                setState(() => _page = next),
+                            onPageSizeChanged: (size) => setState(() {
+                              _pageSize = size;
+                              _page = 0;
+                            }),
                           ),
-                      ],
-                      if (earlier.isNotEmpty) ...[
-                        const SizedBox(height: 14),
-                        const SectionHeader(title: 'Earlier'),
-                        const SizedBox(height: 8),
-                        for (final item in earlier)
-                          _NotificationTile(
-                            notification: item,
-                            onTap: () => _open(context, item, user.role),
-                            onDelete: () => _delete(context, item),
-                          ),
-                      ],
+                        ),
                     ],
                   );
                 },
@@ -227,15 +320,17 @@ class NotificationsScreen extends StatelessWidget {
         case AppNotificationType.waste:
           context.push(cityHall ? '/cityhall' : '/iswim');
         case AppNotificationType.verification:
+          context.push(cityHall ? '/cityhall' : '/iswim');
         case AppNotificationType.account:
-          context.push(cityHall ? '/accounts' : '/iswim');
+          // Iswim runs the account desk; City Hall provisions from its own
+          // dashboard.
+          context.push(cityHall ? '/cityhall' : '/accounts');
         case AppNotificationType.route:
           context.push(cityHall ? '/cityhall' : '/iswim');
         case AppNotificationType.announcement:
           context.push('/announcements');
         case AppNotificationType.event:
           context.push('/events');
-        case AppNotificationType.points:
         case AppNotificationType.system:
         case AppNotificationType.complaint:
           context.push(cityHall ? '/cityhall' : '/iswim');
@@ -265,10 +360,6 @@ class NotificationsScreen extends StatelessWidget {
         context.push('/announcements');
       case AppNotificationType.event:
         context.push('/events');
-      case AppNotificationType.points:
-        // Recycling points are no longer a resident-facing screen; the
-        // notification stays as a record of the drop-off.
-        break;
       case AppNotificationType.account:
         // "New resident registration" and other account notices land on the
         // residents desk, which is where the barangay reviews them.

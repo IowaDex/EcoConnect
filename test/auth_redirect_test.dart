@@ -34,9 +34,41 @@ void main() {
 
   test('logged-in users stay on their own pages', () {
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/user'), isNull);
-    expect(authRedirect(initialized: true, role: UserRole.user, location: '/wallet'), isNull);
+    // Residents track the collection truck from their own dashboard.
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/tracking'), isNull);
+    // The recycling wallet is gone; an old bookmark lands on the dashboard.
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/wallet'), '/user');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/routes'), isNull);
+  });
+
+  test('an unverified resident is limited to truck tracking', () {
+    bool allowed(String location) => authRedirect(
+      initialized: true,
+      role: UserRole.user,
+      location: location,
+      restrictedResident: true,
+    ) == null;
+
+    expect(allowed('/user'), isTrue);
+    expect(allowed('/tracking'), isTrue);
+    expect(allowed('/verify-identity'), isTrue);
+    expect(allowed('/notifications'), isTrue);
+
+    // Everything that needs a verified account bounces back to the dashboard.
+    expect(allowed('/waste-upload'), isFalse);
+    expect(allowed('/request-collection'), isFalse);
+    expect(allowed('/my-requests'), isFalse);
+    expect(allowed('/community'), isFalse);
+    expect(allowed('/announcements'), isFalse);
+    expect(allowed('/events'), isFalse);
+    expect(allowed('/ask-ai'), isFalse);
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.user,
+      location: '/waste-upload',
+      restrictedResident: true,
+    ), '/user');
   });
 
   test('dispatch moved from the barangay to Iswim', () {
@@ -58,14 +90,26 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/pending-accounts'), '/admin-dashboard');
     // The fleet register is City Hall / Iswim business, not the barangay's.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/fleet'), '/admin-dashboard');
+    // The recycling station and its points wallet are gone.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/dropoff'), '/admin-dashboard');
     // The desks the barangay kept.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/verification'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/staff-requests'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/wave2/pass'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/memos/barangay'), isNull);
-    // City Hall keeps all three.
+    // City Hall keeps the incidents desk and the fleet.
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/incidents'), isNull);
-    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), isNull);
+    // Iswim runs the account desk now, not City Hall.
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), '/cityhall');
+  });
+
+  test('only a resident may open the ID upload screen', () {
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/verify-identity'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/verify-identity'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/verify-identity'), '/admin-dashboard');
+    expect(authRedirect(initialized: true, role: null, location: '/verify-identity'), '/login');
   });
 
   test('a role cannot open another role\'s pages by typing the URL', () {
@@ -86,14 +130,15 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
   });
 
-  test('city hall keeps the fleet and account desks to itself', () {
-    // City Hall registers the trucks and provisions every government login.
-    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), isNull);
+  test('city hall keeps the fleet; Iswim runs the account desk', () {
+    // City Hall registers the trucks and keeps the incidents desk.
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), isNull);
-    // Iswim owns the fleet but never creates accounts.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/incidents'), isNull);
+    // Iswim provisions its own colleagues and the crew logins.
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/fleet'), isNull);
-    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), '/iswim');
-    // The barangay creates no accounts: drivers and staff come from City Hall.
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), isNull);
+    // The account desk is Iswim's; City Hall and the barangay have no claim.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), '/cityhall');
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/accounts'), '/admin-dashboard');
     // A crew member can never reach either desk.
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/accounts'), '/driver');

@@ -21,13 +21,13 @@ class CommunityComment {
   final DateTime? createdAt;
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'authorId': authorId,
-        'authorName': authorName,
-        'body': body,
-        // Nested lists cannot hold server timestamps.
-        'createdAt': Timestamp.now(),
-      };
+    'id': id,
+    'authorId': authorId,
+    'authorName': authorName,
+    'body': body,
+    // Nested lists cannot hold server timestamps.
+    'createdAt': Timestamp.now(),
+  };
 
   static CommunityComment fromMap(dynamic raw) {
     final map = raw is Map ? raw : const {};
@@ -89,9 +89,7 @@ class CommunityPost {
           ? rawLikes.whereType<String>().toList(growable: false)
           : const [],
       comments: rawComments is List
-          ? rawComments
-              .map(CommunityComment.fromMap)
-              .toList(growable: false)
+          ? rawComments.map(CommunityComment.fromMap).toList(growable: false)
           : const [],
       createdAt: _asDate(data['createdAt']),
       updatedAt: _asDate(data['updatedAt']),

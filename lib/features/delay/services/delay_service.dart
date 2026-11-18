@@ -135,7 +135,8 @@ class DelayService {
     final notes = report.notes.trim();
     final announcementId = await AnnouncementService().save(
       title: 'Garbage collection delayed (truck ${report.plateNumber})',
-      body: 'Today\'s collection by truck ${report.plateNumber} is running '
+      body:
+          'Today\'s collection by truck ${report.plateNumber} is running '
           'about $late late: ${report.reason}.'
           '${notes.isEmpty ? '' : ' $notes'}'
           ' Please keep your garbage ready; the truck will still come.',

@@ -142,7 +142,8 @@ GarbageTruck? truckForDriver({
   }
 
   if (uid == null || uid.isEmpty) return null;
-  final index = uid.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
+  final index =
+      uid.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
       kMockTrucks.length;
   return kMockTrucks[index];
 }

@@ -12,8 +12,8 @@ import '../models/route_directions.dart';
 /// and the map falls back to a straight-line preview instead of an error.
 class DirectionsService {
   DirectionsService({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? 'https://router.project-osrm.org';
+    : _client = client ?? http.Client(),
+      _baseUrl = baseUrl ?? 'https://router.project-osrm.org';
 
   final http.Client _client;
   final String _baseUrl;
@@ -29,8 +29,10 @@ class DirectionsService {
     if (waypoints.length < 2) return null;
 
     final coords = waypoints
-        .map((point) =>
-            '${point.longitude.toStringAsFixed(6)},${point.latitude.toStringAsFixed(6)}')
+        .map(
+          (point) =>
+              '${point.longitude.toStringAsFixed(6)},${point.latitude.toStringAsFixed(6)}',
+        )
         .join(';');
     final uri = Uri.parse(
       '$_baseUrl/route/v1/driving/$coords'
@@ -38,10 +40,9 @@ class DirectionsService {
     );
 
     try {
-      final response = await _client.get(
-        uri,
-        headers: const {'User-Agent': 'com.example.ecoconnect'},
-      ).timeout(_timeout);
+      final response = await _client
+          .get(uri, headers: const {'User-Agent': 'com.example.ecoconnect'})
+          .timeout(_timeout);
 
       if (response.statusCode != 200) return null;
       final body = jsonDecode(response.body);
@@ -59,10 +60,7 @@ class DirectionsService {
       final polyline = <LatLng>[
         for (final pair in coordinates)
           if (pair is List && pair.length >= 2)
-            LatLng(
-              (pair[1] as num).toDouble(),
-              (pair[0] as num).toDouble(),
-            ),
+            LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble()),
       ];
       if (polyline.length < 2) return null;
 
@@ -79,8 +77,9 @@ class DirectionsService {
           ),
         );
 
-        final stopName =
-            legIndex < stopNames.length ? stopNames[legIndex] : null;
+        final stopName = legIndex < stopNames.length
+            ? stopNames[legIndex]
+            : null;
         final rawSteps = leg['steps'] as List? ?? const [];
         for (final rawStep in rawSteps) {
           if (rawStep is! Map) continue;
@@ -92,10 +91,8 @@ class DirectionsService {
             RouteStep(
               instruction: _instruction(rawStep, stopName),
               maneuver: type,
-              distanceMeters:
-                  (rawStep['distance'] as num?)?.toDouble() ?? 0,
-              durationSeconds:
-                  (rawStep['duration'] as num?)?.toDouble() ?? 0,
+              distanceMeters: (rawStep['distance'] as num?)?.toDouble() ?? 0,
+              durationSeconds: (rawStep['duration'] as num?)?.toDouble() ?? 0,
               legIndex: legIndex,
               arrivesAtStop: type == 'arrive',
             ),
@@ -135,9 +132,7 @@ class DirectionsService {
         return 'Arrive at the stop';
       case 'turn':
         final direction = _turnWord(modifier);
-        return road == null
-            ? 'Turn $direction'
-            : 'Turn $direction onto $road';
+        return road == null ? 'Turn $direction' : 'Turn $direction onto $road';
       case 'end of road':
         final direction = _turnWord(modifier);
         return road == null
@@ -151,8 +146,8 @@ class DirectionsService {
         final side = modifier.contains('left')
             ? 'left'
             : modifier.contains('right')
-                ? 'right'
-                : 'straight';
+            ? 'right'
+            : 'straight';
         return road == null
             ? 'Keep $side at the fork'
             : 'Keep $side onto $road';

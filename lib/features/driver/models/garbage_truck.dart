@@ -60,17 +60,17 @@ class GarbageTruck {
   String get areaLabel => '$barangay · $zone';
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'plateNumber': plateNumber,
-        'wheelers': wheelers,
-        'bodyType': bodyType,
-        'barangay': barangay,
-        'zone': zone,
-        'centerLatitude': centerLatitude,
-        'centerLongitude': centerLongitude,
-        'driverName': driverName,
-        if (driverAccountId != null) 'driverAccountId': driverAccountId,
-      };
+    'id': id,
+    'plateNumber': plateNumber,
+    'wheelers': wheelers,
+    'bodyType': bodyType,
+    'barangay': barangay,
+    'zone': zone,
+    'centerLatitude': centerLatitude,
+    'centerLongitude': centerLongitude,
+    'driverName': driverName,
+    if (driverAccountId != null) 'driverAccountId': driverAccountId,
+  };
 
   static GarbageTruck? fromMap(Map<String, dynamic>? data) {
     if (data == null) return null;

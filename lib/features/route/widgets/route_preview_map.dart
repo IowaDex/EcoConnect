@@ -143,8 +143,11 @@ class _TruckDot extends StatelessWidget {
           ),
         ],
       ),
-      child: const Icon(Icons.local_shipping_rounded,
-          size: 15, color: AppColors.forest),
+      child: const Icon(
+        Icons.local_shipping_rounded,
+        size: 15,
+        color: AppColors.forest,
+      ),
     );
   }
 }

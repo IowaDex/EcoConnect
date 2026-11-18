@@ -50,7 +50,8 @@ class _EcoCardState extends State<EcoCard> {
 
   BoxDecoration _decoration() {
     final radius = BorderRadius.circular(18);
-    final baseBorder = widget.borderColor ?? AppColors.sage.withValues(alpha: 0.7);
+    final baseBorder =
+        widget.borderColor ?? AppColors.sage.withValues(alpha: 0.7);
     return BoxDecoration(
       color: widget.color,
       borderRadius: radius,
@@ -62,8 +63,8 @@ class _EcoCardState extends State<EcoCard> {
       boxShadow: !widget.elevated
           ? null
           : (_interactive && _hovered
-              ? AppColors.cardShadowHover
-              : AppColors.cardShadow),
+                ? AppColors.cardShadowHover
+                : AppColors.cardShadow),
     );
   }
 

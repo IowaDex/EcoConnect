@@ -11,9 +11,11 @@ import '../../route/models/route_plan.dart';
 import '../../location/providers/location_provider.dart';
 import '../../route/services/route_service.dart';
 import '../../route/screens/route_map_screen.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../user/widgets/profile_sheet.dart';
 
@@ -64,12 +66,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
         setState(() => _plan = null);
         return;
       }
-      _planSub = _routeService.watchPlan(planId).listen(
-        (plan) {
-          if (mounted) setState(() => _plan = plan);
-        },
-        onError: (_) {},
-      );
+      _planSub = _routeService.watchPlan(planId).listen((plan) {
+        if (mounted) setState(() => _plan = plan);
+      }, onError: (_) {});
     });
   }
 
@@ -81,6 +80,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final location = context.watch<LocationProvider>();
+    final restricted =
+        context.watch<AuthProvider>().currentUser?.isRestrictedResident ??
+        false;
     final resident = _residentPoint(location);
 
     // Recentre the map the first time a real GPS fix arrives.
@@ -134,7 +136,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             radius: location.currentPosition!.accuracy,
                             useRadiusInMeter: true,
                             color: AppColors.forest.withValues(alpha: 0.10),
-                            borderColor: AppColors.forest.withValues(alpha: 0.35),
+                            borderColor: AppColors.forest.withValues(
+                              alpha: 0.35,
+                            ),
                             borderStrokeWidth: 1.5,
                           ),
                         ],
@@ -144,7 +148,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         for (var i = 0; i < stops.length; i++)
                           Marker(
                             point: LatLng(
-                                stops[i].latitude!, stops[i].longitude!),
+                              stops[i].latitude!,
+                              stops[i].longitude!,
+                            ),
                             width: 24,
                             height: 24,
                             child: _StopPin(index: i + 1),
@@ -189,7 +195,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         const SizedBox(width: 10),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 9),
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.creamBright,
                             borderRadius: BorderRadius.circular(22),
@@ -206,10 +214,8 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         const Spacer(),
                         _CircleIcon(
                           icon: Icons.my_location_rounded,
-                          onTap: () => _mapController.move(
-                            truckPoint ?? resident,
-                            16,
-                          ),
+                          onTap: () =>
+                              _mapController.move(truckPoint ?? resident, 16),
                         ),
                       ],
                     ),
@@ -225,6 +231,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   plan: _plan,
                   hasLocation: location.hasLocation,
                   accuracy: location.currentPosition?.accuracy,
+                  restricted: restricted,
                 ),
               ),
             ],
@@ -316,8 +323,11 @@ class _TruckMarker extends StatelessWidget {
           ),
         ],
       ),
-      child: const Icon(Icons.local_shipping_rounded,
-          color: Colors.white, size: 22),
+      child: const Icon(
+        Icons.local_shipping_rounded,
+        color: Colors.white,
+        size: 22,
+      ),
     );
   }
 }
@@ -359,12 +369,16 @@ class _DriverSheet extends StatelessWidget {
     required this.plan,
     required this.hasLocation,
     required this.accuracy,
+    this.restricted = false,
   });
 
   final CollectionRoute? route;
   final RoutePlan? plan;
   final bool hasLocation;
   final double? accuracy;
+
+  /// A resident whose ID is still being checked may only track the truck.
+  final bool restricted;
 
   @override
   Widget build(BuildContext context) {
@@ -436,17 +450,17 @@ class _DriverSheet extends StatelessWidget {
                                 !live
                                     ? 'Check back during collection hours'
                                     : stale
-                                        ? 'Signal lost · ${_lastSeen(route!.lastSeenAt)}'
-                                        : (route!.etaMinutes != null
-                                            ? '${route!.etaMinutes} mins away'
-                                            : 'On the way'),
+                                    ? 'Signal lost · ${_lastSeen(route!.lastSeenAt)}'
+                                    : (route!.etaMinutes != null
+                                          ? '${route!.etaMinutes} mins away'
+                                          : 'On the way'),
                                 style: TextStyle(
                                   fontSize: 9,
                                   color: !live
                                       ? Colors.white.withValues(alpha: 0.7)
                                       : stale
-                                          ? const Color(0xFFF2B441)
-                                          : AppColors.lime,
+                                      ? const Color(0xFFF2B441)
+                                      : AppColors.lime,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -456,12 +470,18 @@ class _DriverSheet extends StatelessWidget {
                             const SizedBox(height: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 9, vertical: 3),
+                                horizontal: 9,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
-                                color: route!.status.color.withValues(alpha: 0.18),
+                                color: route!.status.color.withValues(
+                                  alpha: 0.18,
+                                ),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: route!.status.color.withValues(alpha: 0.6),
+                                  color: route!.status.color.withValues(
+                                    alpha: 0.6,
+                                  ),
                                 ),
                               ),
                               child: Text(
@@ -485,7 +505,8 @@ class _DriverSheet extends StatelessWidget {
                                   builder: (_) => RouteMapScreen(
                                     title: 'Truck route',
                                     stops: plan!.stops,
-                                    truck: route?.latitude != null &&
+                                    truck:
+                                        route?.latitude != null &&
                                             route?.longitude != null
                                         ? LatLng(
                                             route!.latitude!,
@@ -505,8 +526,9 @@ class _DriverSheet extends StatelessWidget {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 8.5,
-                                        color: Colors.white
-                                            .withValues(alpha: 0.75),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.75,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -522,8 +544,9 @@ class _DriverSheet extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 8.5,
                                       fontWeight: FontWeight.w700,
-                                      color: Colors.white
-                                          .withValues(alpha: 0.9),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.9,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -565,16 +588,19 @@ class _DriverSheet extends StatelessWidget {
                           !hasLocation
                               ? 'Locating your position…'
                               : accuracy != null
-                                  ? 'Your position · accuracy ±${accuracy!.round()} m'
-                                  : 'Your position is ready',
+                              ? 'Your position · accuracy ±${accuracy!.round()} m'
+                              : 'Your position is ready',
                           style: const TextStyle(
                             fontSize: 10,
                             color: AppColors.inkMuted,
                           ),
                         ),
                       ),
-                      const Icon(Icons.my_location_rounded,
-                          size: 16, color: AppColors.moss),
+                      const Icon(
+                        Icons.my_location_rounded,
+                        size: 16,
+                        color: AppColors.moss,
+                      ),
                     ],
                   ),
                 ),
@@ -584,6 +610,8 @@ class _DriverSheet extends StatelessWidget {
           AppBottomNav(
             currentIndex: 1,
             dark: true,
+            disabledIndexes: restricted ? const {2} : const {},
+            askAiLocked: restricted,
             onTap: (i) {
               switch (i) {
                 case 0:
@@ -591,12 +619,28 @@ class _DriverSheet extends StatelessWidget {
                 case 1:
                   break;
                 case 2:
+                  if (restricted) {
+                    AppFeedback.info(
+                      context,
+                      'You need to verify your account first before you can '
+                      'open the community. Upload your ID on your dashboard '
+                      'and barangay staff will unlock it.',
+                    );
+                    return;
+                  }
                   context.go('/community');
                 case 3:
                   showProfileSheet(context);
               }
             },
-            onAskAi: () => context.push('/ask-ai'),
+            onAskAi: restricted
+                ? () => AppFeedback.info(
+                    context,
+                    'You need to verify your account first before you can use '
+                    'the Eco assistant. Upload your ID on your dashboard and '
+                    'barangay staff will unlock it.',
+                  )
+                : () => context.push('/ask-ai'),
           ),
         ],
       ),
@@ -612,11 +656,11 @@ class _DriverSheet extends StatelessWidget {
   }
 
   Widget _dot() => Container(
-        height: 3,
-        width: 3,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.5),
-          shape: BoxShape.circle,
-        ),
-      );
+    height: 3,
+    width: 3,
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.5),
+      shape: BoxShape.circle,
+    ),
+  );
 }

@@ -18,10 +18,13 @@ class CollectionPointService {
 
   Stream<List<CollectionPoint>> watchAll() {
     return _col.snapshots().map((snap) {
-      final items = snap.docs
-          .map((doc) => CollectionPoint.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final items =
+          snap.docs
+              .map((doc) => CollectionPoint.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
       return items;
     });
   }
@@ -139,7 +142,8 @@ class CollectionPointService {
       await _notifications.push(
         userId: previousDriverId,
         title: 'Stop removed from your route',
-        body: '${previousName.isEmpty ? name : previousName} is no longer '
+        body:
+            '${previousName.isEmpty ? name : previousName} is no longer '
             'assigned to you.',
         type: AppNotificationType.route,
         data: {'pointId': pointId},
@@ -161,7 +165,9 @@ class CollectionPointService {
     final active = next == CollectionPointStatus.active;
     await _notifications.push(
       userId: driverId,
-      title: active ? 'Stop back on your route' : 'Stop removed from your route',
+      title: active
+          ? 'Stop back on your route'
+          : 'Stop removed from your route',
       body: active
           ? '${point.name} is active again.'
           : '${point.name} is now inactive.',
@@ -181,7 +187,8 @@ class CollectionPointService {
     await _notifications.push(
       userId: driverId,
       title: 'Stop removed from your route',
-      body: '${name == null || name.isEmpty ? 'A collection point' : name} '
+      body:
+          '${name == null || name.isEmpty ? 'A collection point' : name} '
           'was removed by barangay staff.',
       type: AppNotificationType.route,
       data: {'pointId': id},

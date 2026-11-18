@@ -19,8 +19,8 @@ Future<bool> openDirections(double latitude, double longitude) async {
 /// Opens a read-only pin in Google Maps, used when the driver just wants to
 /// look at the location first.
 Uri mapPinUri(double latitude, double longitude) => Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
-    );
+  'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+);
 
 /// Opens Google Maps driving directions that visit every stop in order, from
 /// [origin] (usually the truck) to the last stop. Google accepts up to nine

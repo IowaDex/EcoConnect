@@ -34,6 +34,11 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
 
   AppNotification? _current;
 
+  /// Alerts that arrived while another banner was on screen. They are shown
+  /// one after the other instead of drawing on top of each other.
+  final List<AppNotification> _queue = [];
+  static const _maxQueue = 5;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -45,6 +50,8 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
     _streamKey = key;
     _primed = false;
     _known.clear();
+    _queue.clear();
+    _current = null;
     _sub?.cancel();
     _sub = null;
 
@@ -81,15 +88,29 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
     _known.addAll(items.map((n) => n.id));
     if (fresh.isEmpty || !mounted) return;
 
-    // The stream is sorted newest-first.
-    setState(() => _current = fresh.first);
+    // The stream is sorted newest-first. Keep the queue short so a burst of
+    // desk alerts does not hold the screen for a minute.
+    for (final item in fresh.reversed) {
+      if (_queue.length >= _maxQueue) break;
+      if (_current?.id == item.id) continue;
+      if (_queue.any((queued) => queued.id == item.id)) continue;
+      _queue.add(item);
+    }
+    _showNext();
+  }
+
+  void _showNext() {
+    if (!mounted || _current != null || _queue.isEmpty) return;
+    setState(() => _current = _queue.removeAt(0));
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 6), _dismiss);
   }
 
   void _dismiss() {
     _hideTimer?.cancel();
-    if (mounted && _current != null) setState(() => _current = null);
+    if (!mounted) return;
+    setState(() => _current = null);
+    _showNext();
   }
 
   void _open(AppNotification item) {

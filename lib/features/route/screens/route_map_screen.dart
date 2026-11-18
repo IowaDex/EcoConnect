@@ -44,14 +44,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   bool _openedSteps = false;
   int? _selected;
 
-  List<RouteStop> get _mapped =>
-      [for (final stop in widget.stops) if (stop.hasCoordinates) stop];
+  List<RouteStop> get _mapped => [
+    for (final stop in widget.stops)
+      if (stop.hasCoordinates) stop,
+  ];
 
   /// Truck first (when known), then the stops in collection order.
   List<LatLng> get _waypoints => [
-        if (widget.truck != null) widget.truck!,
-        for (final stop in _mapped) LatLng(stop.latitude!, stop.longitude!),
-      ];
+    if (widget.truck != null) widget.truck!,
+    for (final stop in _mapped) LatLng(stop.latitude!, stop.longitude!),
+  ];
 
   @override
   void initState() {
@@ -207,7 +209,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           ? const EmptyState(
               icon: Icons.map_outlined,
               title: 'No pinned stops',
-              message: 'Staff have not pinned map coordinates for this run yet.',
+              message:
+                  'Staff have not pinned map coordinates for this run yet.',
             )
           : Stack(
               children: [
@@ -294,8 +297,9 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                     onSelect: _select,
                     onSteps: _openSteps,
                     onMaps: _openInMaps,
-                    onCenter:
-                        selected == null ? null : () => _select(_selected!),
+                    onCenter: selected == null
+                        ? null
+                        : () => _select(_selected!),
                   ),
                 ),
               ],
@@ -418,8 +422,11 @@ class _StopPanel extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 1.5),
                       )
                     else
-                      const Icon(Icons.alt_route_rounded,
-                          size: 12, color: AppColors.primary),
+                      const Icon(
+                        Icons.alt_route_rounded,
+                        size: 12,
+                        color: AppColors.primary,
+                      ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -449,8 +456,9 @@ class _StopPanel extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color:
-                              active ? AppColors.primary : AppColors.lightGreen,
+                          color: active
+                              ? AppColors.primary
+                              : AppColors.lightGreen,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
@@ -693,8 +701,7 @@ class _StepTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11.5,
                     height: 1.35,
-                    fontWeight:
-                        arrived ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: arrived ? FontWeight.w700 : FontWeight.w600,
                     color: AppColors.textDark,
                   ),
                 ),

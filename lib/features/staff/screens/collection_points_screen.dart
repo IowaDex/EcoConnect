@@ -7,8 +7,10 @@ import 'package:provider/provider.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/map_config.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -31,12 +33,27 @@ class CollectionPointsScreen extends StatefulWidget {
 class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
   final _service = CollectionPointService();
   final _map = MapController();
+  final _search = TextEditingController();
   bool _framed = false;
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
 
   @override
   void dispose() {
     _map.dispose();
+    _search.dispose();
     super.dispose();
+  }
+
+  List<CollectionPoint> _filter(List<CollectionPoint> points) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return points;
+    return points.where((p) {
+      return p.name.toLowerCase().contains(q) ||
+          p.address.toLowerCase().contains(q) ||
+          (p.driverName ?? '').toLowerCase().contains(q);
+    }).toList();
   }
 
   void _frame(List<CollectionPoint> points) {
@@ -107,9 +124,7 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                           children: [
                             BatasanHills.tiles(),
                             BatasanHills.boundaryLayer(),
-                            PolylineLayer(
-                              polylines: _routes(points),
-                            ),
+                            PolylineLayer(polylines: _routes(points)),
                             MarkerLayer(
                               markers: [
                                 for (final point in points)
@@ -118,15 +133,16 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                                     width: 42,
                                     height: 42,
                                     child: GestureDetector(
-                                      onTap: () =>
-                                          _openDetail(context, point),
+                                      onTap: () => _openDetail(context, point),
                                       child: _MapPin(point: point),
                                     ),
                                   ),
                               ],
                             ),
                             // The recentre button owns the bottom-right corner.
-                            const OsmAttribution(alignment: Alignment.bottomLeft),
+                            const OsmAttribution(
+                              alignment: Alignment.bottomLeft,
+                            ),
                           ],
                         ),
                       ),
@@ -159,8 +175,11 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                         ),
                       ),
                       const Spacer(),
-                      const Icon(Icons.route_rounded,
-                          size: 13, color: AppColors.inkMuted),
+                      const Icon(
+                        Icons.route_rounded,
+                        size: 13,
+                        color: AppColors.inkMuted,
+                      ),
                       const SizedBox(width: 4),
                       const Text(
                         'Lines link each driver\'s stops',
@@ -173,6 +192,17 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                  child: EcoSearchField(
+                    controller: _search,
+                    hint: 'Search point, street or driver',
+                    onChanged: (value) => setState(() {
+                      _query = value;
+                      _page = 0;
+                    }),
+                  ),
+                ),
                 Expanded(
                   child: points.isEmpty
                       ? EmptyState(
@@ -183,16 +213,72 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
                           actionLabel: 'Add collection point',
                           onAction: () => _openEditor(context),
                         )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 100),
-                          itemCount: points.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (context, i) {
-                            final point = points[i];
-                            return _PointCard(
-                              point: point,
-                              onTap: () => _openDetail(context, point),
+                      : Builder(
+                          builder: (context) {
+                            final items = _filter(points);
+                            final page = clampPage(
+                              _page,
+                              items.length,
+                              _pageSize,
+                            );
+                            final visible = pageSlice(items, page, _pageSize);
+                            if (items.isEmpty) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'No point matches your search.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                            return Column(
+                              children: [
+                                Expanded(
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      18,
+                                      0,
+                                      18,
+                                      10,
+                                    ),
+                                    itemCount: visible.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 10),
+                                    itemBuilder: (context, i) {
+                                      final point = visible[i];
+                                      return _PointCard(
+                                        point: point,
+                                        onTap: () =>
+                                            _openDetail(context, point),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    18,
+                                    0,
+                                    18,
+                                    8,
+                                  ),
+                                  child: EcoPaginationBar(
+                                    page: page,
+                                    pageSize: _pageSize,
+                                    total: items.length,
+                                    onPageChanged: (next) =>
+                                        setState(() => _page = next),
+                                    onPageSizeChanged: (size) => setState(() {
+                                      _pageSize = size;
+                                      _page = 0;
+                                    }),
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
@@ -258,7 +344,8 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
     final ok = await AppFeedback.confirm(
       context,
       title: 'Remove collection point?',
-      message: '"${point.name}" will be removed from the map and driver routes.',
+      message:
+          '"${point.name}" will be removed from the map and driver routes.',
       confirmLabel: 'Remove',
       destructive: true,
       icon: Icons.delete_outline_rounded,
@@ -281,10 +368,8 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _PointEditor(
-        existing: existing,
-        defaultBarangay: staff.barangay,
-      ),
+      builder: (_) =>
+          _PointEditor(existing: existing, defaultBarangay: staff.barangay),
     );
   }
 }
@@ -410,8 +495,11 @@ class _PointCard extends StatelessWidget {
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    const Icon(Icons.person_pin_circle_outlined,
-                        size: 11, color: AppColors.primary),
+                    const Icon(
+                      Icons.person_pin_circle_outlined,
+                      size: 11,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 3),
                     Expanded(
                       child: Text(
@@ -469,10 +557,7 @@ class _PointDetail extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusBadge(
-                label: point.status.label,
-                color: point.status.color,
-              ),
+              StatusBadge(label: point.status.label, color: point.status.color),
               const Spacer(),
               if (point.category != null)
                 StatusBadge(
@@ -527,9 +612,7 @@ class _PointDetail extends StatelessWidget {
                   height: 42,
                   child: OutlinedButton(
                     onPressed: onToggle,
-                    child: Text(
-                      point.isActive ? 'Set inactive' : 'Set active',
-                    ),
+                    child: Text(point.isActive ? 'Set inactive' : 'Set active'),
                   ),
                 ),
               ),
@@ -607,9 +690,7 @@ class _PointEditorState extends State<_PointEditor> {
   bool _saving = false;
   late Future<List<Map<String, dynamic>>> _drivers;
 
-  static const _dayOptions = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-  ];
+  static const _dayOptions = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   @override
   void initState() {
@@ -744,8 +825,8 @@ class _PointEditorState extends State<_PointEditor> {
                         ),
                         validator: (value) =>
                             (value == null || value.trim().length < 3)
-                                ? 'Please name this location'
-                                : null,
+                            ? 'Please name this location'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -757,8 +838,8 @@ class _PointEditorState extends State<_PointEditor> {
                         ),
                         validator: (value) =>
                             (value == null || value.trim().isEmpty)
-                                ? 'Please add an address'
-                                : null,
+                            ? 'Please add an address'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -767,8 +848,9 @@ class _PointEditorState extends State<_PointEditor> {
                             child: TextFormField(
                               controller: _barangay,
                               textCapitalization: TextCapitalization.words,
-                              decoration:
-                                  const InputDecoration(labelText: 'Barangay'),
+                              decoration: const InputDecoration(
+                                labelText: 'Barangay',
+                              ),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -849,8 +931,7 @@ class _PointEditorState extends State<_PointEditor> {
                               child: Text(category.label),
                             ),
                         ],
-                        onChanged: (value) =>
-                            setState(() => _category = value),
+                        onChanged: (value) => setState(() => _category = value),
                       ),
                       const SizedBox(height: 12),
                       FutureBuilder<List<Map<String, dynamic>>>(
@@ -880,11 +961,11 @@ class _PointEditorState extends State<_PointEditor> {
                                 _driverId = value;
                                 _driverName = value == null
                                     ? null
-                                    : drivers
-                                        .firstWhere(
-                                          (d) => d['uid'] == value,
-                                          orElse: () => const {},
-                                        )['name'] as String?;
+                                    : drivers.firstWhere(
+                                            (d) => d['uid'] == value,
+                                            orElse: () => const {},
+                                          )['name']
+                                          as String?;
                               });
                             },
                           );
@@ -942,8 +1023,11 @@ class _PointEditorState extends State<_PointEditor> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.schedule_rounded,
-                                  size: 18, color: AppColors.primary),
+                              const Icon(
+                                Icons.schedule_rounded,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
                               const SizedBox(width: 10),
                               Text(
                                 _time == null
@@ -958,9 +1042,11 @@ class _PointEditorState extends State<_PointEditor> {
                               const Spacer(),
                               if (_time != null)
                                 IconButton(
-                                  onPressed: () =>
-                                      setState(() => _time = null),
-                                  icon: const Icon(Icons.close_rounded, size: 16),
+                                  onPressed: () => setState(() => _time = null),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                  ),
                                   color: AppColors.inkMuted,
                                   visualDensity: VisualDensity.compact,
                                 ),

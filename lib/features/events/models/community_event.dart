@@ -15,36 +15,34 @@ enum EventCategory {
 
 extension EventCategoryX on EventCategory {
   String get label => switch (this) {
-        EventCategory.cleanup => 'Clean-up drive',
-        EventCategory.treePlanting => 'Tree planting',
-        EventCategory.recycling => 'Recycling program',
-        EventCategory.education => 'Environmental seminar',
-        EventCategory.collectionDay => 'Community collection day',
-        EventCategory.other => 'Community event',
-      };
+    EventCategory.cleanup => 'Clean-up drive',
+    EventCategory.treePlanting => 'Tree planting',
+    EventCategory.recycling => 'Recycling program',
+    EventCategory.education => 'Environmental seminar',
+    EventCategory.collectionDay => 'Community collection day',
+    EventCategory.other => 'Community event',
+  };
 
   IconData get icon => switch (this) {
-        EventCategory.cleanup => Icons.cleaning_services_rounded,
-        EventCategory.treePlanting => Icons.park_rounded,
-        EventCategory.recycling => Icons.recycling_rounded,
-        EventCategory.education => Icons.school_rounded,
-        EventCategory.collectionDay => Icons.local_shipping_rounded,
-        EventCategory.other => Icons.groups_rounded,
-      };
+    EventCategory.cleanup => Icons.cleaning_services_rounded,
+    EventCategory.treePlanting => Icons.park_rounded,
+    EventCategory.recycling => Icons.recycling_rounded,
+    EventCategory.education => Icons.school_rounded,
+    EventCategory.collectionDay => Icons.local_shipping_rounded,
+    EventCategory.other => Icons.groups_rounded,
+  };
 
   Color get color => switch (this) {
-        EventCategory.cleanup => const Color(0xFF00897B),
-        EventCategory.treePlanting => AppColors.primary,
-        EventCategory.recycling => const Color(0xFF2E7D32),
-        EventCategory.education => const Color(0xFF5E35B1),
-        EventCategory.collectionDay => const Color(0xFFEF6C00),
-        EventCategory.other => const Color(0xFF455A64),
-      };
+    EventCategory.cleanup => const Color(0xFF00897B),
+    EventCategory.treePlanting => AppColors.primary,
+    EventCategory.recycling => const Color(0xFF2E7D32),
+    EventCategory.education => const Color(0xFF5E35B1),
+    EventCategory.collectionDay => const Color(0xFFEF6C00),
+    EventCategory.other => const Color(0xFF455A64),
+  };
 
-  static EventCategory fromName(String? name) => EventCategory.values.firstWhere(
-        (c) => c.name == name,
-        orElse: () => EventCategory.other,
-      );
+  static EventCategory fromName(String? name) => EventCategory.values
+      .firstWhere((c) => c.name == name, orElse: () => EventCategory.other);
 }
 
 enum EventStatus { draft, published }
@@ -107,21 +105,21 @@ class CommunityEvent {
   String get imageUrl => image?.dataUrl ?? '';
 
   Map<String, dynamic> toMap() => {
-        'title': title,
-        'description': description,
-        'category': category.name,
-        'location': location,
-        'startAt': Timestamp.fromDate(startAt),
-        'endAt': endAt == null ? null : Timestamp.fromDate(endAt!),
-        'image': image?.toMap(),
-        'status': status.name,
-        'registrationInfo': registrationInfo,
-        'contact': contact,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'authorId': authorId,
-        'authorName': authorName,
-        'barangay': barangay,
-      };
+    'title': title,
+    'description': description,
+    'category': category.name,
+    'location': location,
+    'startAt': Timestamp.fromDate(startAt),
+    'endAt': endAt == null ? null : Timestamp.fromDate(endAt!),
+    'image': image?.toMap(),
+    'status': status.name,
+    'registrationInfo': registrationInfo,
+    'contact': contact,
+    'updatedAt': FieldValue.serverTimestamp(),
+    'authorId': authorId,
+    'authorName': authorName,
+    'barangay': barangay,
+  };
 
   static CommunityEvent fromDoc(String id, Map<String, dynamic> data) {
     final start = _asDate(data['startAt']) ?? DateTime.now();

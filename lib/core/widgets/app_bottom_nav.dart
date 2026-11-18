@@ -15,6 +15,8 @@ class AppBottomNav extends StatelessWidget {
     this.dark = false,
     this.onAskAi,
     this.items,
+    this.disabledIndexes = const {},
+    this.askAiLocked = false,
   });
 
   final int currentIndex;
@@ -29,9 +31,16 @@ class AppBottomNav extends StatelessWidget {
   /// Destinations for the current role. Defaults to the resident layout.
   final List<({IconData icon, String label})>? items;
 
+  /// Items that are shown dimmed with a lock until the account is verified.
+  /// They still call [onTap] so the screen can explain why.
+  final Set<int> disabledIndexes;
+
+  /// Dims the assistant button while the account is not verified.
+  final bool askAiLocked;
+
   static const _items = <({IconData icon, String label})>[
     (icon: Icons.home_rounded, label: 'Home'),
-    (icon: Icons.local_shipping_rounded, label: 'Track'),
+    (icon: Icons.fact_check_rounded, label: 'Requests'),
     (icon: Icons.groups_rounded, label: 'Community'),
     (icon: Icons.person_outline_rounded, label: 'Profile'),
   ];
@@ -59,12 +68,13 @@ class AppBottomNav extends StatelessWidget {
       child: Row(
         children: [
           for (var i = 0; i < destinations.length; i++) ...[
-            if (onAskAi != null && i == 2) const _AskAiSlot(),
+            if (onAskAi != null && i == 2) _AskAiSlot(locked: askAiLocked),
             Expanded(
               child: _NavItem(
                 icon: destinations[i].icon,
                 label: destinations[i].label,
                 selected: i == currentIndex,
+                disabled: disabledIndexes.contains(i),
                 onTap: () => onTap(i),
               ),
             ),
@@ -93,7 +103,9 @@ class AppBottomNav extends StatelessWidget {
               top: 0,
               left: 0,
               right: 0,
-              child: Center(child: _AskAiButton(onTap: onAskAi!)),
+              child: Center(
+                child: _AskAiButton(onTap: onAskAi!, locked: askAiLocked),
+              ),
             ),
           ],
         ),
@@ -104,7 +116,9 @@ class AppBottomNav extends StatelessWidget {
 
 /// Gap in the pill row that the raised button sits above.
 class _AskAiSlot extends StatelessWidget {
-  const _AskAiSlot();
+  const _AskAiSlot({this.locked = false});
+
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -115,12 +129,12 @@ class _AskAiSlot extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Text(
-            'Ask AI',
+            locked ? 'Locked' : 'Ask AI',
             style: TextStyle(
               fontSize: 8.5,
               height: 1,
               fontWeight: FontWeight.w600,
-              color: AppColors.forest.withValues(alpha: 0.8),
+              color: AppColors.forest.withValues(alpha: locked ? 0.4 : 0.8),
             ),
           ),
         ),
@@ -130,9 +144,10 @@ class _AskAiSlot extends StatelessWidget {
 }
 
 class _AskAiButton extends StatefulWidget {
-  const _AskAiButton({required this.onTap});
+  const _AskAiButton({required this.onTap, this.locked = false});
 
   final VoidCallback onTap;
+  final bool locked;
 
   @override
   State<_AskAiButton> createState() => _AskAiButtonState();
@@ -158,21 +173,23 @@ class _AskAiButtonState extends State<_AskAiButton> {
             height: 48,
             width: 48,
             decoration: BoxDecoration(
-              color: AppColors.forest,
+              color: widget.locked ? AppColors.sage : AppColors.forest,
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.creamBright, width: 3),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.forest.withValues(
-                    alpha: _hovered ? 0.42 : 0.30,
+                    alpha: widget.locked
+                        ? 0.12
+                        : (_hovered ? 0.42 : 0.30),
                   ),
                   blurRadius: _hovered ? 22 : 16,
                   offset: const Offset(0, 7),
                 ),
               ],
             ),
-            child: const Icon(
-              Icons.forum_rounded,
+            child: Icon(
+              widget.locked ? Icons.lock_outline_rounded : Icons.forum_rounded,
               size: 20,
               color: AppColors.creamBright,
             ),
@@ -189,12 +206,14 @@ class _NavItem extends StatefulWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.disabled = false,
   });
 
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool disabled;
 
   @override
   State<_NavItem> createState() => _NavItemState();
@@ -205,9 +224,11 @@ class _NavItemState extends State<_NavItem> {
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.selected || _hovered
-        ? AppColors.forest
-        : AppColors.inkMuted;
+    final color = widget.disabled
+        ? AppColors.inkMuted.withValues(alpha: 0.45)
+        : (widget.selected || _hovered
+              ? AppColors.forest
+              : AppColors.inkMuted);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -221,9 +242,9 @@ class _NavItemState extends State<_NavItem> {
           duration: const Duration(milliseconds: 180),
           margin: const EdgeInsets.symmetric(horizontal: 5),
           decoration: BoxDecoration(
-            color: widget.selected
+            color: widget.selected && !widget.disabled
                 ? AppColors.mint
-                : (_hovered
+                : (_hovered && !widget.disabled
                       ? AppColors.mint.withValues(alpha: 0.45)
                       : Colors.transparent),
             borderRadius: BorderRadius.circular(20),
@@ -232,10 +253,25 @@ class _NavItemState extends State<_NavItem> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AnimatedScale(
-                scale: widget.selected ? 1.12 : 1,
+                scale: widget.selected && !widget.disabled ? 1.12 : 1,
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutBack,
-                child: Icon(widget.icon, size: 19, color: color),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(widget.icon, size: 19, color: color),
+                    if (widget.disabled)
+                      Positioned(
+                        right: -7,
+                        top: -4,
+                        child: Icon(
+                          Icons.lock_rounded,
+                          size: 9,
+                          color: color,
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 2),
               Text(

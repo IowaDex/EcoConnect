@@ -49,8 +49,10 @@ class NetworkStatus extends ChangeNotifier {
     _started = true;
 
     try {
-      _sub = (changes ?? _link.onConnectivityChanged)
-          .listen(_apply, onError: (Object _) {});
+      _sub = (changes ?? _link.onConnectivityChanged).listen(
+        _apply,
+        onError: (Object _) {},
+      );
     } catch (_) {
       // Platforms without a connectivity plugin simply never report a change.
     }

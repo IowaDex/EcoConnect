@@ -95,10 +95,7 @@ class _ImagePickerFieldState extends State<ImagePickerField> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppColors.error,
-        ),
+        SnackBar(content: Text(message), backgroundColor: AppColors.error),
       );
   }
 
@@ -111,21 +108,27 @@ class _ImagePickerFieldState extends State<ImagePickerField> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_camera_outlined,
-                  color: AppColors.primary),
+              leading: const Icon(
+                Icons.photo_camera_outlined,
+                color: AppColors.primary,
+              ),
               title: const Text('Take a photo'),
               onTap: () => Navigator.of(ctx).pop('camera'),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined,
-                  color: AppColors.primary),
+              leading: const Icon(
+                Icons.photo_library_outlined,
+                color: AppColors.primary,
+              ),
               title: const Text('Choose from gallery'),
               onTap: () => Navigator.of(ctx).pop('gallery'),
             ),
             if (widget.documentMode)
               ListTile(
-                leading: const Icon(Icons.picture_as_pdf_outlined,
-                    color: AppColors.primary),
+                leading: const Icon(
+                  Icons.picture_as_pdf_outlined,
+                  color: AppColors.primary,
+                ),
                 title: const Text('Choose a file (JPG, PNG or PDF)'),
                 onTap: () => Navigator.of(ctx).pop('file'),
               ),
@@ -164,9 +167,7 @@ class _ImagePickerFieldState extends State<ImagePickerField> {
             const Spacer(),
             if (value != null)
               TextButton(
-                onPressed: widget.enabled
-                    ? () => widget.onChanged(null)
-                    : null,
+                onPressed: widget.enabled ? () => widget.onChanged(null) : null,
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.error,
                   minimumSize: const Size(0, 30),
@@ -202,36 +203,36 @@ class _ImagePickerFieldState extends State<ImagePickerField> {
                     ),
                   )
                 : value == null
-                    ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.add_photo_alternate_outlined,
-                            size: 28,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            widget.documentMode
-                                ? 'Add a photo or PDF'
-                                : 'Add a photo',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.darkGreen,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            widget.helper,
-                            style: const TextStyle(
-                              fontSize: 8.5,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ],
-                      )
-                    : _preview(value),
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.add_photo_alternate_outlined,
+                        size: 28,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.documentMode
+                            ? 'Add a photo or PDF'
+                            : 'Add a photo',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.darkGreen,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        widget.helper,
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  )
+                : _preview(value),
           ),
         ),
       ],
@@ -244,8 +245,11 @@ class _ImagePickerFieldState extends State<ImagePickerField> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.picture_as_pdf_rounded,
-                size: 34, color: AppColors.error),
+            const Icon(
+              Icons.picture_as_pdf_rounded,
+              size: 34,
+              color: AppColors.error,
+            ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),

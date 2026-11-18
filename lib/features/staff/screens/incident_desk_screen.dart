@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../incident/models/incident.dart';
 import '../../incident/services/incident_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_pagination.dart';
 
 class IncidentDeskScreen extends StatefulWidget {
   const IncidentDeskScreen({super.key});
@@ -16,12 +18,33 @@ class IncidentDeskScreen extends StatefulWidget {
 
 class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
   final _service = IncidentService();
+  final _search = TextEditingController();
   late final Stream<List<Incident>> _stream;
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
 
   @override
   void initState() {
     super.initState();
     _stream = _service.watchAll();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<Incident> _filter(List<Incident> incidents) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return incidents;
+    return incidents.where((i) {
+      return i.category.label.toLowerCase().contains(q) ||
+          i.description.toLowerCase().contains(q) ||
+          i.residentName.toLowerCase().contains(q) ||
+          i.status.label.toLowerCase().contains(q);
+    }).toList();
   }
 
   @override
@@ -39,8 +62,11 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                   IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 16, color: AppColors.forest),
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 16,
+                      color: AppColors.forest,
+                    ),
                     onPressed: () => context.go('/admin-dashboard'),
                   ),
                   const SizedBox(width: 10),
@@ -78,7 +104,9 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                           'Could not load reports: ${snapshot.error}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                              fontSize: 11, color: AppColors.danger),
+                            fontSize: 11,
+                            color: AppColors.danger,
+                          ),
                         ),
                       ),
                     );
@@ -86,18 +114,81 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                   if (!snapshot.hasData) {
                     return const EcoLoadingView(label: 'Loading reports');
                   }
-                  final incidents = snapshot.data!;
-                  if (incidents.isEmpty) {
+                  final all = snapshot.data!;
+                  if (all.isEmpty) {
                     return const _EmptyState();
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-                    itemCount: incidents.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) => _IncidentTile(
-                      incident: incidents[i],
-                      onResolve: () => _resolve(incidents[i]),
-                    ),
+                  final incidents = _filter(all);
+                  final page = clampPage(_page, incidents.length, _pageSize);
+                  final visible = pageSlice(incidents, page, _pageSize);
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+                        child: EcoSearchField(
+                          controller: _search,
+                          hint: 'Search type, place or reporter',
+                          onChanged: (value) => setState(() {
+                            _query = value;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 4),
+                        child: EcoResultCount(
+                          shown: incidents.length,
+                          total: all.length,
+                          singular: 'report',
+                          plural: 'reports',
+                        ),
+                      ),
+                      Expanded(
+                        child: incidents.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'No report matches your search.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  22,
+                                  6,
+                                  22,
+                                  10,
+                                ),
+                                itemCount: visible.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, i) => _IncidentTile(
+                                  incident: visible[i],
+                                  onResolve: () => _resolve(visible[i]),
+                                ),
+                              ),
+                      ),
+                      if (incidents.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+                          child: EcoPaginationBar(
+                            page: page,
+                            pageSize: _pageSize,
+                            total: incidents.length,
+                            onPageChanged: (next) =>
+                                setState(() => _page = next),
+                            onPageSizeChanged: (size) => setState(() {
+                              _pageSize = size;
+                              _page = 0;
+                            }),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -113,7 +204,9 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Report marked as resolved')));
+      ..showSnackBar(
+        const SnackBar(content: Text('Report marked as resolved')),
+      );
   }
 }
 
@@ -144,8 +237,11 @@ class _IncidentTile extends StatelessWidget {
                   color: AppColors.mint,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(incident.category.icon,
-                    size: 16, color: AppColors.forest),
+                child: Icon(
+                  incident.category.icon,
+                  size: 16,
+                  color: AppColors.forest,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -164,19 +260,21 @@ class _IncidentTile extends StatelessWidget {
                     Text(
                       '${incident.residentName} · ${_ago(incident.createdAt)}',
                       style: const TextStyle(
-                          fontSize: 9, color: AppColors.inkMuted),
+                        fontSize: 9,
+                        color: AppColors.inkMuted,
+                      ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(
                   color: incident.status.color.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                      color: incident.status.color.withValues(alpha: 0.6)),
+                    color: incident.status.color.withValues(alpha: 0.6),
+                  ),
                 ),
                 child: Text(
                   incident.status.label,
@@ -202,14 +300,19 @@ class _IncidentTile extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.place_outlined,
-                    size: 12, color: AppColors.inkMuted),
+                const Icon(
+                  Icons.place_outlined,
+                  size: 12,
+                  color: AppColors.inkMuted,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   '${incident.latitude!.toStringAsFixed(5)}, '
                   '${incident.longitude!.toStringAsFixed(5)}',
                   style: const TextStyle(
-                      fontSize: 9, color: AppColors.inkMuted),
+                    fontSize: 9,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
               ],
             ),
@@ -228,7 +331,9 @@ class _IncidentTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   textStyle: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 child: const Text('Mark as resolved'),
               ),

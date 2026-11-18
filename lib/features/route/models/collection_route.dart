@@ -8,25 +8,25 @@ enum RouteStatus { inTransit, delayed, paused, completed, idle }
 
 extension RouteStatusX on RouteStatus {
   String get label => switch (this) {
-        RouteStatus.inTransit => 'In transit',
-        RouteStatus.delayed => 'Delayed',
-        RouteStatus.paused => 'Paused',
-        RouteStatus.completed => 'Completed',
-        RouteStatus.idle => 'Not started',
-      };
+    RouteStatus.inTransit => 'In transit',
+    RouteStatus.delayed => 'Delayed',
+    RouteStatus.paused => 'Paused',
+    RouteStatus.completed => 'Completed',
+    RouteStatus.idle => 'Not started',
+  };
 
   Color get color => switch (this) {
-        RouteStatus.inTransit => AppColors.lime,
-        RouteStatus.delayed => const Color(0xFFF2B441),
-        RouteStatus.paused => AppColors.warning,
-        RouteStatus.completed => AppColors.sage,
-        RouteStatus.idle => AppColors.inkMuted,
-      };
+    RouteStatus.inTransit => AppColors.lime,
+    RouteStatus.delayed => const Color(0xFFF2B441),
+    RouteStatus.paused => AppColors.warning,
+    RouteStatus.completed => AppColors.sage,
+    RouteStatus.idle => AppColors.inkMuted,
+  };
 
   static RouteStatus fromName(String? name) => RouteStatus.values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => RouteStatus.idle,
-      );
+    (s) => s.name == name,
+    orElse: () => RouteStatus.idle,
+  );
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -184,8 +184,9 @@ class CollectionRoute {
       completedAt: _asDate(data['completedAt']),
       lastSeenAt: _asDate(data['lastSeenAt']),
       updatedAt: _asDate(data['updatedAt']),
-      locationState:
-          DriverLocationStateX.fromWire(data['locationState'] as String?),
+      locationState: DriverLocationStateX.fromWire(
+        data['locationState'] as String?,
+      ),
       lastKnownLatitude: (data['lastKnownLat'] as num?)?.toDouble(),
       lastKnownLongitude: (data['lastKnownLng'] as num?)?.toDouble(),
       locationUpdatedAt: _asDate(data['locationUpdatedAt']),

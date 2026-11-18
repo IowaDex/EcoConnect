@@ -27,7 +27,7 @@ class _AskAiScreenState extends State<AskAiScreen> {
   static const _suggestions = [
     'Collection schedule',
     'Report a missed pickup',
-    'How do I earn points?',
+    'How do I recycle?',
   ];
 
   @override
@@ -89,13 +89,12 @@ class _AskAiScreenState extends State<AskAiScreen> {
           'collection. For dumping or an overflowing bin, submit a complaint '
           'from the Complaints section.';
     }
-    if (q.contains('point') ||
-        q.contains('wallet') ||
-        q.contains('recycl') ||
+    if (q.contains('recycl') ||
         q.contains('drop off') ||
         q.contains('drop-off')) {
-      return 'Bring sorted recyclables to the barangay drop-off station. '
-          'Barangay staff record the drop-off and manage the reward records.';
+      return 'Rinse and sort recyclables, then set them out on your street on '
+          'collection day. Barangay staff collect them with the rest of the '
+          "street's waste.";
     }
     if (q.contains('segregat') ||
         q.contains('biodegradable') ||
@@ -265,7 +264,7 @@ class _AskAiScreenState extends State<AskAiScreen> {
                           color: AppColors.forest,
                         ),
                         decoration: const InputDecoration(
-                          hintText: 'Ask about collections, points...',
+                          hintText: 'Ask about collections, recycling...',
                           hintStyle: TextStyle(
                             fontSize: 11.5,
                             color: AppColors.inkMuted,

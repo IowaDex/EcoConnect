@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -34,6 +36,8 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
   RequestStatus? _status;
   String _barangay = '';
   int _days = 0;
+  int _page = 0;
+  int _pageSize = 10;
   // Special collections (government offices, schools, big hauls) are the ones
   // the barangay must vet; the toggle pulls just those to the top of the list.
   bool _specialOnly = false;
@@ -61,7 +65,7 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: TextField(
                 controller: _search,
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() => _page = 0),
                 decoration: InputDecoration(
                   hintText: 'Search by requester or title',
                   prefixIcon: const Icon(Icons.search_rounded, size: 19),
@@ -80,10 +84,15 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
             const SizedBox(height: 10),
             _StatusFilterBar(
               selected: _status,
-              onChanged: (value) => setState(() => _status = value),
+              onChanged: (value) => setState(() {
+                _status = value;
+                _page = 0;
+              }),
               specialOnly: _specialOnly,
-              onSpecialChanged: (value) =>
-                  setState(() => _specialOnly = value),
+              onSpecialChanged: (value) => setState(() {
+                _specialOnly = value;
+                _page = 0;
+              }),
             ),
             const SizedBox(height: 8),
             Expanded(
@@ -99,13 +108,16 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                     );
                   }
                   final all = snapshot.data ?? const <CollectionRequest>[];
-                  final barangays = all
-                      .map((r) => r.requesterBarangay?.trim() ?? '')
-                      .where((b) => b.isNotEmpty)
-                      .toSet()
-                      .toList()
-                    ..sort();
+                  final barangays =
+                      all
+                          .map((r) => r.requesterBarangay?.trim() ?? '')
+                          .where((b) => b.isNotEmpty)
+                          .toSet()
+                          .toList()
+                        ..sort();
                   final items = _applyFilters(all);
+                  final page = clampPage(_page, items.length, _pageSize);
+                  final visible = pageSlice(items, page, _pageSize);
                   return Column(
                     children: [
                       _FilterSummary(
@@ -114,9 +126,14 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                         barangays: barangays,
                         selectedBarangay: _barangay,
                         days: _days,
-                        onBarangay: (value) =>
-                            setState(() => _barangay = value),
-                        onDays: (value) => setState(() => _days = value),
+                        onBarangay: (value) => setState(() {
+                          _barangay = value;
+                          _page = 0;
+                        }),
+                        onDays: (value) => setState(() {
+                          _days = value;
+                          _page = 0;
+                        }),
                       ),
                       Expanded(
                         child: items.isEmpty
@@ -127,13 +144,17 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                                     'Try clearing the status, barangay or date filter.',
                               )
                             : ListView.separated(
-                                padding:
-                                    const EdgeInsets.fromLTRB(18, 4, 18, 24),
-                                itemCount: items.length,
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  4,
+                                  18,
+                                  10,
+                                ),
+                                itemCount: visible.length,
                                 separatorBuilder: (_, __) =>
                                     const SizedBox(height: 12),
                                 itemBuilder: (context, i) {
-                                  final request = items[i];
+                                  final request = visible[i];
                                   return _RequestCard(
                                     request: request,
                                     onTap: () => _openDetail(context, request),
@@ -141,6 +162,21 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                                 },
                               ),
                       ),
+                      if (items.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                          child: EcoPaginationBar(
+                            page: page,
+                            pageSize: _pageSize,
+                            total: items.length,
+                            onPageChanged: (next) =>
+                                setState(() => _page = next),
+                            onPageSizeChanged: (size) => setState(() {
+                              _pageSize = size;
+                              _page = 0;
+                            }),
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -157,25 +193,27 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
     final cutoff = _days == 0
         ? null
         : DateTime.now().subtract(Duration(days: _days));
-    return all.where((request) {
-      if (_status != null && request.status != _status) return false;
-      if (_specialOnly && !request.isSpecial) return false;
-      if (_barangay.isNotEmpty &&
-          (request.requesterBarangay ?? '').trim() != _barangay) {
-        return false;
-      }
-      if (cutoff != null) {
-        final created = request.createdAt;
-        if (created == null || created.isBefore(cutoff)) return false;
-      }
-      if (query.isNotEmpty) {
-        final haystack =
-            '${request.title} ${request.requesterName} ${request.location}'
-                .toLowerCase();
-        if (!haystack.contains(query)) return false;
-      }
-      return true;
-    }).toList(growable: false);
+    return all
+        .where((request) {
+          if (_status != null && request.status != _status) return false;
+          if (_specialOnly && !request.isSpecial) return false;
+          if (_barangay.isNotEmpty &&
+              (request.requesterBarangay ?? '').trim() != _barangay) {
+            return false;
+          }
+          if (cutoff != null) {
+            final created = request.createdAt;
+            if (created == null || created.isBefore(cutoff)) return false;
+          }
+          if (query.isNotEmpty) {
+            final haystack =
+                '${request.title} ${request.requesterName} ${request.location}'
+                    .toLowerCase();
+            if (!haystack.contains(query)) return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
   }
 
   Future<void> _openDetail(
@@ -305,9 +343,7 @@ class _FilterSummary extends StatelessWidget {
               PopupMenuItem(value: 7, child: Text('Last 7 days')),
               PopupMenuItem(value: 30, child: Text('Last 30 days')),
             ],
-            child: _filterPill(
-              days == 0 ? 'Any date' : 'Last $days days',
-            ),
+            child: _filterPill(days == 0 ? 'Any date' : 'Last $days days'),
           ),
           const SizedBox(width: 6),
           PopupMenuButton<String>(
@@ -347,8 +383,11 @@ class _FilterSummary extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 2),
-          const Icon(Icons.expand_more_rounded,
-              size: 13, color: AppColors.inkMuted),
+          const Icon(
+            Icons.expand_more_rounded,
+            size: 13,
+            color: AppColors.inkMuted,
+          ),
         ],
       ),
     );
@@ -385,10 +424,7 @@ class _RequestCard extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -416,18 +452,18 @@ class _RequestCard extends StatelessWidget {
             children: [
               _miniChip(request.category.icon, request.category.shortLabel),
               _miniChip(Icons.scale_outlined, request.estimatedQuantity),
-              _miniChip(
-                Icons.event_outlined,
-                dateLabel(request.preferredDate),
-              ),
+              _miniChip(Icons.event_outlined, dateLabel(request.preferredDate)),
             ],
           ),
           if (request.assignedDriverName != null) ...[
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.person_pin_circle_outlined,
-                    size: 13, color: AppColors.primary),
+                const Icon(
+                  Icons.person_pin_circle_outlined,
+                  size: 13,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
@@ -461,10 +497,7 @@ class _RequestCard extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 8.5,
-              color: AppColors.inkMuted,
-            ),
+            style: const TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
           ),
         ],
       ),
@@ -629,10 +662,7 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -689,17 +719,27 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
           _row(request.category.icon, request.category.label),
           _row(Icons.scale_outlined, 'Quantity: ${request.estimatedQuantity}'),
           _row(Icons.place_outlined, request.location),
-          _row(Icons.event_outlined, 'Preferred: ${dateLabel(request.preferredDate)}'),
+          _row(
+            Icons.event_outlined,
+            'Preferred: ${dateLabel(request.preferredDate)}',
+          ),
           if (request.scheduledAt != null)
-            _row(Icons.event_available_rounded,
-                'Scheduled: ${dateTimeLabel(request.scheduledAt)}'),
+            _row(
+              Icons.event_available_rounded,
+              'Scheduled: ${dateTimeLabel(request.scheduledAt)}',
+            ),
           if (request.assignedDriverName != null)
-            _row(Icons.person_pin_circle_outlined,
-                'Driver: ${request.assignedDriverName}'),
+            _row(
+              Icons.person_pin_circle_outlined,
+              'Driver: ${request.assignedDriverName}',
+            ),
           if (request.remarks?.trim().isNotEmpty == true)
             _row(Icons.notes_rounded, request.remarks!),
           if (request.staffNote?.trim().isNotEmpty == true)
-            _row(Icons.support_agent_rounded, 'Staff note: ${request.staffNote}'),
+            _row(
+              Icons.support_agent_rounded,
+              'Staff note: ${request.staffNote}',
+            ),
           if (request.responses.isNotEmpty) ...[
             const SizedBox(height: 16),
             _sectionTitle('City Hall responses'),
@@ -814,33 +854,53 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
             _apply(RequestStatus.underReview);
           }, outlined: true),
         );
-        buttons.add(_action('Approve', Icons.check_rounded, () {
-          _apply(RequestStatus.approved);
-        }));
-        buttons.add(_action('Reject', Icons.close_rounded, _reject, danger: true));
+        buttons.add(
+          _action('Approve', Icons.check_rounded, () {
+            _apply(RequestStatus.approved);
+          }),
+        );
+        buttons.add(
+          _action('Reject', Icons.close_rounded, _reject, danger: true),
+        );
       case RequestStatus.underReview:
-        buttons.add(_action('Approve', Icons.check_rounded, () {
-          _apply(RequestStatus.approved);
-        }));
-        buttons.add(_action('Reject', Icons.close_rounded, _reject, danger: true));
+        buttons.add(
+          _action('Approve', Icons.check_rounded, () {
+            _apply(RequestStatus.approved);
+          }),
+        );
+        buttons.add(
+          _action('Reject', Icons.close_rounded, _reject, danger: true),
+        );
       case RequestStatus.approved:
-        buttons.add(_action('Assign driver', Icons.person_add_alt_1_rounded, _assign));
-        buttons.add(_action('Reject', Icons.close_rounded, _reject, danger: true));
+        buttons.add(
+          _action('Assign driver', Icons.person_add_alt_1_rounded, _assign),
+        );
+        buttons.add(
+          _action('Reject', Icons.close_rounded, _reject, danger: true),
+        );
       case RequestStatus.assigned:
-        buttons.add(_action('Start collection', Icons.local_shipping_rounded, () {
-          _apply(RequestStatus.inProgress);
-        }));
-        buttons.add(_action('Mark collected', Icons.inventory_2_outlined, () {
-          _apply(RequestStatus.collected);
-        }, outlined: true));
+        buttons.add(
+          _action('Start collection', Icons.local_shipping_rounded, () {
+            _apply(RequestStatus.inProgress);
+          }),
+        );
+        buttons.add(
+          _action('Mark collected', Icons.inventory_2_outlined, () {
+            _apply(RequestStatus.collected);
+          }, outlined: true),
+        );
       case RequestStatus.inProgress:
-        buttons.add(_action('Mark collected', Icons.inventory_2_outlined, () {
-          _apply(RequestStatus.collected);
-        }));
+        buttons.add(
+          _action('Mark collected', Icons.inventory_2_outlined, () {
+            _apply(RequestStatus.collected);
+          }),
+        );
       case RequestStatus.collected:
-        buttons.add(_action('Complete request', Icons.task_alt_rounded, () {
-          _apply(RequestStatus.completed);
-        }));
+        buttons.add(
+          _action('Complete request', Icons.task_alt_rounded, () {
+            _apply(RequestStatus.completed);
+          }),
+        );
       case RequestStatus.completed:
       case RequestStatus.rejected:
         buttons.add(
@@ -871,11 +931,7 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
   }) {
     final child = Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 7),
-        Text(label),
-      ],
+      children: [Icon(icon, size: 17), const SizedBox(width: 7), Text(label)],
     );
     return SizedBox(
       height: 46,
@@ -954,7 +1010,8 @@ class _AssignSheet extends StatefulWidget {
 class _AssignSheetState extends State<_AssignSheet> {
   late Future<List<Map<String, dynamic>>> _drivers;
   Map<String, dynamic>? _selected;
-  late DateTime _scheduledAt = widget.request.preferredDate.isAfter(DateTime.now())
+  late DateTime _scheduledAt =
+      widget.request.preferredDate.isAfter(DateTime.now())
       ? widget.request.preferredDate
       : DateTime.now().add(const Duration(days: 1));
 
@@ -991,9 +1048,7 @@ class _AssignSheetState extends State<_AssignSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewInsetsOf(context).bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SizedBox(
         height: MediaQuery.sizeOf(context).height * 0.72,
         child: Column(
@@ -1086,8 +1141,7 @@ class _AssignSheetState extends State<_AssignSheet> {
                               const SizedBox(width: 11),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       (driver['name'] as String?) ?? 'Driver',
@@ -1108,8 +1162,11 @@ class _AssignSheetState extends State<_AssignSheet> {
                                 ),
                               ),
                               if (selected)
-                                const Icon(Icons.check_circle_rounded,
-                                    size: 19, color: AppColors.primary),
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 19,
+                                  color: AppColors.primary,
+                                ),
                             ],
                           ),
                         ),
@@ -1138,8 +1195,11 @@ class _AssignSheetState extends State<_AssignSheet> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.event_outlined,
-                              size: 18, color: AppColors.primary),
+                          const Icon(
+                            Icons.event_outlined,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
                           const SizedBox(width: 10),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1162,8 +1222,11 @@ class _AssignSheetState extends State<_AssignSheet> {
                             ],
                           ),
                           const Spacer(),
-                          const Icon(Icons.edit_calendar_outlined,
-                              size: 17, color: AppColors.inkMuted),
+                          const Icon(
+                            Icons.edit_calendar_outlined,
+                            size: 17,
+                            color: AppColors.inkMuted,
+                          ),
                         ],
                       ),
                     ),
@@ -1176,14 +1239,13 @@ class _AssignSheetState extends State<_AssignSheet> {
                       onPressed: _selected == null
                           ? null
                           : () => Navigator.of(context).pop(
-                                _Assignment(
-                                  driverId: _selected!['uid'] as String,
-                                  driverName:
-                                      (_selected!['name'] as String?) ??
-                                          'Driver',
-                                  scheduledAt: _scheduledAt,
-                                ),
+                              _Assignment(
+                                driverId: _selected!['uid'] as String,
+                                driverName:
+                                    (_selected!['name'] as String?) ?? 'Driver',
+                                scheduledAt: _scheduledAt,
                               ),
+                            ),
                       child: const Text('Assign driver'),
                     ),
                   ),

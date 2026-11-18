@@ -96,8 +96,11 @@ class _DistrictOfficerAlarmState extends State<_DistrictOfficerAlarm> {
                     color: AppColors.error,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.notifications_active_rounded,
-                      size: 18, color: Colors.white),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -127,8 +130,7 @@ class _DistrictOfficerAlarmState extends State<_DistrictOfficerAlarm> {
             _line('Driver', report.driverName),
             _line('Reason', report.reason),
             _line('Late', '${report.minutesLate} minutes'),
-            if (report.ticketCode != null)
-              _line('Ticket', report.ticketCode!),
+            if (report.ticketCode != null) _line('Ticket', report.ticketCode!),
             if (report.notes.trim().isNotEmpty) _line('Notes', report.notes),
             const SizedBox(height: 16),
             SizedBox(

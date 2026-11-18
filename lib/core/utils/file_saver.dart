@@ -1,5 +1,6 @@
 import 'file_saver_stub.dart'
-    if (dart.library.js_interop) 'file_saver_web.dart' as impl;
+    if (dart.library.js_interop) 'file_saver_web.dart'
+    as impl;
 
 /// Saves a base64 data URL to the user's downloads.
 ///

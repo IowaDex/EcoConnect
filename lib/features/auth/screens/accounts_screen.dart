@@ -1,28 +1,52 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/paging.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../driver/models/truck_crew_role.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../providers/auth_provider.dart';
 import '../services/provisioning_service.dart';
+import '../utils/validators.dart';
+import '../widgets/password_strength.dart';
 
-/// City Hall's account desk.
+/// Iswim's account desk — the only place a driver or guide login is made.
 ///
-/// Nobody signs themselves up for a staff account: City Hall creates the login
-/// and hands the credentials to the account owner. Driver accounts are tied to
-/// a truck; audit viewer accounts only have access to audit records.
-class AccountsScreen extends StatelessWidget {
+/// Nobody signs themselves up for a crew account, and no other desk can mint
+/// one: the barangay and City Hall do not create logins any more. Iswim also
+/// creates its own colleagues' accounts. A truck is never left without a
+/// driver, so a crew account must be tied to a plate before it can be saved.
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
+
+  @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  String _role = 'all';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final me = context.watch<AuthProvider>().currentUser;
-    final isSuperAdmin = me?.role == UserRole.cityHall;
+    // Iswim is the only role that may create a login.
+    final canManage = me?.role == UserRole.iswim;
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
@@ -31,7 +55,8 @@ class AccountsScreen extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/cityhall'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/iswim'),
         ),
         title: const Text(
           'Accounts',
@@ -42,16 +67,18 @@ class AccountsScreen extends StatelessWidget {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        backgroundColor: AppColors.forest,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-        label: const Text(
-          'New account',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-      ),
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              onPressed: () => _openForm(context, true),
+              backgroundColor: AppColors.forest,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              label: const Text(
+                'Account',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       body: StreamBuilder<List<ProvisionedAccount>>(
         stream: ProvisioningService().watchAccounts(),
         builder: (context, snapshot) {
@@ -60,34 +87,96 @@ class AccountsScreen extends StatelessWidget {
               text: 'Could not load the list.\n${snapshot.error}',
             );
           }
-          final accounts = snapshot.data ?? const <ProvisionedAccount>[];
-          if (accounts.isEmpty) {
+          final all = snapshot.data ?? const <ProvisionedAccount>[];
+          if (all.isEmpty) {
             return const _Message(
-              text: 'No staff accounts yet. Tap "New account" to create one.',
+              text: 'No accounts yet. Tap "Account" to create the first one.',
             );
           }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 96),
+          final query = _query.trim().toLowerCase();
+          final accounts = all
+              .where((account) {
+                if (_role != 'all' && account.role.name != _role) return false;
+                if (query.isEmpty) return true;
+                return account.name.toLowerCase().contains(query) ||
+                    account.email.toLowerCase().contains(query);
+              })
+              .toList(growable: false);
+          final page = clampPage(_page, accounts.length, _pageSize);
+          final visible = pageSlice(accounts, page, _pageSize);
+
+          return Column(
             children: [
-              Text(
-                '${accounts.length} accounts · staff and audit viewers are '
-                'created here, not self-signup',
-                style: const TextStyle(
-                  fontSize: 10,
-                  height: 1.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.inkMuted,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search name, email or role',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
                 ),
               ),
-              const SizedBox(height: 12),
-              for (final account in accounts) ...[
-                _AccountTile(
-                  account: account,
-                  canManage: isSuperAdmin,
-                  onTap: () => _openActions(context, account),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: SizedBox(
+                  height: 32,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      for (final option in const [
+                        ('all', 'All'),
+                        ('driver', 'Crew'),
+                        ('iswim', 'Iswim'),
+                        ('admin', 'Barangay'),
+                        ('cityHall', 'City Hall'),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: FilterChip(
+                            label: Text(option.$2),
+                            selected: _role == option.$1,
+                            onSelected: (_) => setState(() {
+                              _role = option.$1;
+                              _page = 0;
+                            }),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-              ],
+              ),
+              Expanded(
+                child: accounts.isEmpty
+                    ? const _Message(text: 'No accounts match this filter.')
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                        children: [
+                          for (final account in visible) ...[
+                            _AccountTile(
+                              account: account,
+                              canManage: canManage,
+                              onTap: () => _openActions(context, account),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ],
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: EcoPaginationBar(
+                  page: page,
+                  pageSize: _pageSize,
+                  total: accounts.length,
+                  onPageChanged: (value) => setState(() => _page = value),
+                  onPageSizeChanged: (value) => setState(() {
+                    _pageSize = value;
+                    _page = 0;
+                  }),
+                ),
+              ),
             ],
           );
         },
@@ -95,12 +184,12 @@ class AccountsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _openForm(BuildContext context) async {
+  Future<void> _openForm(BuildContext context, bool allowIswim) async {
     final handover = await showModalBottomSheet<_Handover>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _AccountForm(),
+      builder: (_) => _AccountForm(allowIswim: allowIswim),
     );
     if (handover == null || !context.mounted) return;
     await _showHandover(context, handover);
@@ -150,10 +239,7 @@ class AccountsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _openActions(
-    BuildContext context,
-    ProvisionedAccount account,
-  ) {
+  Future<void> _openActions(BuildContext context, ProvisionedAccount account) {
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -234,8 +320,11 @@ class _AccountTile extends StatelessWidget {
                   color: AppColors.cream,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(_iconFor(account.role),
-                    size: 17, color: AppColors.forest),
+                child: Icon(
+                  _iconFor(account.role),
+                  size: 17,
+                  color: AppColors.forest,
+                ),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -266,8 +355,10 @@ class _AccountTile extends StatelessWidget {
               ),
               if (!account.isActive)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -284,8 +375,10 @@ class _AccountTile extends StatelessWidget {
               else if (account.role == UserRole.driver &&
                   (account.truckId == null || account.truckId!.isEmpty))
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.warning.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(20),
@@ -300,8 +393,11 @@ class _AccountTile extends StatelessWidget {
                   ),
                 ),
               if (canManage)
-                const Icon(Icons.chevron_right_rounded,
-                    size: 18, color: AppColors.moss),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: AppColors.moss,
+                ),
             ],
           ),
         ),
@@ -310,13 +406,13 @@ class _AccountTile extends StatelessWidget {
   }
 
   static IconData _iconFor(UserRole role) => switch (role) {
-        UserRole.cityHall => Icons.account_balance_rounded,
-        UserRole.iswim => Icons.business_center_rounded,
-        UserRole.admin => Icons.shield_outlined,
-        UserRole.driver => Icons.local_shipping_rounded,
-        UserRole.user => Icons.person_outline_rounded,
-        UserRole.auditor => Icons.fact_check_outlined,
-      };
+    UserRole.cityHall => Icons.account_balance_rounded,
+    UserRole.iswim => Icons.business_center_rounded,
+    UserRole.admin => Icons.shield_outlined,
+    UserRole.driver => Icons.local_shipping_rounded,
+    UserRole.user => Icons.person_outline_rounded,
+    UserRole.auditor => Icons.fact_check_outlined,
+  };
 }
 
 /// Reset the password, or freeze the login.
@@ -399,18 +495,16 @@ class _ActionsSheetState extends State<_ActionsSheet> {
             onTap: _busy
                 ? null
                 : () => _run(
-                      () => ProvisioningService().resetPassword(account.email),
-                      'Reset email sent to ${account.email}',
-                    ),
+                    () => ProvisioningService().resetPassword(account.email),
+                    'Reset email sent to ${account.email}',
+                  ),
           ),
           const SizedBox(height: 8),
           _Action(
             icon: account.isActive
                 ? Icons.block_rounded
                 : Icons.play_circle_outline_rounded,
-            label: account.isActive
-                ? 'Suspend access'
-                : 'Restore access',
+            label: account.isActive ? 'Suspend access' : 'Restore access',
             detail: account.isActive
                 ? 'Can no longer sign in'
                 : 'Can sign in again',
@@ -418,12 +512,14 @@ class _ActionsSheetState extends State<_ActionsSheet> {
             onTap: _busy
                 ? null
                 : () => _run(
-                      () => ProvisioningService()
-                          .setActive(account.uid, !account.isActive),
-                      account.isActive
-                          ? '${account.name} is now suspended'
-                          : '${account.name} is active again',
+                    () => ProvisioningService().setActive(
+                      account.uid,
+                      !account.isActive,
                     ),
+                    account.isActive
+                        ? '${account.name} is now suspended'
+                        : '${account.name} is active again',
+                  ),
           ),
         ],
       ),
@@ -495,10 +591,17 @@ class _Action extends StatelessWidget {
   }
 }
 
-/// The form creates driver or audit viewer accounts. Iswim and City Hall are
-/// separate accounts that already exist.
+/// What the desk is creating. Iswim manages both its own logins and the
+/// crew accounts; City Hall only sees the crew options.
+enum _AccountKind { driver, guide, iswim }
+
+/// The form the desk fills in. It only makes **crew** accounts: Iswim and City
+/// Hall are separate accounts that already exist, so a driver and his truck is
+/// the only thing left to provision.
 class _AccountForm extends StatefulWidget {
-  const _AccountForm();
+  const _AccountForm({required this.allowIswim});
+
+  final bool allowIswim;
 
   @override
   State<_AccountForm> createState() => _AccountFormState();
@@ -511,30 +614,34 @@ class _AccountFormState extends State<_AccountForm> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
 
-  UserRole _role = UserRole.driver;
-  TruckCrewRole _crewRole = TruckCrewRole.driver;
+  _AccountKind _kind = _AccountKind.driver;
   GarbageTruck? _truck;
   bool _busy = false;
+  bool _showPassword = false;
   List<GarbageTruck> _trucks = const [];
 
   @override
   void initState() {
     super.initState();
     _password.text = _suggestPassword();
-    FleetService().watchTrucks().first.then((trucks) {
-      if (!mounted) return;
-      setState(() {
-        _trucks = trucks;
-        // A plate without a login is the one that needs this account.
-        _truck = trucks.cast<GarbageTruck?>().firstWhere(
+    FleetService()
+        .watchTrucks()
+        .first
+        .then((trucks) {
+          if (!mounted) return;
+          setState(() {
+            _trucks = trucks;
+            // A plate without a login is the one that needs this account.
+            _truck = trucks.cast<GarbageTruck?>().firstWhere(
               (t) => t?.driverAccountId == null || t?.driverAccountId == '',
               orElse: () => trucks.isEmpty ? null : trucks.first,
             );
-      });
-    }).catchError((Object _) {
-      // Offline: the form still opens, the truck list just stays empty and
-      // the dropdown validator asks for one.
-    });
+          });
+        })
+        .catchError((Object _) {
+          // Offline: the form still opens, the truck list just stays empty and
+          // the dropdown validator asks for one.
+        });
   }
 
   @override
@@ -558,30 +665,30 @@ class _AccountFormState extends State<_AccountForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
+      final isIswim = _kind == _AccountKind.iswim;
       await ProvisioningService().create(
         ProvisionRequest(
           name: _name.text,
           email: _email.text,
           password: _password.text,
-          role: _role,
-          crewRole: _crewRole,
-          truckId: _role == UserRole.driver ? _truck?.id : null,
+          role: isIswim ? UserRole.iswim : UserRole.driver,
+          crewRole: _kind == _AccountKind.guide
+              ? TruckCrewRole.guide
+              : TruckCrewRole.driver,
+          truckId: isIswim ? null : _truck?.id,
           phone: _phone.text,
         ),
       );
       if (!mounted) return;
-      Navigator.of(context).pop(
-        _Handover(email: _email.text.trim(), password: _password.text),
-      );
+      Navigator.of(
+        context,
+      ).pop(_Handover(email: _email.text.trim(), password: _password.text));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
-            content: Text('$e'),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text('$e'), backgroundColor: AppColors.error),
         );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -619,34 +726,26 @@ class _AccountFormState extends State<_AccountForm> {
                 ),
               ),
               const SizedBox(height: 14),
-              Text(
-                'New ${_role.label} account',
-                style: const TextStyle(
+              const Text(
+                'New account',
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: AppColors.forest,
                 ),
               ),
               const SizedBox(height: 2),
-              const Text(
-                'Create an operational account or a read-only audit account.',
-                style: TextStyle(
+              Text(
+                widget.allowIswim
+                    ? 'Create a driver, a truck guide, or another Iswim login. '
+                          'City Hall accounts are never created here.'
+                    : 'Only Driver and Truck Guide accounts are created here. '
+                          'Iswim manages its own logins.',
+                style: const TextStyle(
                   fontSize: 9,
                   height: 1.45,
                   color: AppColors.inkMuted,
                 ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 7,
-                children: [
-                  for (final role in [UserRole.driver, UserRole.auditor])
-                    ChoiceChip(
-                      label: Text(role.label),
-                      selected: _role == role,
-                      onSelected: (_) => setState(() => _role = role),
-                    ),
-                ],
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -690,33 +789,76 @@ class _AccountFormState extends State<_AccountForm> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _password,
+                obscureText: !_showPassword,
+                onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   labelText: 'Password',
                   isDense: true,
-                  suffixIcon: IconButton(
-                    tooltip: 'New password',
-                    icon: const Icon(Icons.casino_outlined, size: 17),
-                    onPressed: () =>
-                        setState(() => _password.text = _suggestPassword()),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: _showPassword
+                            ? 'Hide password'
+                            : 'Show password',
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 17,
+                        ),
+                        onPressed: () =>
+                            setState(() => _showPassword = !_showPassword),
+                      ),
+                      IconButton(
+                        tooltip: 'Copy password',
+                        icon: const Icon(Icons.copy_rounded, size: 16),
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: _password.text),
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              const SnackBar(
+                                content: Text('Password copied'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Generate a password',
+                        icon: const Icon(Icons.casino_outlined, size: 17),
+                        onPressed: () =>
+                            setState(() => _password.text = _suggestPassword()),
+                      ),
+                    ],
                   ),
                 ),
-                validator: (value) => (value ?? '').length < 6
-                    ? 'Use at least 6 characters'
-                    : null,
+                validator: Validators.validatePasswordStrength,
               ),
-              if (_role == UserRole.driver) ...<Widget>[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 7,
-                  children: [
-                    for (final crew in TruckCrewRole.values)
+              const SizedBox(height: 8),
+              PasswordStrengthChecklist(password: _password.text),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 7,
+                children: [
+                  for (final kind in _AccountKind.values)
+                    if (kind != _AccountKind.iswim || widget.allowIswim)
                       ChoiceChip(
-                        label: Text(crew.label),
-                        selected: _crewRole == crew,
-                        onSelected: (_) => setState(() => _crewRole = crew),
+                        label: Text(switch (kind) {
+                          _AccountKind.driver => 'Driver',
+                          _AccountKind.guide => 'Truck guide',
+                          _AccountKind.iswim => 'Iswim account',
+                        }),
+                        selected: _kind == kind,
+                        onSelected: (_) => setState(() => _kind = kind),
                       ),
-                  ],
-                ),
+                ],
+              ),
+              if (_kind != _AccountKind.iswim) ...[
                 const SizedBox(height: 10),
                 DropdownButtonFormField<GarbageTruck>(
                   initialValue: _truck,
@@ -737,8 +879,7 @@ class _AccountFormState extends State<_AccountForm> {
                       ),
                   ],
                   onChanged: (value) => setState(() => _truck = value),
-                  validator: (value) =>
-                      value == null ? 'Select a truck' : null,
+                  validator: (value) => value == null ? 'Select a truck' : null,
                 ),
                 const SizedBox(height: 6),
                 const Text(
@@ -767,7 +908,11 @@ class _AccountFormState extends State<_AccountForm> {
                             color: Colors.white,
                           ),
                         )
-                      : Text('Create ${_role.label} account'),
+                      : Text(switch (_kind) {
+                          _AccountKind.driver => 'Create driver account',
+                          _AccountKind.guide => 'Create guide account',
+                          _AccountKind.iswim => 'Create Iswim account',
+                        }),
                 ),
               ),
             ],
@@ -806,13 +951,42 @@ class _HandoverRow extends StatelessWidget {
               color: AppColors.inkMuted,
             ),
           ),
-          SelectableText(
-            value,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.forest,
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                tooltip: 'Copy $label',
+                icon: const Icon(
+                  Icons.copy_rounded,
+                  size: 15,
+                  color: AppColors.forest,
+                ),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: value));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Text('$label copied'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                },
+              ),
+            ],
           ),
         ],
       ),

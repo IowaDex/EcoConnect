@@ -17,7 +17,8 @@ class DefaultFirebaseOptions {
     // The iOS SDK rejects app IDs registered for another platform (e.g. web).
     final isIOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     return FirebaseOptions(
-      apiKey: (isIOS ? optional('FIREBASE_IOS_API_KEY') : null) ??
+      apiKey:
+          (isIOS ? optional('FIREBASE_IOS_API_KEY') : null) ??
           required('FIREBASE_API_KEY'),
       appId: required(isIOS ? 'FIREBASE_IOS_APP_ID' : 'FIREBASE_APP_ID'),
       messagingSenderId: required('FIREBASE_MESSAGING_SENDER_ID'),

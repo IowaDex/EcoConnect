@@ -70,7 +70,7 @@ test('nobody can self-verify, change account type or clear a rejection', async (
 });
 
 test('signup can ask for government review but not skip it', async () => {
-  const base = {name: 'E', role: 'user', accountStatus: 'pending'};
+  const base = {name: 'E', role: 'user', accountStatus: 'pending', barangay: 'Batasan Hills'};
   const gov = {...base, accountType: 'government'};
   await assertFails(setDoc(doc(as('e1'), 'users/e1'), {...gov, verificationStatus: 'verified'}));
   await assertFails(setDoc(doc(as('e2'), 'users/e2'), {...base, accountType: 'admin'}));
@@ -78,6 +78,8 @@ test('signup can ask for government review but not skip it', async () => {
   await assertSucceeds(setDoc(doc(as('e4'), 'users/e4'), {...gov, verificationStatus: 'pending'}));
   // Every resident's ID now waits for the barangay too.
   await assertSucceeds(setDoc(doc(as('e5'), 'users/e5'), {...base, accountType: 'resident', verificationStatus: 'pending'}));
+  // The address is fixed at sign-up: another barangay cannot register here.
+  await assertFails(setDoc(doc(as('e6'), 'users/e6'), {...base, barangay: 'Payatas'}));
 });
 
 // -------------------------------------------------------- collectionRequests

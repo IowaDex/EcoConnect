@@ -55,6 +55,49 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
 
   Map<String, dynamic> get _a => widget.account;
 
+  DateTime? get _birthdate {
+    final raw = _a['birthdate'];
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  int? _ageFromBirthdate() {
+    final born = _birthdate;
+    if (born == null) {
+      final raw = _a['age'];
+      return raw is num ? raw.toInt() : int.tryParse('${raw ?? ''}');
+    }
+    final now = DateTime.now();
+    var years = now.year - born.year;
+    if (now.month < born.month ||
+        (now.month == born.month && now.day < born.day)) {
+      years--;
+    }
+    return years;
+  }
+
+  String? _birthdateLabel() {
+    final born = _birthdate;
+    if (born == null) return null;
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[born.month - 1]} ${born.day}, ${born.year}';
+  }
+
   Future<void> _decide({required bool approve}) async {
     final staff = context.read<AuthProvider>().currentUser;
     if (staff == null) return;
@@ -67,8 +110,9 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
     try {
       await widget.verification.setUserVerification(
         userId: _a['uid'] as String,
-        status:
-            approve ? VerificationStatus.verified : VerificationStatus.rejected,
+        status: approve
+            ? VerificationStatus.verified
+            : VerificationStatus.rejected,
         reviewerId: staff.uid,
         reviewerName: staff.displayName ?? 'Barangay staff',
         reason: reason,
@@ -77,18 +121,24 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
       final messenger = ScaffoldMessenger.of(context);
       final name = _a['name'] ?? 'Resident';
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(SnackBar(
-        content: Text(approve
-            ? '$name approved. They can now sign in.'
-            : '$name rejected.'),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            approve
+                ? '$name approved. They can now sign in.'
+                : '$name rejected.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not save the decision: $e'),
-        backgroundColor: AppColors.danger,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save the decision: $e'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     }
   }
 
@@ -127,10 +177,12 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
     if (ok != true) return null;
     if (reason.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Give the resident a reason.'),
-          backgroundColor: AppColors.danger,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Give the resident a reason.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
       return null;
     }
@@ -191,11 +243,9 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
             valueColor: emailConfirmed ? AppColors.primary : AppColors.warning,
           ),
           _InfoRow(label: 'Phone', value: _a['phone']),
-          _InfoRow(label: 'Age', value: _a['age']?.toString()),
-          _InfoRow(
-            label: 'Address',
-            value: address.isEmpty ? null : address,
-          ),
+          _InfoRow(label: 'Birthdate', value: _birthdateLabel()),
+          _InfoRow(label: 'Age', value: _ageFromBirthdate()?.toString()),
+          _InfoRow(label: 'Address', value: address.isEmpty ? null : address),
           _InfoRow(label: 'Signed up', value: _formatDate(_a['createdAt'])),
           const SizedBox(height: 18),
           const Text(
@@ -217,13 +267,11 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
                 );
               }
               if (snapshot.hasError) {
-                return _IdMessage(
-                    'Could not load the ID: ${snapshot.error}');
+                return _IdMessage('Could not load the ID: ${snapshot.error}');
               }
               final dataUrl = snapshot.data;
               if (dataUrl == null) {
-                return const _IdMessage(
-                    'This resident did not upload an ID.');
+                return const _IdMessage('This resident did not upload an ID.');
               }
               return ClipRRect(
                 borderRadius: BorderRadius.circular(14),
@@ -236,8 +284,8 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
                     child: Image.memory(
                       _bytes(dataUrl),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const _IdMessage(
-                          'The ID file could not be shown.'),
+                      errorBuilder: (_, __, ___) =>
+                          const _IdMessage('The ID file could not be shown.'),
                     ),
                   ),
                 ),
@@ -285,7 +333,9 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
                           height: 16,
                           width: 16,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text('Approve'),
                 ),
@@ -363,8 +413,18 @@ String? _formatDate(Object? raw) {
   if (raw is! Timestamp) return null;
   final d = raw.toDate().toLocal();
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
   final minute = d.minute.toString().padLeft(2, '0');

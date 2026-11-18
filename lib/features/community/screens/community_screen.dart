@@ -8,10 +8,12 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -110,7 +112,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             case 0:
               context.go('/user');
             case 1:
-              context.go('/tracking');
+              context.go('/my-requests');
             case 2:
               break;
             case 3:
@@ -613,15 +615,24 @@ class _EventCard extends StatelessWidget {
 // Posts
 // ---------------------------------------------------------------------------
 
-class _PostsTab extends StatelessWidget {
+class _PostsTab extends StatefulWidget {
   const _PostsTab({required this.service, required this.onCompose});
 
   final CommunityPostService service;
   final VoidCallback onCompose;
 
   @override
+  State<_PostsTab> createState() => _PostsTabState();
+}
+
+class _PostsTabState extends State<_PostsTab> {
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
+    final service = widget.service;
     return StreamBuilder<List<CommunityPost>>(
       stream: service.watchFeed(),
       builder: (context, snapshot) {
@@ -637,10 +648,15 @@ class _PostsTab extends StatelessWidget {
           );
         }
         final posts = snapshot.data ?? const <CommunityPost>[];
+        final page = clampPage(_page, posts.length, _pageSize);
+        final visible = pageSlice(posts, page, _pageSize);
         return ListView(
           padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
           children: [
-            _ComposerBar(name: user?.firstName ?? 'there', onTap: onCompose),
+            _ComposerBar(
+              name: user?.firstName ?? 'there',
+              onTap: widget.onCompose,
+            ),
             const SizedBox(height: 14),
             if (posts.isEmpty)
               const EmptyState(
@@ -649,7 +665,7 @@ class _PostsTab extends StatelessWidget {
                 message: 'Share a photo or a quick update with your neighbors.',
                 compact: true,
               ),
-            for (final post in posts) ...[
+            for (final post in visible) ...[
               _PostCard(
                 post: post,
                 currentUserId: user?.uid,
@@ -658,6 +674,17 @@ class _PostsTab extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
+            if (posts.isNotEmpty)
+              EcoPaginationBar(
+                page: page,
+                pageSize: _pageSize,
+                total: posts.length,
+                onPageChanged: (next) => setState(() => _page = next),
+                onPageSizeChanged: (size) => setState(() {
+                  _pageSize = size;
+                  _page = 0;
+                }),
+              ),
           ],
         );
       },
@@ -668,7 +695,7 @@ class _PostsTab extends StatelessWidget {
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
     try {
-      await service.toggleLike(post: post, userId: user.uid);
+      await widget.service.toggleLike(post: post, userId: user.uid);
     } catch (e) {
       if (context.mounted) {
         AppFeedback.error(context, AppFeedback.describe(e));

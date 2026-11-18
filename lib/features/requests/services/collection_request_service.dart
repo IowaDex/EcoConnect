@@ -35,14 +35,15 @@ class CollectionRequestService {
   Stream<List<CollectionRequest>> watchAll() => _col.snapshots().map(_sorted);
 
   List<CollectionRequest> _sorted(QuerySnapshot<Map<String, dynamic>> snap) {
-    final items = snap.docs
-        .map((doc) => CollectionRequest.fromDoc(doc.id, doc.data()))
-        .toList()
-      ..sort((a, b) {
-        final aDate = a.createdAt ?? DateTime(2000);
-        final bDate = b.createdAt ?? DateTime(2000);
-        return bDate.compareTo(aDate);
-      });
+    final items =
+        snap.docs
+            .map((doc) => CollectionRequest.fromDoc(doc.id, doc.data()))
+            .toList()
+          ..sort((a, b) {
+            final aDate = a.createdAt ?? DateTime(2000);
+            final bDate = b.createdAt ?? DateTime(2000);
+            return bDate.compareTo(aDate);
+          });
     return items;
   }
 
@@ -97,8 +98,7 @@ class CollectionRequestService {
     await _notifications.notifyStaff(
       title: switch (kind) {
         RequestKind.special => 'New special collection request',
-        RequestKind.uncollected =>
-          'Uncollected garbage reported (Wave 2)',
+        RequestKind.uncollected => 'Uncollected garbage reported (Wave 2)',
         RequestKind.resident => 'New collection request',
       },
       body: '$requesterName submitted "${title.trim()}".',
@@ -192,18 +192,41 @@ class CollectionRequestService {
   }
 
   /// Barangay reviews the request, then passes it up as wave 2.
+  ///
+  /// The report is marked verified first, so the resident sees "Verified by
+  /// barangay" before City Hall's decision and the audit trail explains both
+  /// steps.
   Future<void> passToCityHall(String id, {String? byName}) async {
+    final snap = await _col.doc(id).get();
+    final data = snap.data();
+    if (data == null) throw StateError('This request no longer exists.');
+    final existingHistory = data['history'];
+    final history = <Map<String, dynamic>>[
+      if (existingHistory is List)
+        for (final entry in existingHistory)
+          if (entry is Map) Map<String, dynamic>.from(entry),
+      {
+        'status': RequestStatus.approved.name,
+        'at': Timestamp.now(),
+        'byName': byName,
+        'note': 'Verified by barangay and forwarded to City Hall',
+      },
+    ];
+
     await _col.doc(id).update({
       'wave': 2,
       'cityHallStatus': 'pending',
+      'status': RequestStatus.approved.name,
       'updatedAt': FieldValue.serverTimestamp(),
+      'history': history,
       if (byName != null) 'staffNote': 'Passed to City Hall by $byName',
     });
     await _notifications.notifyCityHall(
       title: 'Wave 2 request for approval',
-      body: 'The barangay passed a collection request to City Hall.',
+      body: 'The barangay verified and forwarded a collection request.',
       type: AppNotificationType.request,
       data: {'requestId': id, 'kind': 'wave2Pending'},
+      dedupeKey: 'wave2_${id}_pending',
     );
   }
 
@@ -214,6 +237,28 @@ class CollectionRequestService {
     required bool approve,
     String? note,
   }) async {
+    final snap = await _col.doc(id).get();
+    final data = snap.data();
+    if (data == null) throw StateError('This request no longer exists.');
+    final existingHistory = data['history'];
+    final history = <Map<String, dynamic>>[
+      if (existingHistory is List)
+        for (final entry in existingHistory)
+          if (entry is Map) Map<String, dynamic>.from(entry),
+      {
+        'status': approve
+            ? RequestStatus.approved.name
+            : RequestStatus.rejected.name,
+        'at': Timestamp.now(),
+        'byName': 'City Hall',
+        'note': note?.trim().isNotEmpty == true
+            ? note!.trim()
+            : approve
+            ? 'Approved by City Hall'
+            : 'Declined by City Hall',
+      },
+    ];
+
     await _col.doc(id).update({
       'cityHallStatus': approve ? 'approved' : 'rejected',
       'status': approve
@@ -221,19 +266,22 @@ class CollectionRequestService {
           : RequestStatus.rejected.name,
       'rejectionReason': approve ? null : note,
       'updatedAt': FieldValue.serverTimestamp(),
+      'history': history,
     });
     await _notifications.notifyStaff(
       title: approve ? 'Wave 2 approved by City Hall' : 'Wave 2 rejected',
-      body: note ?? (approve
-          ? 'City Hall approved the request. The barangay can schedule it.'
-          : 'City Hall rejected the request.'),
+      body:
+          note ??
+          (approve
+              ? 'City Hall approved the request. The barangay can schedule it.'
+              : 'City Hall rejected the request.'),
       type: AppNotificationType.request,
       data: {'requestId': id, 'kind': 'wave2Decision'},
+      dedupeKey: 'wave2_${id}_decision',
     );
 
     // The resident who filed the request gets the final decision directly.
-    final snap = await _col.doc(id).get();
-    final requesterId = snap.data()?['requesterId'] as String?;
+    final requesterId = data['requesterId'] as String?;
     if (requesterId != null && requesterId.isNotEmpty) {
       await _notifications.push(
         userId: requesterId,
@@ -241,10 +289,11 @@ class CollectionRequestService {
         body: note?.trim().isNotEmpty == true
             ? note!.trim()
             : approve
-                ? 'City Hall approved your request. The barangay will schedule it.'
-                : 'City Hall rejected your request.',
+            ? 'City Hall approved your request. The barangay will schedule it.'
+            : 'City Hall rejected your request.',
         type: AppNotificationType.request,
         data: {'requestId': id, 'kind': 'wave2Decision'},
+        dedupeKey: 'wave2_${id}_resident_decision',
       );
     }
   }
@@ -338,13 +387,13 @@ class CollectionRequestService {
   }
 
   String _statusTitle(RequestStatus status) => switch (status) {
-        RequestStatus.approved => 'Request approved',
-        RequestStatus.rejected => 'Request rejected',
-        RequestStatus.assigned => 'Collection scheduled',
-        RequestStatus.inProgress => 'Collector on the way',
-        RequestStatus.collected => 'Waste collected',
-        RequestStatus.completed => 'Request completed',
-        RequestStatus.underReview => 'Request under review',
-        RequestStatus.pending => 'Request received',
-      };
+    RequestStatus.approved => 'Request approved',
+    RequestStatus.rejected => 'Request rejected',
+    RequestStatus.assigned => 'Collection scheduled',
+    RequestStatus.inProgress => 'Collector on the way',
+    RequestStatus.collected => 'Waste collected',
+    RequestStatus.completed => 'Request completed',
+    RequestStatus.underReview => 'Request under review',
+    RequestStatus.pending => 'Request received',
+  };
 }

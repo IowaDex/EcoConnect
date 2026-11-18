@@ -112,8 +112,7 @@ class ScreenMetrics {
   /// the scene into a close-up of the truck.
   double get heroMaxWidth {
     if (size.width <= _heroPhoneWidth) return size.width;
-    final byHeight =
-        (size.height * 0.60).clamp(_heroPhoneWidth, _heroMaxWidth);
+    final byHeight = (size.height * 0.60).clamp(_heroPhoneWidth, _heroMaxWidth);
     return size.width < byHeight ? size.width : byHeight;
   }
 
@@ -138,8 +137,10 @@ class ScreenMetrics {
   /// 900 dp, then stops. Capping the far end keeps a maximised desktop window
   /// from blowing the type up to poster size.
   double scale(double atCompact, double atExpanded) {
-    final t =
-        ((size.width - _minWidth) / (_maxWidth - _minWidth)).clamp(0.0, 1.0);
+    final t = ((size.width - _minWidth) / (_maxWidth - _minWidth)).clamp(
+      0.0,
+      1.0,
+    );
     return atCompact + (atExpanded - atCompact) * t;
   }
 

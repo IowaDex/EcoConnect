@@ -56,7 +56,8 @@ class TruckTripHeader extends StatelessWidget {
 
   bool get _isRunning => _isLive || _isPaused;
 
-  bool get _outsideRadius => metresFromCenter != null &&
+  bool get _outsideRadius =>
+      metresFromCenter != null &&
       TripGuardService.isOutsideRadius(metresFromCenter!);
 
   String get _elapsed {
@@ -83,18 +84,18 @@ class TruckTripHeader extends StatelessWidget {
             icon: Icons.navigation_rounded,
           )
         : canStart
-            ? (
-                label: TruckStatus.ticketReady.label,
-                color: TruckStatus.ticketReady.color,
-                background: TruckStatus.ticketReady.background,
-                icon: null,
-              )
-            : (
-                label: TruckStatus.noTicket.label,
-                color: TruckStatus.noTicket.color,
-                background: TruckStatus.noTicket.background,
-                icon: Icons.confirmation_number_outlined,
-              );
+        ? (
+            label: TruckStatus.ticketReady.label,
+            color: TruckStatus.ticketReady.color,
+            background: TruckStatus.ticketReady.background,
+            icon: null,
+          )
+        : (
+            label: TruckStatus.noTicket.label,
+            color: TruckStatus.noTicket.color,
+            background: TruckStatus.noTicket.background,
+            icon: Icons.confirmation_number_outlined,
+          );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
@@ -117,8 +118,10 @@ class TruckTripHeader extends StatelessWidget {
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.mint,
                   borderRadius: BorderRadius.circular(20),
@@ -325,7 +328,9 @@ class TruckTripHeader extends StatelessWidget {
                   backgroundColor: canStart
                       ? AppColors.forest
                       : const Color(0xFFE8EEE8),
-                  foregroundColor: canStart ? Colors.white : const Color(0xFF9AA79D),
+                  foregroundColor: canStart
+                      ? Colors.white
+                      : const Color(0xFF9AA79D),
                   disabledBackgroundColor: const Color(0xFFE8EEE8),
                   disabledForegroundColor: const Color(0xFF9AA79D),
                   textStyle: const TextStyle(
@@ -347,7 +352,9 @@ class TruckTripHeader extends StatelessWidget {
                       )
                     else
                       Icon(
-                        canStart ? Icons.play_arrow_rounded : Icons.lock_rounded,
+                        canStart
+                            ? Icons.play_arrow_rounded
+                            : Icons.lock_rounded,
                         size: 18,
                       ),
                     const SizedBox(width: 7),
@@ -393,10 +400,7 @@ class _Badge extends StatelessWidget {
             Container(
               height: 7,
               width: 7,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color,
-              ),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
             ),
           const SizedBox(width: 6),
           Text(
@@ -505,27 +509,27 @@ class _GuardLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, icon, text) = switch ((connectionLost, outsideRadius)) {
       (true, true) => (
-          AppColors.error,
-          Icons.wifi_off_rounded,
-          'Offline and outside the radius — barangay has been alerted.',
-        ),
+        AppColors.error,
+        Icons.wifi_off_rounded,
+        'Offline and outside the radius — barangay has been alerted.',
+      ),
       (true, false) => (
-          AppColors.error,
-          Icons.wifi_off_rounded,
-          'No wifi/data — the truck is off the live map.',
-        ),
+        AppColors.error,
+        Icons.wifi_off_rounded,
+        'No wifi/data — the truck is off the live map.',
+      ),
       (false, true) => (
-          AppColors.warning,
-          Icons.wrong_location_rounded,
-          '${metres?.round() ?? ''} m from the zone centre — past the '
-              '${TripGuardService.radiusMeters.round()} m limit.',
-        ),
+        AppColors.warning,
+        Icons.wrong_location_rounded,
+        '${metres?.round() ?? ''} m from the zone centre — past the '
+            '${TripGuardService.radiusMeters.round()} m limit.',
+      ),
       (false, false) => (
-          AppColors.forest,
-          Icons.verified_rounded,
-          'Online and inside the ${TripGuardService.radiusMeters.round()} m '
-              'radius.',
-        ),
+        AppColors.forest,
+        Icons.verified_rounded,
+        'Online and inside the ${TripGuardService.radiusMeters.round()} m '
+            'radius.',
+      ),
     };
 
     return Container(

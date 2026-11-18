@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Removes a deleted user's personal records from the feature collections.
 ///
 /// Admin-only: the rules let staff delete these, nobody else. Location data is
-/// handled separately by the location feature. Incident reports and recycling
-/// drop-offs stay because they are barangay records, not personal content.
+/// handled separately by the location feature. Incident reports stay because
+/// they are barangay records, not personal content.
 class UserDataCleanup {
   UserDataCleanup({FirebaseFirestore? firestore})
     : _db = firestore ?? FirebaseFirestore.instance;

@@ -20,13 +20,13 @@ class TicketCard extends StatelessWidget {
   final String? trailingLabel;
 
   Color get _statusColor => switch (ticket.status) {
-        TicketStatus.completed => AppColors.primary,
-        TicketStatus.missed || TicketStatus.cancelled => AppColors.error,
-        TicketStatus.declined => AppColors.warning,
-        TicketStatus.issued => AppColors.warning,
-        TicketStatus.accepted || TicketStatus.running => AppColors.moss,
-        _ => AppColors.warning,
-      };
+    TicketStatus.completed => AppColors.primary,
+    TicketStatus.missed || TicketStatus.cancelled => AppColors.error,
+    TicketStatus.declined => AppColors.warning,
+    TicketStatus.issued => AppColors.warning,
+    TicketStatus.accepted || TicketStatus.running => AppColors.moss,
+    _ => AppColors.warning,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -59,8 +59,10 @@ class TicketCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.cream,
                       borderRadius: BorderRadius.circular(20),
@@ -76,8 +78,10 @@ class TicketCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: _statusColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
@@ -99,8 +103,11 @@ class TicketCard extends StatelessWidget {
               const SizedBox(height: 7),
               Row(
                 children: [
-                  const Icon(Icons.local_shipping_rounded,
-                      size: 13, color: AppColors.forest),
+                  const Icon(
+                    Icons.local_shipping_rounded,
+                    size: 13,
+                    color: AppColors.forest,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     ticket.plateNumber,

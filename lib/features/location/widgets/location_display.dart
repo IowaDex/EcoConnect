@@ -43,9 +43,8 @@ class LocationDisplay extends StatelessWidget {
                     children: [
                       Text(
                         'Current Location',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -93,14 +92,16 @@ class LocationDisplay extends StatelessWidget {
                         Icons.gps_fixed,
                         size: 16,
                         color: _getAccuracyColor(
-                            locationProvider.currentPosition!.accuracy),
+                          locationProvider.currentPosition!.accuracy,
+                        ),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         'Accuracy: ±${locationProvider.currentPosition!.accuracy.round()}m',
                         style: TextStyle(
                           color: _getAccuracyColor(
-                              locationProvider.currentPosition!.accuracy),
+                            locationProvider.currentPosition!.accuracy,
+                          ),
                           fontSize: 13,
                         ),
                       ),
@@ -115,10 +116,7 @@ class LocationDisplay extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
                   'Tap "Get Current Location" to display your location on the map',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),

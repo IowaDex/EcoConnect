@@ -70,9 +70,7 @@ class GpsButton extends StatelessWidget {
                     Expanded(
                       child: Text(
                         locationProvider.error!,
-                        style: TextStyle(
-                          color: colorScheme.onErrorContainer,
-                        ),
+                        style: TextStyle(color: colorScheme.onErrorContainer),
                       ),
                     ),
                     IconButton(
@@ -91,7 +89,10 @@ class GpsButton extends StatelessWidget {
     );
   }
 
-  void _showLocationError(BuildContext context, LocationProvider locationProvider) {
+  void _showLocationError(
+    BuildContext context,
+    LocationProvider locationProvider,
+  ) {
     final error = locationProvider.error ?? '';
 
     ScaffoldMessenger.of(context).showSnackBar(

@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -28,7 +30,29 @@ class WasteValidationScreen extends StatefulWidget {
 
 class _WasteValidationScreenState extends State<WasteValidationScreen> {
   final _service = WasteService();
+  final _search = TextEditingController();
   bool _pendingOnly = true;
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the uploads whose resident, place or description matches the box.
+  List<WasteSubmission> _filter(List<WasteSubmission> items) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((w) {
+      return w.userName.toLowerCase().contains(q) ||
+          w.location.toLowerCase().contains(q) ||
+          w.description.toLowerCase().contains(q) ||
+          w.category.label.toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,8 +71,9 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
               stream: _service.watchAll(),
               builder: (context, snapshot) {
                 final all = snapshot.data ?? const <WasteSubmission>[];
-                final pending =
-                    all.where((w) => w.status == WasteStatus.pending).length;
+                final pending = all
+                    .where((w) => w.status == WasteStatus.pending)
+                    .length;
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
                   child: Row(
@@ -64,8 +89,10 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
                       FilterChip(
                         label: const Text('Pending only'),
                         selected: _pendingOnly,
-                        onSelected: (value) =>
-                            setState(() => _pendingOnly = value),
+                        onSelected: (value) => setState(() {
+                          _pendingOnly = value;
+                          _page = 0;
+                        }),
                         selectedColor: AppColors.lightGreen,
                         checkmarkColor: AppColors.primary,
                         labelStyle: const TextStyle(
@@ -79,6 +106,17 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
                 );
               },
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: EcoSearchField(
+                controller: _search,
+                hint: 'Search resident, place or waste type',
+                onChanged: (value) => setState(() {
+                  _query = value;
+                  _page = 0;
+                }),
+              ),
+            ),
             Expanded(
               child: StreamBuilder<List<WasteSubmission>>(
                 stream: _service.watchAll(),
@@ -91,12 +129,14 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
                       message: AppFeedback.describe(snapshot.error!),
                     );
                   }
-                  var items = snapshot.data ?? const <WasteSubmission>[];
+                  final all = snapshot.data ?? const <WasteSubmission>[];
+                  var items = all;
                   if (_pendingOnly) {
                     items = items
                         .where((w) => w.status == WasteStatus.pending)
                         .toList(growable: false);
                   }
+                  items = _filter(items);
                   if (items.isEmpty) {
                     return const EmptyState(
                       icon: Icons.inventory_2_outlined,
@@ -105,17 +145,48 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
                           'New waste photos appear here as soon as residents upload them.',
                     );
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) {
-                      final item = items[i];
-                      return _WasteCard(
-                        submission: item,
-                        onTap: () => _openDetail(context, item),
-                      );
-                    },
+                  final page = clampPage(_page, items.length, _pageSize);
+                  final visible = pageSlice(items, page, _pageSize);
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                        child: EcoResultCount(
+                          shown: items.length,
+                          total: all.length,
+                          singular: 'submission',
+                          plural: 'submissions',
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, i) {
+                            final item = visible[i];
+                            return _WasteCard(
+                              submission: item,
+                              onTap: () => _openDetail(context, item),
+                            );
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                        child: EcoPaginationBar(
+                          page: page,
+                          pageSize: _pageSize,
+                          total: items.length,
+                          onPageChanged: (next) => setState(() => _page = next),
+                          onPageSizeChanged: (size) => setState(() {
+                            _pageSize = size;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -186,15 +257,19 @@ class _WasteCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.horizontal(left: Radius.circular(18)),
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(18),
+            ),
             child: submission.images.isEmpty
                 ? Container(
                     width: 96,
                     height: 116,
                     color: AppColors.lightGreen,
-                    child: const Icon(Icons.image_not_supported_outlined,
-                        size: 24, color: AppColors.inkMuted),
+                    child: const Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 24,
+                      color: AppColors.inkMuted,
+                    ),
                   )
                 : Image.memory(
                     _bytes(submission.coverUrl),
@@ -256,8 +331,11 @@ class _WasteCard extends StatelessWidget {
                   const SizedBox(height: 7),
                   Row(
                     children: [
-                      Icon(submission.category.icon,
-                          size: 11, color: submission.category.color),
+                      Icon(
+                        submission.category.icon,
+                        size: 11,
+                        color: submission.category.color,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         submission.category.shortLabel,
@@ -268,8 +346,11 @@ class _WasteCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.scale_outlined,
-                          size: 11, color: AppColors.inkMuted),
+                      const Icon(
+                        Icons.scale_outlined,
+                        size: 11,
+                        color: AppColors.inkMuted,
+                      ),
                       const SizedBox(width: 3),
                       Text(
                         submission.quantity,
@@ -312,7 +393,6 @@ class _WasteDetailState extends State<_WasteDetail> {
 
   Future<void> _validate(WasteStatus status) async {
     final controller = TextEditingController();
-    final pointsController = TextEditingController(text: '10');
     final isReject = status == WasteStatus.rejected;
     final ok = await showDialog<bool>(
       context: context,
@@ -325,21 +405,11 @@ class _WasteDetailState extends State<_WasteDetail> {
             Text(
               isReject
                   ? 'Explain what needs to be fixed. The resident sees this message.'
-                  : 'Approve the waste and decide how many points to credit. '
-                      'Enter 0 to approve without points.',
+                  : 'Approve the waste upload once you have checked the photo '
+                        'and the segregation.',
               style: const TextStyle(fontSize: 11.5, color: AppColors.inkMuted),
             ),
             const SizedBox(height: 12),
-            if (!isReject)
-              TextField(
-                controller: pointsController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Points to credit',
-                  helperText: 'Credited only once per submission',
-                ),
-              ),
-            if (!isReject) const SizedBox(height: 10),
             TextField(
               controller: controller,
               minLines: 3,
@@ -368,47 +438,36 @@ class _WasteDetailState extends State<_WasteDetail> {
     );
     if (ok != true || !mounted) return;
 
-    final points = isReject ? 0 : (int.tryParse(pointsController.text.trim()) ?? 0);
-    if (!isReject && points < 0) {
-      AppFeedback.error(context, 'Points cannot be negative.');
-      return;
-    }
-
     setState(() => _busy = true);
     try {
-      final awarded = await _service.validate(
+      await _service.validate(
         submission: _submission,
         status: status,
         actorId: widget.staffId,
         actorName: widget.staffName,
         remarks: controller.text.trim(),
-        points: points,
       );
       if (!mounted) return;
-      setState(() => _submission = WasteSubmission(
-            id: _submission.id,
-            userId: _submission.userId,
-            userName: _submission.userName,
-            description: _submission.description,
-            category: _submission.category,
-            quantity: _submission.quantity,
-            location: _submission.location,
-            barangay: _submission.barangay,
-            images: _submission.images,
-            status: status,
-            remarks: controller.text.trim(),
-            validatedBy: widget.staffName,
-            validatedAt: DateTime.now(),
-            pointsAwarded: awarded,
-            createdAt: _submission.createdAt,
-            updatedAt: DateTime.now(),
-          ));
-      AppFeedback.success(
-        context,
-        awarded > 0
-            ? 'Approved · $awarded points credited'
-            : 'Submission ${status.label.toLowerCase()}',
+      setState(
+        () => _submission = WasteSubmission(
+          id: _submission.id,
+          userId: _submission.userId,
+          userName: _submission.userName,
+          description: _submission.description,
+          category: _submission.category,
+          quantity: _submission.quantity,
+          location: _submission.location,
+          barangay: _submission.barangay,
+          images: _submission.images,
+          status: status,
+          remarks: controller.text.trim(),
+          validatedBy: widget.staffName,
+          validatedAt: DateTime.now(),
+          createdAt: _submission.createdAt,
+          updatedAt: DateTime.now(),
+        ),
       );
+      AppFeedback.success(context, 'Submission ${status.label.toLowerCase()}');
     } catch (e) {
       if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
     } finally {
@@ -438,10 +497,7 @@ class _WasteDetailState extends State<_WasteDetail> {
               const Spacer(),
               Text(
                 timeAgo(submission.createdAt),
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.inkMuted,
-                ),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),

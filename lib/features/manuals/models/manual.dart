@@ -10,18 +10,18 @@ enum ManualCategory { collection, operations, safety, other }
 
 extension ManualCategoryX on ManualCategory {
   String get label => switch (this) {
-        ManualCategory.collection => 'Collection procedure',
-        ManualCategory.operations => 'Operations',
-        ManualCategory.safety => 'Safety',
-        ManualCategory.other => 'Other',
-      };
+    ManualCategory.collection => 'Collection procedure',
+    ManualCategory.operations => 'Operations',
+    ManualCategory.safety => 'Safety',
+    ManualCategory.other => 'Other',
+  };
 
   IconData get icon => switch (this) {
-        ManualCategory.collection => Icons.route_rounded,
-        ManualCategory.operations => Icons.settings_outlined,
-        ManualCategory.safety => Icons.health_and_safety_outlined,
-        ManualCategory.other => Icons.menu_book_outlined,
-      };
+    ManualCategory.collection => Icons.route_rounded,
+    ManualCategory.operations => Icons.settings_outlined,
+    ManualCategory.safety => Icons.health_and_safety_outlined,
+    ManualCategory.other => Icons.menu_book_outlined,
+  };
 
   static ManualCategory fromName(String? name) => ManualCategory.values
       .firstWhere((c) => c.name == name, orElse: () => ManualCategory.other);
@@ -34,19 +34,21 @@ enum ManualStatus { draft, submitted, acknowledged }
 
 extension ManualStatusX on ManualStatus {
   String get label => switch (this) {
-        ManualStatus.draft => 'Draft',
-        ManualStatus.submitted => 'Sent to City Hall',
-        ManualStatus.acknowledged => 'Received by City Hall',
-      };
+    ManualStatus.draft => 'Draft',
+    ManualStatus.submitted => 'Sent to City Hall',
+    ManualStatus.acknowledged => 'Received by City Hall',
+  };
 
   Color get color => switch (this) {
-        ManualStatus.draft => AppColors.inkMuted,
-        ManualStatus.submitted => AppColors.warning,
-        ManualStatus.acknowledged => AppColors.primary,
-      };
+    ManualStatus.draft => AppColors.inkMuted,
+    ManualStatus.submitted => AppColors.warning,
+    ManualStatus.acknowledged => AppColors.primary,
+  };
 
-  static ManualStatus fromName(String? name) => ManualStatus.values
-      .firstWhere((s) => s.name == name, orElse: () => ManualStatus.draft);
+  static ManualStatus fromName(String? name) => ManualStatus.values.firstWhere(
+    (s) => s.name == name,
+    orElse: () => ManualStatus.draft,
+  );
 }
 
 DateTime? _date(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -147,16 +149,16 @@ enum ManualRequestStatus { pending, fulfilled, cancelled }
 
 extension ManualRequestStatusX on ManualRequestStatus {
   String get label => switch (this) {
-        ManualRequestStatus.pending => 'Waiting for Iswim',
-        ManualRequestStatus.fulfilled => 'Submitted to City Hall',
-        ManualRequestStatus.cancelled => 'Cancelled',
-      };
+    ManualRequestStatus.pending => 'Waiting for Iswim',
+    ManualRequestStatus.fulfilled => 'Submitted to City Hall',
+    ManualRequestStatus.cancelled => 'Cancelled',
+  };
 
   Color get color => switch (this) {
-        ManualRequestStatus.pending => AppColors.warning,
-        ManualRequestStatus.fulfilled => AppColors.primary,
-        ManualRequestStatus.cancelled => AppColors.inkMuted,
-      };
+    ManualRequestStatus.pending => AppColors.warning,
+    ManualRequestStatus.fulfilled => AppColors.primary,
+    ManualRequestStatus.cancelled => AppColors.inkMuted,
+  };
 
   static ManualRequestStatus fromName(String? name) =>
       ManualRequestStatus.values.firstWhere(

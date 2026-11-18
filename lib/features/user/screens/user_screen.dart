@@ -5,10 +5,13 @@ import 'package:provider/provider.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/motion.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../announcements/models/announcement.dart';
@@ -26,6 +29,9 @@ import '../../location/providers/location_provider.dart';
 import '../../location/widgets/location_controls.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
+import '../../route/models/collection_route.dart';
+import '../../route/services/route_service.dart';
+import '../../verification/services/verification_service.dart';
 import '../widgets/profile_sheet.dart';
 import '../widgets/user_avatar.dart';
 
@@ -50,7 +56,9 @@ class _UserScreenState extends State<UserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().currentUser;
+    final auth = context.watch<AuthProvider>();
+    final user = auth.currentUser;
+    final restricted = user?.isRestrictedResident ?? false;
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
@@ -60,64 +68,97 @@ class _UserScreenState extends State<UserScreen> {
           children: [
             const RoleTopBar(),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                children: [
-                  FadeSlideIn(
-                    index: 0,
-                    child: _ResidentHero(
-                      user: user,
-                      onEditProfile: () => _showProfile(context),
+              // Pull to refresh re-reads the profile, so an approval made at
+              // the barangay desk unlocks the dashboard without a new login.
+              child: RefreshIndicator(
+                onRefresh: auth.refreshUser,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                  children: [
+                    FadeSlideIn(
+                      index: 0,
+                      child: _ResidentHero(
+                        user: user,
+                        onEditProfile: () => _showProfile(context),
+                      ),
                     ),
-                  ),
-                  if (user?.needsRegistrationDecision == true) ...[
-                    const SizedBox(height: EcoSpace.md),
-                    const _RegistrationDecisionCard(),
-                  ] else if (user?.registrationPending == true) ...[
-                    const SizedBox(height: EcoSpace.md),
-                    const EcoBanner(
-                      message:
-                          'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
-                      icon: Icons.hourglass_top_rounded,
-                      color: AppColors.warning,
-                    ),
-                  ] else if (user?.registrationDeclined == true) ...[
-                    const SizedBox(height: EcoSpace.md),
-                    const EcoBanner(
-                      message:
-                          'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
-                      icon: Icons.info_outline_rounded,
-                      color: AppColors.inkMuted,
-                    ),
+                    if (restricted) ...[
+                      const SizedBox(height: EcoSpace.md),
+                      _VerificationGateCard(user: user!),
+                      const SizedBox(height: EcoSpace.md),
+                      const _TrackTruckCard(),
+                      const SizedBox(height: EcoSpace.xl),
+                      const SectionLabel('QUICK ACTIONS'),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Only truck tracking is open for now. The rest unlocks '
+                        'once barangay staff verify your account.',
+                        style: TextStyle(
+                          fontSize: 10,
+                          height: 1.45,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                      const SizedBox(height: EcoSpace.sm),
+                      QuickActionGrid(
+                        actions: _restrictedActions,
+                        onLocked: (action) =>
+                            _showLocked(context, action.lockedNote),
+                      ),
+                    ] else ...[
+                      if (user?.needsRegistrationDecision == true) ...[
+                        const SizedBox(height: EcoSpace.md),
+                        const _RegistrationDecisionCard(),
+                      ] else if (user?.registrationPending == true) ...[
+                        const SizedBox(height: EcoSpace.md),
+                        const EcoBanner(
+                          message:
+                              'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
+                          icon: Icons.hourglass_top_rounded,
+                          color: AppColors.warning,
+                        ),
+                      ] else if (user?.registrationDeclined == true) ...[
+                        const SizedBox(height: EcoSpace.md),
+                        const EcoBanner(
+                          message:
+                              'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
+                          icon: Icons.info_outline_rounded,
+                          color: AppColors.inkMuted,
+                        ),
+                      ],
+                      if (user?.isGovernment == true &&
+                          !user!.isVerifiedGovernment) ...[
+                        const SizedBox(height: EcoSpace.md),
+                        _VerificationNotice(user: user),
+                      ],
+                      const SizedBox(height: EcoSpace.md),
+                      const _TrackTruckCard(),
+                      const SizedBox(height: EcoSpace.xl),
+                      const SectionLabel('QUICK ACTIONS'),
+                      const SizedBox(height: EcoSpace.sm),
+                      const QuickActionGrid(actions: _actions),
+                      const SizedBox(height: EcoSpace.xl),
+                      SectionLabel(
+                        'UPCOMING EVENTS',
+                        action: 'View all',
+                        onAction: () => context.go('/events'),
+                      ),
+                      const SizedBox(height: EcoSpace.sm),
+                      const _EventsStrip(),
+                      const SizedBox(height: EcoSpace.xl),
+                      SectionLabel(
+                        'ANNOUNCEMENTS',
+                        action: 'View all',
+                        onAction: () => context.go('/announcements'),
+                      ),
+                      const SizedBox(height: EcoSpace.sm),
+                      const _LatestAnnouncements(),
+                      const SizedBox(height: EcoSpace.lg),
+                      const LocationControls(),
+                    ],
                   ],
-                  if (user?.isGovernment == true &&
-                      !user!.isVerifiedGovernment) ...[
-                    const SizedBox(height: EcoSpace.md),
-                    _VerificationNotice(user: user),
-                  ],
-                  const SizedBox(height: EcoSpace.xl),
-                  const SectionLabel('QUICK ACTIONS'),
-                  const SizedBox(height: EcoSpace.sm),
-                  const QuickActionGrid(actions: _actions),
-                  const SizedBox(height: EcoSpace.xl),
-                  SectionLabel(
-                    'UPCOMING EVENTS',
-                    action: 'View all',
-                    onAction: () => context.go('/events'),
-                  ),
-                  const SizedBox(height: EcoSpace.sm),
-                  const _EventsStrip(),
-                  const SizedBox(height: EcoSpace.xl),
-                  SectionLabel(
-                    'ANNOUNCEMENTS',
-                    action: 'View all',
-                    onAction: () => context.go('/announcements'),
-                  ),
-                  const SizedBox(height: EcoSpace.sm),
-                  const _LatestAnnouncements(),
-                  const SizedBox(height: EcoSpace.lg),
-                  const LocationControls(),
-                ],
+                ),
               ),
             ),
           ],
@@ -125,8 +166,12 @@ class _UserScreenState extends State<UserScreen> {
       ),
       bottomNavigationBar: AppBottomNav(
         currentIndex: 0,
-        onTap: (i) => _onNav(context, i),
-        onAskAi: () => context.push('/ask-ai'),
+        onTap: (i) => _onNav(context, i, restricted: restricted),
+        onAskAi: restricted
+            ? () => _showLocked(context, 'use the Eco assistant')
+            : () => context.push('/ask-ai'),
+        disabledIndexes: restricted ? const {1, 2} : const {},
+        askAiLocked: restricted,
       ),
     );
   }
@@ -136,61 +181,98 @@ class _UserScreenState extends State<UserScreen> {
       label: 'Upload waste',
       icon: Icons.add_a_photo_outlined,
       route: '/waste-upload',
-    ),
-    QuickAction(
-      label: 'Track truck',
-      icon: Icons.local_shipping_rounded,
-      route: '/tracking',
+      lockedNote: 'upload waste photos',
     ),
     QuickAction(
       label: 'Request pickup',
       icon: Icons.assignment_outlined,
       route: '/request-collection',
+      lockedNote: 'request a pickup',
     ),
     QuickAction(
       label: 'Report uncollected',
       icon: Icons.report_gmailerrorred_outlined,
       route: '/request-collection?kind=uncollected',
-    ),
-    QuickAction(
-      label: 'Recycling wallet',
-      icon: Icons.account_balance_wallet_outlined,
-      route: '/wallet',
+      lockedNote: 'report uncollected garbage',
     ),
     QuickAction(
       label: 'My requests',
       icon: Icons.fact_check_outlined,
       route: '/my-requests',
+      lockedNote: 'follow your pickup requests',
     ),
     QuickAction(
       label: 'My uploads',
       icon: Icons.photo_library_outlined,
       route: '/waste-history',
+      lockedNote: 'see your past uploads',
+    ),
+    QuickAction(
+      label: 'Verify my ID',
+      icon: Icons.badge_outlined,
+      route: '/verify-identity',
     ),
     QuickAction(
       label: 'Events',
       icon: Icons.event_available_outlined,
       route: '/events',
+      lockedNote: 'join barangay events',
     ),
     QuickAction(
       label: 'Announcements',
       icon: Icons.campaign_outlined,
       route: '/announcements',
+      lockedNote: 'read announcements',
     ),
     QuickAction(
       label: 'Complaints',
       icon: Icons.report_outlined,
       route: '/my-complaints',
+      lockedNote: 'file a complaint',
     ),
   ];
 
-  void _onNav(BuildContext context, int index) {
+  /// Every shortcut is locked while the account waits for barangay
+  /// verification. ID verification is handled by the card above, so that
+  /// shortcut is left out instead of shown as locked.
+  List<QuickAction> get _restrictedActions => [
+    for (final action in _actions)
+      if (action.route != '/verify-identity')
+        QuickAction(
+          label: action.label,
+          icon: action.icon,
+          route: action.route,
+          badge: action.badge,
+          locked: true,
+          lockedNote: action.lockedNote,
+        ),
+  ];
+
+  /// Names the feature the resident reached for, so the lock message reads
+  /// "…before you can file a complaint" instead of a generic refusal.
+  void _showLocked(BuildContext context, [String note = '']) =>
+      AppFeedback.info(
+        context,
+        'You need to verify your account first before you can '
+        '${note.isEmpty ? 'use this feature' : note}. '
+        'Upload your ID above and barangay staff will unlock it.',
+      );
+
+  void _onNav(BuildContext context, int index, {required bool restricted}) {
     switch (index) {
       case 0:
         break;
       case 1:
-        context.go('/tracking');
+        if (restricted) {
+          _showLocked(context, 'check your requests');
+          return;
+        }
+        context.go('/my-requests');
       case 2:
+        if (restricted) {
+          _showLocked(context, 'open the community');
+          return;
+        }
         context.go('/community');
       case 3:
         _showProfile(context);
@@ -306,6 +388,275 @@ class _ResidentHeroState extends State<_ResidentHero> {
           onTap: widget.onEditProfile,
         ),
       ],
+    );
+  }
+}
+
+/// The resident's only open feature while the account is not verified.
+///
+/// It reads the same live route the map uses, so the status here and the map
+/// can never disagree.
+class _TrackTruckCard extends StatefulWidget {
+  const _TrackTruckCard();
+
+  @override
+  State<_TrackTruckCard> createState() => _TrackTruckCardState();
+}
+
+class _TrackTruckCardState extends State<_TrackTruckCard> {
+  late final Stream<CollectionRoute?> _route = RouteService()
+      .watchActiveRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<CollectionRoute?>(
+      stream: _route,
+      builder: (context, snapshot) {
+        final route = snapshot.data;
+        final live = route != null && !route.isStale;
+        final detail = !live
+            ? 'No truck is collecting right now. Open the map to check again.'
+            : route.etaMinutes != null
+            ? '${route.driverName} · about ${route.etaMinutes} min away'
+            : '${route.driverName} · ${route.status.label}';
+
+        return EcoCard(
+          onTap: () => context.push('/tracking'),
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  gradient: AppColors.forestGradient,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  size: 23,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          height: 6,
+                          width: 6,
+                          decoration: BoxDecoration(
+                            color: live ? AppColors.lime : AppColors.sage,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          live ? 'LIVE TRUCK TRACKING' : 'TRUCK TRACKING',
+                          style: const TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.9,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      live
+                          ? 'The collection truck is on the road'
+                          : 'Track the next collection',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        height: 1.35,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 12,
+                color: AppColors.sage,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Shown while the account waits for barangay verification.
+///
+/// The upload is the one action the resident can take. Everything else on the
+/// dashboard stays locked until staff approve the ID, so the screen never
+/// looks broken or half-finished.
+class _VerificationGateCard extends StatefulWidget {
+  const _VerificationGateCard({required this.user});
+
+  final AppUser user;
+
+  @override
+  State<_VerificationGateCard> createState() => _VerificationGateCardState();
+}
+
+class _VerificationGateCardState extends State<_VerificationGateCard> {
+  UploadPayload? _document;
+  bool _busy = false;
+
+  Future<void> _submit() async {
+    final document = _document;
+    if (document == null) {
+      AppFeedback.error(context, 'Choose a photo of your ID first.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await VerificationService().submitId(
+        userId: widget.user.uid,
+        name: widget.user.displayName ?? 'Resident',
+        email: widget.user.email ?? '',
+        phone: widget.user.phone,
+        barangay: widget.user.barangay,
+        document: document,
+      );
+      if (!mounted) return;
+      setState(() => _document = null);
+      // The desk may have approved the account while this screen was open.
+      await context.read<AuthProvider>().refreshUser();
+      if (!mounted) return;
+      AppFeedback.success(
+        context,
+        'ID submitted. Barangay staff will review it shortly.',
+      );
+    } catch (e) {
+      if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.user;
+    final rejected = user.verificationStatus == VerificationStatus.rejected;
+    final reason = user.rejectionReason?.trim();
+    final accent = rejected ? AppColors.error : AppColors.warning;
+
+    return EcoCard(
+      padding: const EdgeInsets.all(16),
+      borderColor: accent.withValues(alpha: 0.45),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 38,
+                width: 38,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  rejected
+                      ? Icons.gpp_bad_outlined
+                      : Icons.verified_user_outlined,
+                  size: 19,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ACCOUNT NOT VERIFIED',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.9,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      rejected
+                          ? 'Your ID was rejected'
+                          : 'Your ID is being checked',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            rejected
+                ? 'Barangay staff could not accept your last ID'
+                      '${reason == null || reason.isEmpty ? '.' : ': $reason'} '
+                      'Upload a clearer photo to try again.'
+                : 'Your sign-up ID is with barangay staff. You can track the '
+                      'collection truck while you wait; waste uploads, pickup '
+                      'requests, complaints and community unlock after '
+                      'approval. Upload a clearer photo below if needed.',
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1.5,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          ImagePickerField(
+            value: _document,
+            onChanged: (value) => setState(() => _document = value),
+            label: rejected
+                ? 'Upload a new ID'
+                : 'Valid ID or proof of residence',
+            helper:
+                'JPG, PNG or PDF · name and Batasan Hills address must be '
+                'readable',
+            documentMode: true,
+            previewHeight: 150,
+          ),
+          const SizedBox(height: 14),
+          PrimaryButton(
+            label: rejected
+                ? 'Resubmit my ID'
+                : user.verificationStatus == VerificationStatus.pending
+                ? 'Replace my ID'
+                : 'Submit ID for review',
+            loading: _busy,
+            onPressed: _submit,
+          ),
+        ],
+      ),
     );
   }
 }

@@ -80,23 +80,29 @@ class _WaveApprovalScreenState extends State<WaveApprovalScreen> {
         builder: (context, snapshot) {
           final all = snapshot.data ?? const <CollectionRequest>[];
           final queue = forCityHall
-              ? all.where((r) => r.cityHallStatus == 'pending').toList()
+              ? all
+                    .where(
+                      (r) =>
+                          r.kind == RequestKind.uncollected &&
+                          r.cityHallStatus == 'pending',
+                    )
+                    .toList()
               : all
                     .where(
                       (r) =>
+                          r.kind == RequestKind.uncollected &&
                           r.cityHallStatus == 'none' &&
                           r.status != RequestStatus.completed &&
                           r.status != RequestStatus.rejected,
                     )
                     .toList();
-          // Residents' uncollected-garbage reports are wave 2 by nature, so
-          // they lead the list.
-          if (!forCityHall) {
-            queue.sort(
-              (a, b) => (b.kind == RequestKind.uncollected ? 1 : 0)
-                  .compareTo(a.kind == RequestKind.uncollected ? 1 : 0),
-            );
-          }
+          // Oldest reports first: the truck missed them days ago, so the
+          // resident has waited longest.
+          queue.sort((a, b) {
+            final aDate = a.createdAt ?? DateTime(2000);
+            final bDate = b.createdAt ?? DateTime(2000);
+            return aDate.compareTo(bDate);
+          });
           final list = _filter(queue);
 
           if (queue.isEmpty) {
@@ -224,7 +230,9 @@ class _RequestCard extends StatelessWidget {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(approve ? 'Na-approve' : 'Na-reject'),
+          content: Text(
+            approve ? 'Approved by City Hall' : 'Declined by City Hall',
+          ),
           backgroundColor: approve ? AppColors.forest : AppColors.error,
         ),
       );
@@ -288,7 +296,7 @@ class _RequestCard extends StatelessWidget {
                   side: const BorderSide(color: AppColors.primary),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
-                child: const Text('Pass to City Hall (Wave 2)'),
+                child: const Text('Verify & pass to City Hall'),
               ),
             )
           else

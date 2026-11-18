@@ -281,7 +281,11 @@ class _InkPainter extends CustomPainter {
     for (final stroke in strokes) {
       if (stroke.length < 2) {
         if (stroke.length == 1) {
-          canvas.drawCircle(stroke.first, 1.4, paint..style = PaintingStyle.fill);
+          canvas.drawCircle(
+            stroke.first,
+            1.4,
+            paint..style = PaintingStyle.fill,
+          );
           paint.style = PaintingStyle.stroke;
         }
         continue;

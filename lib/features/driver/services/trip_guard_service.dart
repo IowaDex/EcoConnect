@@ -9,15 +9,15 @@ enum TripAlertKind { connection, radius }
 
 extension TripAlertKindX on TripAlertKind {
   String get wireName => switch (this) {
-        TripAlertKind.connection => 'connection',
-        TripAlertKind.radius => 'radius',
-      };
+    TripAlertKind.connection => 'connection',
+    TripAlertKind.radius => 'radius',
+  };
 
   /// Field on the live route document staff read.
   String get field => switch (this) {
-        TripAlertKind.connection => 'connectionState',
-        TripAlertKind.radius => 'geofenceState',
-      };
+    TripAlertKind.connection => 'connectionState',
+    TripAlertKind.radius => 'geofenceState',
+  };
 }
 
 /// Watches the two rules a garbage truck must keep while a trip is running:
@@ -50,12 +50,11 @@ class TripGuardService {
     double fromLng,
     double toLat,
     double toLng,
-  ) =>
-      _distance.as(
-        LengthUnit.Meter,
-        LatLng(fromLat, fromLng),
-        LatLng(toLat, toLng),
-      );
+  ) => _distance.as(
+    LengthUnit.Meter,
+    LatLng(fromLat, fromLng),
+    LatLng(toLat, toLng),
+  );
 
   /// True the moment the truck crosses the radius.
   static bool isOutsideRadius(double metres) => metres > radiusMeters;

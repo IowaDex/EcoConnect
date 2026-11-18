@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:eco_connect/features/recycling/models/drop_off.dart';
 import 'package:eco_connect/features/route/models/route_plan.dart';
-import 'package:eco_connect/features/recycling/services/recycling_service.dart';
 import 'package:eco_connect/features/route/services/route_service.dart';
 import 'package:eco_connect/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -27,7 +25,6 @@ void main() {
 
   late FirebaseFirestore db;
   late RouteService routes;
-  late RecyclingService recycling;
 
   setUpAll(() async {
     await dotenv.load(fileName: '.env');
@@ -45,7 +42,6 @@ void main() {
         : '127.0.0.1';
     db.useFirestoreEmulator(host, 8080);
     routes = RouteService();
-    recycling = RecyclingService();
   });
 
   tearDownAll(() async {
@@ -55,13 +51,6 @@ void main() {
     for (final uid in [driverId, secondDriverId, residentId]) {
       await db.collection('routes').doc(uid).delete();
       await db.collection('users').doc(uid).delete();
-    }
-    final ledger = await db
-        .collection('dropOffs')
-        .where('residentId', isEqualTo: residentId)
-        .get();
-    for (final doc in ledger.docs) {
-      await doc.reference.delete();
     }
   });
 
@@ -79,7 +68,10 @@ void main() {
       stops: const [
         RouteStop(name: 'Purok 1', latitude: 14.6001, longitude: 120.9842),
         RouteStop(
-            name: 'Public market', latitude: 14.6032, longitude: 120.9880),
+          name: 'Public market',
+          latitude: 14.6032,
+          longitude: 120.9880,
+        ),
       ],
       createdBy: 'it-staff',
     );
@@ -102,8 +94,9 @@ void main() {
     }
   }
 
-  testWidgets('full route lifecycle: assign -> activate -> heartbeat -> end',
-      (tester) async {
+  testWidgets('full route lifecycle: assign -> activate -> heartbeat -> end', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       final plan = await assignPlan(driver: driverId);
       expect(plan.status, RoutePlanStatus.scheduled);
@@ -143,8 +136,11 @@ void main() {
           longitude: 120.9842,
         ),
       );
-      expect(secondStart, isNotNull,
-          reason: 'a live route must reject a second start');
+      expect(
+        secondStart,
+        isNotNull,
+        reason: 'a live route must reject a second start',
+      );
 
       await routes.pushPosition(driverId, 14.6010, 120.9860);
       final moved = await db.collection('routes').doc(driverId).get();
@@ -159,8 +155,9 @@ void main() {
     });
   });
 
-  testWidgets('a driver cannot activate another driver assignment',
-      (tester) async {
+  testWidgets('a driver cannot activate another driver assignment', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       final plan = await assignPlan(driver: driverId);
 
@@ -173,86 +170,24 @@ void main() {
           longitude: 120.9,
         ),
       );
-      expect(rejected, isNotNull,
-          reason: 'another driver must not be able to take the assignment');
+      expect(
+        rejected,
+        isNotNull,
+        reason: 'another driver must not be able to take the assignment',
+      );
 
       final untouched = await db.collection('routePlans').doc(plan.id).get();
       expect(untouched.data()!['status'], 'scheduled');
 
-      final strayRoute = await db.collection('routes').doc(secondDriverId).get();
-      expect(strayRoute.exists, isFalse,
-          reason: 'a rejected activation must not write a route document');
-    });
-  });
-
-  testWidgets('drop-off credits points atomically and writes a ledger entry',
-      (tester) async {
-    await tester.runAsync(() async {
-      await db.collection('users').doc(residentId).set({
-        'name': 'Integration Resident',
-        'email': 'it-resident@example.com',
-        'role': 'user',
-        'accountStatus': 'active',
-      });
-
-      final plastic = await recycling.recordDropOff(
-        residentId: residentId,
-        residentName: 'Integration Resident',
-        residentEmail: 'it-resident@example.com',
-        staffId: 'it-staff',
-        staffName: 'Integration Staff',
-        material: RecyclableMaterial.plastic,
-        weightKg: 2.5,
-      );
-      expect(plastic, 25);
-
-      final glass = await recycling.recordDropOff(
-        residentId: residentId,
-        residentName: 'Integration Resident',
-        staffId: 'it-staff',
-        staffName: 'Integration Staff',
-        material: RecyclableMaterial.glass,
-        weightKg: 1,
-      );
-      expect(glass, 5);
-
-      final user = await db.collection('users').doc(residentId).get();
-      expect(user.data()!['points'], 30);
-
-      final ledger = await db
-          .collection('dropOffs')
-          .where('residentId', isEqualTo: residentId)
+      final strayRoute = await db
+          .collection('routes')
+          .doc(secondDriverId)
           .get();
-      expect(ledger.docs.length, 2);
       expect(
-        ledger.docs.map((doc) => doc.data()['points']).toList()..sort(),
-        [5, 25],
+        strayRoute.exists,
+        isFalse,
+        reason: 'a rejected activation must not write a route document',
       );
-    });
-  });
-
-  testWidgets('points are refused for a non-resident account', (tester) async {
-    await tester.runAsync(() async {
-      await db.collection('users').doc(secondDriverId).set({
-        'name': 'Other Driver',
-        'role': 'driver',
-      });
-
-      final rejected = await captureError(
-        () => recycling.recordDropOff(
-          residentId: secondDriverId,
-          residentName: 'Other Driver',
-          staffId: 'it-staff',
-          staffName: 'Integration Staff',
-          material: RecyclableMaterial.metal,
-          weightKg: 1,
-        ),
-      );
-      expect(rejected, isNotNull,
-          reason: 'only resident accounts may earn points');
-
-      final user = await db.collection('users').doc(secondDriverId).get();
-      expect(user.data()!.containsKey('points'), isFalse);
     });
   });
 }

@@ -89,20 +89,20 @@ abstract final class AppColors {
 
   /// Soft elevation used by cards. Kept subtle so dense dashboards stay calm.
   static List<BoxShadow> get cardShadow => [
-        BoxShadow(
-          color: darkGreen.withValues(alpha: 0.06),
-          blurRadius: 18,
-          offset: const Offset(0, 6),
-        ),
-      ];
+    BoxShadow(
+      color: darkGreen.withValues(alpha: 0.06),
+      blurRadius: 18,
+      offset: const Offset(0, 6),
+    ),
+  ];
 
   /// Deeper elevation for a card under the pointer. The extra blur and offset
   /// read as the surface rising off the page.
   static List<BoxShadow> get cardShadowHover => [
-        BoxShadow(
-          color: darkGreen.withValues(alpha: 0.13),
-          blurRadius: 28,
-          offset: const Offset(0, 12),
-        ),
-      ];
+    BoxShadow(
+      color: darkGreen.withValues(alpha: 0.13),
+      blurRadius: 28,
+      offset: const Offset(0, 12),
+    ),
+  ];
 }

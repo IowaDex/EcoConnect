@@ -174,8 +174,11 @@ class _PsgcPickerSheetState extends State<_PsgcPickerSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded,
-                        size: 20, color: AppColors.inkMuted),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 20,
+                      color: AppColors.inkMuted,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -188,8 +191,11 @@ class _PsgcPickerSheetState extends State<_PsgcPickerSheet> {
                 style: const TextStyle(fontSize: 13, color: AppColors.forest),
                 decoration: const InputDecoration(
                   hintText: 'Search',
-                  prefixIcon: Icon(Icons.search_rounded,
-                      size: 18, color: AppColors.inkMuted),
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    size: 18,
+                    color: AppColors.inkMuted,
+                  ),
                   prefixIconConstraints: BoxConstraints(minWidth: 42),
                 ),
               ),
@@ -263,10 +269,8 @@ class _PsgcPickerSheetState extends State<_PsgcPickerSheet> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
       itemCount: options.length,
-      separatorBuilder: (_, __) => Divider(
-        height: 1,
-        color: AppColors.sage.withValues(alpha: 0.4),
-      ),
+      separatorBuilder: (_, __) =>
+          Divider(height: 1, color: AppColors.sage.withValues(alpha: 0.4)),
       itemBuilder: (context, index) {
         final option = options[index];
         return ListTile(

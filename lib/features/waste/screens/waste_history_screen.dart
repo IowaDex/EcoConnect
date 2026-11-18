@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -18,8 +20,35 @@ import '../models/waste_submission.dart';
 import '../services/waste_service.dart';
 
 /// The resident's own waste uploads and their validation status.
-class WasteHistoryScreen extends StatelessWidget {
+class WasteHistoryScreen extends StatefulWidget {
   const WasteHistoryScreen({super.key});
+
+  @override
+  State<WasteHistoryScreen> createState() => _WasteHistoryScreenState();
+}
+
+class _WasteHistoryScreenState extends State<WasteHistoryScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<WasteSubmission> _filter(List<WasteSubmission> items) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((w) {
+      return w.category.label.toLowerCase().contains(q) ||
+          w.location.toLowerCase().contains(q) ||
+          w.description.toLowerCase().contains(q) ||
+          w.status.label.toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,8 +85,8 @@ class WasteHistoryScreen extends StatelessWidget {
                       message: AppFeedback.describe(snapshot.error!),
                     );
                   }
-                  final items = snapshot.data ?? const <WasteSubmission>[];
-                  if (items.isEmpty) {
+                  final all = snapshot.data ?? const <WasteSubmission>[];
+                  if (all.isEmpty) {
                     return EmptyState(
                       icon: Icons.add_a_photo_outlined,
                       title: 'No uploads yet',
@@ -67,14 +96,77 @@ class WasteHistoryScreen extends StatelessWidget {
                       onAction: () => context.go('/waste-upload'),
                     );
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 26),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) => _WasteHistoryCard(
-                      submission: items[i],
-                      onTap: () => _openDetail(context, items[i]),
-                    ),
+                  final items = _filter(all);
+                  final page = clampPage(_page, items.length, _pageSize);
+                  final visible = pageSlice(items, page, _pageSize);
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                        child: EcoSearchField(
+                          controller: _search,
+                          hint: 'Search waste type, place or status',
+                          onChanged: (value) => setState(() {
+                            _query = value;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 2),
+                        child: EcoResultCount(
+                          shown: items.length,
+                          total: all.length,
+                          singular: 'upload',
+                          plural: 'uploads',
+                        ),
+                      ),
+                      Expanded(
+                        child: items.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(28),
+                                  child: Text(
+                                    'No upload matches your search.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  8,
+                                  18,
+                                  10,
+                                ),
+                                itemCount: visible.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, i) => _WasteHistoryCard(
+                                  submission: visible[i],
+                                  onTap: () => _openDetail(context, visible[i]),
+                                ),
+                              ),
+                      ),
+                      if (items.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                          child: EcoPaginationBar(
+                            page: page,
+                            pageSize: _pageSize,
+                            total: items.length,
+                            onPageChanged: (next) =>
+                                setState(() => _page = next),
+                            onPageSizeChanged: (size) => setState(() {
+                              _pageSize = size;
+                              _page = 0;
+                            }),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),

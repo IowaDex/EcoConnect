@@ -112,8 +112,62 @@ class ManualService {
       dedupeKey: 'manual_${ref.id}_v1',
     );
 
+    // Automatic synchronization: if City Hall asked for this manual, the
+    // upload closes the request without a second manual step.
+    await _autoFulfillRequest(
+      manualId: ref.id,
+      title: title.trim(),
+      byName: byName,
+    );
+
     return ref.id;
   }
+
+  /// Links a new manual to the open request with the closest title. Best
+  /// effort: the manual is already saved, so a failed match must not surface
+  /// as an upload error.
+  Future<void> _autoFulfillRequest({
+    required String manualId,
+    required String title,
+    required String byName,
+  }) async {
+    try {
+      final pending = await _requests
+          .where('status', isEqualTo: ManualRequestStatus.pending.name)
+          .get();
+      final wanted = _normalise(title);
+      for (final doc in pending.docs) {
+        final requested = _normalise('${doc.data()['title'] ?? ''}');
+        if (requested.isEmpty) continue;
+        if (!wanted.contains(requested) && !requested.contains(wanted)) {
+          continue;
+        }
+        await _requests.doc(doc.id).update({
+          'status': ManualRequestStatus.fulfilled.name,
+          'manualId': manualId,
+          'fulfilledAt': FieldValue.serverTimestamp(),
+          'fulfilledByName': '$byName (auto-linked)',
+        });
+        await _notifications.notifyCityHall(
+          title: 'Manual request fulfilled · ${doc.data()['code'] ?? ''}',
+          body: '$byName uploaded "$title" and it was linked automatically.',
+          type: AppNotificationType.system,
+          data: {
+            'manualRequestId': doc.id,
+            'manualId': manualId,
+            'kind': 'manualRequestFulfilled',
+          },
+          dedupeKey: 'manual_request_${doc.id}_auto',
+        );
+        return;
+      }
+    } catch (_) {
+      // The request stays open; Iswim can still link it from the request desk.
+    }
+  }
+
+  static String _normalise(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
 
   /// Publishes the next revision. The version number is allocated inside a
   /// transaction so two devices cannot both write "version 2".

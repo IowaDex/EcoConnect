@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_pagination.dart';
@@ -788,6 +789,8 @@ class MemoInboxScreen extends StatefulWidget {
 
 class _MemoInboxScreenState extends State<MemoInboxScreen> {
   int _tab = 0;
+  int _page = 0;
+  int _pageSize = 10;
 
   final _search = TextEditingController();
   String _query = '';
@@ -812,7 +815,10 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
 
   void _clearSearch() {
     _search.clear();
-    setState(() => _query = '');
+    setState(() {
+      _query = '';
+      _page = 0;
+    });
   }
 
   void _switchTab(int value) {
@@ -821,6 +827,7 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
     setState(() {
       _tab = value;
       _query = '';
+      _page = 0;
     });
   }
 
@@ -893,6 +900,8 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
                     final source = inboxTab ? inbox : sent;
                     final searching = _query.trim().isNotEmpty;
                     final visible = _filter(source);
+                    final page = clampPage(_page, visible.length, _pageSize);
+                    final paged = pageSlice(visible, page, _pageSize);
 
                     return Column(
                       children: [
@@ -907,15 +916,15 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
                             } else {
                               // The inbox is opened from three different
                               // consoles, so go back to the caller's own home.
-                              final role =
-                                  context.read<AuthProvider>().currentUser?.role;
-                              context.go(
-                                switch (role) {
-                                  UserRole.iswim => '/iswim',
-                                  UserRole.admin => '/admin-dashboard',
-                                  _ => '/cityhall',
-                                },
-                              );
+                              final role = context
+                                  .read<AuthProvider>()
+                                  .currentUser
+                                  ?.role;
+                              context.go(switch (role) {
+                                UserRole.iswim => '/iswim',
+                                UserRole.admin => '/admin-dashboard',
+                                _ => '/cityhall',
+                              });
                             }
                           },
                         ),
@@ -957,8 +966,10 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
                             hint: inboxTab
                                 ? 'Search subject, sender or kind'
                                 : 'Search subject, recipient or kind',
-                            onChanged: (value) =>
-                                setState(() => _query = value),
+                            onChanged: (value) => setState(() {
+                              _query = value;
+                              _page = 0;
+                            }),
                           ),
                         ),
                         AnimatedSize(
@@ -985,7 +996,7 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
                         const SizedBox(height: EcoSpace.sm),
                         Expanded(
                           child: _MemoList(
-                            memos: visible,
+                            memos: paged,
                             loading: inboxTab ? inboxLoading : sentLoading,
                             error: inboxTab ? inboxSnap.error : sentSnap.error,
                             emptyTitle: searching
@@ -1018,6 +1029,26 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
                                 : Icons.mail_outline_rounded,
                           ),
                         ),
+                        if (visible.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              20,
+                              0,
+                              20,
+                              EcoSpace.sm,
+                            ),
+                            child: EcoPaginationBar(
+                              page: page,
+                              pageSize: _pageSize,
+                              total: visible.length,
+                              onPageChanged: (next) =>
+                                  setState(() => _page = next),
+                              onPageSizeChanged: (size) => setState(() {
+                                _pageSize = size;
+                                _page = 0;
+                              }),
+                            ),
+                          ),
                       ],
                     );
                   },

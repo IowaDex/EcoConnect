@@ -47,7 +47,8 @@ class _RunBroadcastHostState extends State<RunBroadcastHost> {
   }
 
   void _onRoute(CollectionRoute? route) {
-    final live = route?.status == RouteStatus.inTransit ||
+    final live =
+        route?.status == RouteStatus.inTransit ||
         route?.status == RouteStatus.delayed;
     if (!live) {
       _endRun();
@@ -76,7 +77,8 @@ class _RunBroadcastHostState extends State<RunBroadcastHost> {
     // live and Firestore queues the write.
     if (!mounted ||
         !location.hasLocation ||
-        (location.hasLocationIssue && location.issue != LocationIssue.offline)) {
+        (location.hasLocationIssue &&
+            location.issue != LocationIssue.offline)) {
       return;
     }
     RouteService()

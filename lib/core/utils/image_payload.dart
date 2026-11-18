@@ -28,11 +28,11 @@ class UploadPayload {
   double get sizeKb => bytes / 1024;
 
   Map<String, dynamic> toMap() => {
-        'dataUrl': dataUrl,
-        'fileName': fileName,
-        'mimeType': mimeType,
-        'bytes': bytes,
-      };
+    'dataUrl': dataUrl,
+    'fileName': fileName,
+    'mimeType': mimeType,
+    'bytes': bytes,
+  };
 
   static UploadPayload? fromMap(dynamic raw) {
     if (raw is! Map) return null;

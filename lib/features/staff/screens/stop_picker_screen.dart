@@ -13,11 +13,7 @@ import '../../../core/widgets/primary_button.dart';
 /// Lets Iswim lay out the collection route by tapping the map. Each tap adds
 /// an ordered stop that both the driver and the residents will see.
 class StopPickerScreen extends StatefulWidget {
-  const StopPickerScreen({
-    super.key,
-    required this.initialStops,
-    this.zone,
-  });
+  const StopPickerScreen({super.key, required this.initialStops, this.zone});
 
   final List<RouteStop> initialStops;
   final String? zone;
@@ -46,10 +42,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
       if (!location.hasLocation) location.getCurrentLocation();
       final first = _stops.where((stop) => stop.hasCoordinates).firstOrNull;
       if (first != null) {
-        _mapController.move(
-          LatLng(first.latitude!, first.longitude!),
-          15,
-        );
+        _mapController.move(LatLng(first.latitude!, first.longitude!), 15);
       } else if (location.hasLocation) {
         _mapController.move(
           LatLng(location.latitude!, location.longitude!),
@@ -115,9 +108,9 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _addStop(LatLng point) {
@@ -157,8 +150,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
             child: const Text('Save'),
           ),
         ],
@@ -175,8 +167,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
   Widget build(BuildContext context) {
     final mapped = <LatLng>[
       for (final stop in _stops)
-        if (stop.hasCoordinates)
-          LatLng(stop.latitude!, stop.longitude!),
+        if (stop.hasCoordinates) LatLng(stop.latitude!, stop.longitude!),
     ];
 
     return Scaffold(
@@ -193,8 +184,11 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                     borderRadius: BorderRadius.circular(20),
                     child: const Padding(
                       padding: EdgeInsets.all(6),
-                      child: Icon(Icons.arrow_back_ios_new_rounded,
-                          size: 16, color: AppColors.inkMuted),
+                      child: Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 16,
+                        color: AppColors.inkMuted,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -225,10 +219,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                   if (_stops.isNotEmpty)
                     TextButton(
                       onPressed: () => _removeAt(_stops.length - 1),
-                      child: const Text(
-                        'Undo',
-                        style: TextStyle(fontSize: 10),
-                      ),
+                      child: const Text('Undo', style: TextStyle(fontSize: 10)),
                     ),
                 ],
               ),
@@ -261,8 +252,10 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                             for (var i = 0; i < _stops.length; i++)
                               if (_stops[i].hasCoordinates)
                                 Marker(
-                                  point: LatLng(_stops[i].latitude!,
-                                      _stops[i].longitude!),
+                                  point: LatLng(
+                                    _stops[i].latitude!,
+                                    _stops[i].longitude!,
+                                  ),
                                   width: 30,
                                   height: 30,
                                   child: _StopPin(index: i + 1),
@@ -287,8 +280,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color:
-                                    AppColors.forest.withValues(alpha: 0.16),
+                                color: AppColors.forest.withValues(alpha: 0.16),
                                 blurRadius: 14,
                                 offset: const Offset(0, 5),
                               ),
@@ -296,8 +288,11 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.search_rounded,
-                                  size: 18, color: AppColors.inkMuted),
+                              const Icon(
+                                Icons.search_rounded,
+                                size: 18,
+                                color: AppColors.inkMuted,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: TextField(
@@ -320,15 +315,18 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                                     height: 14,
                                     width: 14,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2),
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                 )
                               else
                                 IconButton(
                                   onPressed: () =>
                                       _search(_searchController.text),
-                                  icon: const Icon(Icons.arrow_forward_rounded,
-                                      size: 18),
+                                  icon: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 18,
+                                  ),
                                   tooltip: 'Search',
                                 ),
                             ],
@@ -342,11 +340,13 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                             style: OutlinedButton.styleFrom(
                               backgroundColor: AppColors.creamBright,
                               side: const BorderSide(color: AppColors.sage),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
-                            icon: const Icon(Icons.my_location_rounded,
-                                size: 15, color: AppColors.forest),
+                            icon: const Icon(
+                              Icons.my_location_rounded,
+                              size: 15,
+                              color: AppColors.forest,
+                            ),
                             label: const Text(
                               'Get Zone / Barangay address',
                               style: TextStyle(
@@ -396,8 +396,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                                     size: 16,
                                     color: AppColors.forest,
                                   ),
-                                  onTap: () =>
-                                      _moveTo(result, addStop: true),
+                                  onTap: () => _moveTo(result, addStop: true),
                                 );
                               },
                             ),
@@ -479,8 +478,7 @@ class _StopPickerScreenState extends State<StopPickerScreen> {
                           const SizedBox(height: 10),
                           PrimaryButton(
                             label: 'Use these stops',
-                            onPressed: () =>
-                                Navigator.of(context).pop(_stops),
+                            onPressed: () => Navigator.of(context).pop(_stops),
                             height: 44,
                           ),
                         ],
@@ -571,8 +569,11 @@ class _StopChip extends StatelessWidget {
             customBorder: const CircleBorder(),
             child: const Padding(
               padding: EdgeInsets.all(4),
-              child: Icon(Icons.close_rounded,
-                  size: 13, color: AppColors.inkMuted),
+              child: Icon(
+                Icons.close_rounded,
+                size: 13,
+                color: AppColors.inkMuted,
+              ),
             ),
           ),
         ],

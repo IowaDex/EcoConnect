@@ -18,14 +18,15 @@ class CommunityPostService {
 
   Stream<List<CommunityPost>> watchFeed() {
     return _col.snapshots().map((snap) {
-      final items = snap.docs
-          .map((doc) => CommunityPost.fromDoc(doc.id, doc.data()))
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.createdAt ?? DateTime(2000);
-          final bDate = b.createdAt ?? DateTime(2000);
-          return bDate.compareTo(aDate);
-        });
+      final items =
+          snap.docs
+              .map((doc) => CommunityPost.fromDoc(doc.id, doc.data()))
+              .toList()
+            ..sort((a, b) {
+              final aDate = a.createdAt ?? DateTime(2000);
+              final bDate = b.createdAt ?? DateTime(2000);
+              return bDate.compareTo(aDate);
+            });
       return items;
     });
   }
@@ -38,7 +39,8 @@ class CommunityPostService {
     });
   }
 
-  Future<String> create({    required String authorId,
+  Future<String> create({
+    required String authorId,
     required String authorName,
     required String authorRole,
     required String body,

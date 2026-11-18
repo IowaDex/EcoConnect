@@ -13,7 +13,9 @@ class LocationService {
   }
 
   LocationSettings _settings(bool background) {
-    if (!background || kIsWeb) return const LocationSettings(distanceFilter: 20);
+    if (!background || kIsWeb) {
+      return const LocationSettings(distanceFilter: 20);
+    }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return AndroidSettings(
@@ -96,10 +98,7 @@ class LocationService {
           return await Geolocator.getCurrentPosition(
             timeLimit: const Duration(seconds: 10),
             forceAndroidLocationManager: true,
-          ).timeout(
-            const Duration(seconds: 12),
-            onTimeout: () => lastKnown,
-          );
+          ).timeout(const Duration(seconds: 12), onTimeout: () => lastKnown);
         } catch (e) {
           return lastKnown;
         }

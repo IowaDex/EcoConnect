@@ -11,18 +11,18 @@ enum RoutePlanStatus { scheduled, active, completed, cancelled }
 
 extension RoutePlanStatusX on RoutePlanStatus {
   String get label => switch (this) {
-        RoutePlanStatus.scheduled => 'Scheduled',
-        RoutePlanStatus.active => 'Running',
-        RoutePlanStatus.completed => 'Completed',
-        RoutePlanStatus.cancelled => 'Cancelled',
-      };
+    RoutePlanStatus.scheduled => 'Scheduled',
+    RoutePlanStatus.active => 'Running',
+    RoutePlanStatus.completed => 'Completed',
+    RoutePlanStatus.cancelled => 'Cancelled',
+  };
 
   Color get color => switch (this) {
-        RoutePlanStatus.scheduled => AppColors.moss,
-        RoutePlanStatus.active => AppColors.lime,
-        RoutePlanStatus.completed => AppColors.sage,
-        RoutePlanStatus.cancelled => AppColors.inkMuted,
-      };
+    RoutePlanStatus.scheduled => AppColors.moss,
+    RoutePlanStatus.active => AppColors.lime,
+    RoutePlanStatus.completed => AppColors.sage,
+    RoutePlanStatus.cancelled => AppColors.inkMuted,
+  };
 
   static RoutePlanStatus fromName(String? name) =>
       RoutePlanStatus.values.firstWhere(
@@ -50,12 +50,21 @@ String routeDateKey(DateTime date) =>
     '${date.year}-${_two(date.month)}-${_two(date.day)}';
 
 /// `06:30` from a DateTime, used for shift windows.
-String routeTimeKey(DateTime time) =>
-    '${_two(time.hour)}:${_two(time.minute)}';
+String routeTimeKey(DateTime time) => '${_two(time.hour)}:${_two(time.minute)}';
 
 const _months = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 String routeDateLabel(DateTime date) =>
@@ -85,26 +94,25 @@ class RouteStop {
 
   bool get hasCoordinates => latitude != null && longitude != null;
 
-  bool get hasDetails =>
-      address != null || schedule != null || notes != null;
+  bool get hasDetails => address != null || schedule != null || notes != null;
 
   Map<String, dynamic> toMap() => {
-        'name': name,
-        'lat': latitude,
-        'lng': longitude,
-        if (address != null) 'address': address,
-        if (schedule != null) 'schedule': schedule,
-        if (notes != null) 'notes': notes,
-      };
+    'name': name,
+    'lat': latitude,
+    'lng': longitude,
+    if (address != null) 'address': address,
+    if (schedule != null) 'schedule': schedule,
+    if (notes != null) 'notes': notes,
+  };
 
   RouteStop renamed(String value) => RouteStop(
-        name: value,
-        latitude: latitude,
-        longitude: longitude,
-        address: address,
-        schedule: schedule,
-        notes: notes,
-      );
+    name: value,
+    latitude: latitude,
+    longitude: longitude,
+    address: address,
+    schedule: schedule,
+    notes: notes,
+  );
 
   static RouteStop fromDynamic(dynamic raw) {
     if (raw is String) {
@@ -224,35 +232,35 @@ class RoutePlan {
   /// Copy with a different stop list. Used when assigned collection points are
   /// merged into the plan at read time.
   RoutePlan withStops(List<RouteStop> stops) => RoutePlan(
-        id: id,
-        driverId: driverId,
-        driverName: driverName,
-        zone: zone,
-        date: date,
-        windowStart: windowStart,
-        windowEnd: windowEnd,
-        stops: stops,
-        status: status,
-        adHoc: adHoc,
-        createdBy: createdBy,
-        createdAt: createdAt,
-        activatedAt: activatedAt,
-        completedAt: completedAt,
-      );
+    id: id,
+    driverId: driverId,
+    driverName: driverName,
+    zone: zone,
+    date: date,
+    windowStart: windowStart,
+    windowEnd: windowEnd,
+    stops: stops,
+    status: status,
+    adHoc: adHoc,
+    createdBy: createdBy,
+    createdAt: createdAt,
+    activatedAt: activatedAt,
+    completedAt: completedAt,
+  );
 
   Map<String, dynamic> toMap() => {
-        'driverId': driverId,
-        'driverName': driverName,
-        'zone': zone,
-        'date': date,
-        'windowStart': windowStart,
-        'windowEnd': windowEnd,
-        'stops': stops.map((stop) => stop.toMap()).toList(),
-        'status': status.name,
-        'adHoc': adHoc,
-        'createdBy': createdBy,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+    'driverId': driverId,
+    'driverName': driverName,
+    'zone': zone,
+    'date': date,
+    'windowStart': windowStart,
+    'windowEnd': windowEnd,
+    'stops': stops.map((stop) => stop.toMap()).toList(),
+    'status': status.name,
+    'adHoc': adHoc,
+    'createdBy': createdBy,
+    'createdAt': FieldValue.serverTimestamp(),
+  };
 
   static RoutePlan fromDoc(String id, Map<String, dynamic> data) {
     final rawStops = data['stops'];

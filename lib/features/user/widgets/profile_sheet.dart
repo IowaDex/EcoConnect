@@ -2,10 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 
+import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../../core/theme/app_colors.dart';
@@ -190,7 +192,66 @@ class _ProfileSheetState extends State<_ProfileSheet> {
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  context.push('/verify-identity');
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Ink(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.mint,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.sage),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        user?.verificationStatus.icon ?? Icons.badge_outlined,
+                        size: 18,
+                        color:
+                            user?.verificationStatus.color ?? AppColors.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Verify my identity',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.forest,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        user?.verificationStatus.label ?? 'Upload ID',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color:
+                              user?.verificationStatus.color ??
+                              AppColors.inkMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 17,
+                        color: AppColors.moss,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             _ProfileField(
               label: 'Address',
               hint: 'Add your address',

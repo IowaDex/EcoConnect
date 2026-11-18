@@ -22,9 +22,7 @@ void main() async {
   await dotenv.load(fileName: '.env');
 
   BootProgress.report('Connecting to Firebase');
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Local testing only: flutter run --dart-define=USE_EMULATOR=true
   if (const bool.fromEnvironment('USE_EMULATOR')) {

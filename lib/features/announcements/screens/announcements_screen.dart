@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
@@ -31,6 +33,8 @@ class AnnouncementsScreen extends StatefulWidget {
 class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   final _service = AnnouncementService();
   AnnouncementCategory? _filter;
+  int _page = 0;
+  int _pageSize = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +65,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             ),
             _CategoryFilter(
               selected: _filter,
-              onChanged: (value) => setState(() => _filter = value),
+              onChanged: (value) => setState(() {
+                _filter = value;
+                _page = 0;
+              }),
             ),
             const SizedBox(height: 6),
             Expanded(
@@ -97,21 +104,46 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       // same thing just reads as a duplicate.
                     );
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 100),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
-                    itemBuilder: (context, i) {
-                      final item = items[i];
-                      return _AnnouncementCard(
-                        announcement: item,
-                        canManage: isStaff,
-                        onTap: () => _openDetail(context, item, isStaff),
-                        onEdit: () => _openEditor(context, existing: item),
-                        onToggle: () => _toggle(context, item),
-                        onDelete: () => _delete(context, item),
-                      );
-                    },
+                  final page = clampPage(_page, items.length, _pageSize);
+                  final visible = pageSlice(items, page, _pageSize);
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 14),
+                          itemBuilder: (context, i) {
+                            final item = visible[i];
+                            return _AnnouncementCard(
+                              announcement: item,
+                              canManage: isStaff,
+                              onTap: () => _openDetail(context, item, isStaff),
+                              onEdit: () =>
+                                  _openEditor(context, existing: item),
+                              onToggle: () => _toggle(context, item),
+                              onDelete: () => _delete(context, item),
+                            );
+                          },
+                        ),
+                      ),
+                      if (items.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                          child: EcoPaginationBar(
+                            page: page,
+                            pageSize: _pageSize,
+                            total: items.length,
+                            onPageChanged: (next) =>
+                                setState(() => _page = next),
+                            onPageSizeChanged: (size) => setState(() {
+                              _pageSize = size;
+                              _page = 0;
+                            }),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),

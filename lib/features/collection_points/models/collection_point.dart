@@ -11,13 +11,13 @@ extension CollectionPointStatusX on CollectionPointStatus {
   String get label =>
       this == CollectionPointStatus.active ? 'Active' : 'Inactive';
 
-  Color get color =>
-      this == CollectionPointStatus.active ? AppColors.primary : AppColors.inkMuted;
+  Color get color => this == CollectionPointStatus.active
+      ? AppColors.primary
+      : AppColors.inkMuted;
 
-  static CollectionPointStatus fromName(String? name) =>
-      name == 'inactive'
-          ? CollectionPointStatus.inactive
-          : CollectionPointStatus.active;
+  static CollectionPointStatus fromName(String? name) => name == 'inactive'
+      ? CollectionPointStatus.inactive
+      : CollectionPointStatus.active;
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -68,7 +68,8 @@ class CollectionPoint {
       scheduleDays.isNotEmpty || (scheduleTime?.isNotEmpty ?? false);
 
   String get scheduleLabel {
-    if (scheduleDays.isEmpty && (scheduleTime == null || scheduleTime!.isEmpty)) {
+    if (scheduleDays.isEmpty &&
+        (scheduleTime == null || scheduleTime!.isEmpty)) {
       return 'No schedule set';
     }
     final days = scheduleDays.isEmpty ? 'Any day' : scheduleDays.join(', ');
@@ -79,21 +80,21 @@ class CollectionPoint {
   }
 
   Map<String, dynamic> toMap() => {
-        'name': name.trim(),
-        'address': address.trim(),
-        'lat': latitude,
-        'lng': longitude,
-        'barangay': barangay,
-        'zone': zone,
-        'driverId': driverId,
-        'driverName': driverName,
-        'scheduleDays': scheduleDays,
-        'scheduleTime': scheduleTime,
-        'category': category?.name,
-        'status': status.name,
-        'notes': notes,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+    'name': name.trim(),
+    'address': address.trim(),
+    'lat': latitude,
+    'lng': longitude,
+    'barangay': barangay,
+    'zone': zone,
+    'driverId': driverId,
+    'driverName': driverName,
+    'scheduleDays': scheduleDays,
+    'scheduleTime': scheduleTime,
+    'category': category?.name,
+    'status': status.name,
+    'notes': notes,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
 
   static CollectionPoint fromDoc(String id, Map<String, dynamic> data) {
     final rawDays = data['scheduleDays'];

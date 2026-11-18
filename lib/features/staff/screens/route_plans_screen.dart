@@ -23,6 +23,26 @@ class RoutePlansScreen extends StatefulWidget {
   State<RoutePlansScreen> createState() => _RoutePlansScreenState();
 }
 
+/// Standard duty windows. Iswim can still fine-tune the times, but the
+/// presets keep the fleet on the same three shifts every day.
+const _dutyShifts = <({String label, TimeOfDay start, TimeOfDay end})>[
+  (
+    label: 'Morning',
+    start: TimeOfDay(hour: 6, minute: 0),
+    end: TimeOfDay(hour: 12, minute: 0),
+  ),
+  (
+    label: 'Afternoon',
+    start: TimeOfDay(hour: 12, minute: 0),
+    end: TimeOfDay(hour: 18, minute: 0),
+  ),
+  (
+    label: 'Evening',
+    start: TimeOfDay(hour: 18, minute: 0),
+    end: TimeOfDay(hour: 22, minute: 0),
+  ),
+];
+
 class _RoutePlansScreenState extends State<RoutePlansScreen> {
   final _routeService = RouteService();
   AuthProvider get _auth => context.read<AuthProvider>();
@@ -264,13 +284,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
       return;
     }
     final role = context.read<AuthProvider>().currentUser?.role;
-    context.go(
-      switch (role) {
-        UserRole.iswim => '/iswim',
-        UserRole.cityHall => '/cityhall',
-        _ => '/admin-dashboard',
-      },
-    );
+    context.go(switch (role) {
+      UserRole.iswim => '/iswim',
+      UserRole.cityHall => '/cityhall',
+      _ => '/admin-dashboard',
+    });
   }
 
   @override
@@ -342,6 +360,11 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
                 },
                 onPickStart: () => _pickTime(isStart: true),
                 onPickEnd: () => _pickTime(isStart: false),
+                onShiftPreset: (shift) => setState(() {
+                  _start = shift.start;
+                  _end = shift.end;
+                  _windowError = null;
+                }),
                 onPickDate: _pickDate,
                 onPickStops: _pickStops,
                 onRemoveStop: (index) =>
@@ -454,6 +477,7 @@ class _AssignCard extends StatelessWidget {
     required this.onDriverChanged,
     required this.onPickStart,
     required this.onPickEnd,
+    required this.onShiftPreset,
     required this.onPickDate,
     required this.onPickStops,
     required this.onRemoveStop,
@@ -473,6 +497,8 @@ class _AssignCard extends StatelessWidget {
   final ValueChanged<String?> onDriverChanged;
   final VoidCallback onPickStart;
   final VoidCallback onPickEnd;
+  final ValueChanged<({String label, TimeOfDay start, TimeOfDay end})>
+  onShiftPreset;
   final VoidCallback onPickDate;
   final VoidCallback onPickStops;
   final ValueChanged<int> onRemoveStop;
@@ -567,6 +593,35 @@ class _AssignCard extends StatelessWidget {
             label: 'Duty date',
             value: routeDateLabel(date),
             onTap: onPickDate,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Fixed shift',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 7,
+            children: [
+              for (final shift in _dutyShifts)
+                ChoiceChip(
+                  label: Text(
+                    '${shift.label} · ${_label(shift.start)}–'
+                    '${_label(shift.end)}',
+                    style: const TextStyle(fontSize: 9.5),
+                  ),
+                  selected:
+                      start?.hour == shift.start.hour &&
+                      start?.minute == shift.start.minute &&
+                      end?.hour == shift.end.hour &&
+                      end?.minute == shift.end.minute,
+                  onSelected: (_) => onShiftPreset(shift),
+                ),
+            ],
           ),
           const SizedBox(height: 10),
           Row(

@@ -44,14 +44,16 @@ class LocationProvider extends ChangeNotifier {
     LocationRepository? repository,
     LocationService? service,
     Stream<Object?>? connectivityChanges,
-  })  : _locationRepository = repository ?? LocationRepository(),
-        _locationService = service ?? LocationService() {
+  }) : _locationRepository = repository ?? LocationRepository(),
+       _locationService = service ?? LocationService() {
     _connectivitySubscription =
-        (connectivityChanges ?? Connectivity().onConnectivityChanged)
-            .listen((_) => syncPending());
+        (connectivityChanges ?? Connectivity().onConnectivityChanged).listen(
+          (_) => syncPending(),
+        );
     _userId = _locationRepository.currentUserId;
-    _authSubscription =
-        _locationRepository.userIdChanges.listen(_onUserChanged);
+    _authSubscription = _locationRepository.userIdChanges.listen(
+      _onUserChanged,
+    );
   }
 
   // Nothing from the previous account may carry over to the next one.
@@ -166,16 +168,16 @@ class LocationProvider extends ChangeNotifier {
     _positionSubscription = _locationService
         .startLocationUpdates(background: background)
         .listen(
-      (Position position) {
-        _currentPosition = position;
-        _queueLocationOperation(position);
-        notifyListeners();
-      },
-      onError: (error) {
-        _setError(error.toString());
-        stopTracking();
-      },
-    );
+          (Position position) {
+            _currentPosition = position;
+            _queueLocationOperation(position);
+            notifyListeners();
+          },
+          onError: (error) {
+            _setError(error.toString());
+            stopTracking();
+          },
+        );
   }
 
   Future<void> _queueLocationOperation(Position position) {

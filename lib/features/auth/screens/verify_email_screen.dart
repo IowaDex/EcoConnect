@@ -15,7 +15,8 @@ import '../../../core/widgets/primary_button.dart';
 /// Reached right after sign-up (the link was just sent) or from login when
 /// someone has not confirmed yet. The resident is signed in but still pending;
 /// once the link is clicked, "I've confirmed" sends the registration to the
-/// barangay and signs them out until it is approved.
+/// barangay and signs them out. They may then sign back in with the dashboard
+/// locked to truck tracking until the barangay approves the ID.
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
 
@@ -29,6 +30,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   String? _email;
   int _wait = 0;
   Timer? _timer;
+  Timer? _poll;
+  bool _checking = false;
 
   AuthProvider get _auth => context.read<AuthProvider>();
 
@@ -44,12 +47,33 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       }
       // The link was just sent by sign-up (or earlier); wait before resending.
       _startCountdown();
+      // Auto-reload: the moment the resident opens the link, this screen
+      // finishes the sign-up without asking for another tap.
+      _poll = Timer.periodic(const Duration(seconds: 4), (_) {
+        _checkVerified();
+      });
     });
+  }
+
+  Future<void> _checkVerified() async {
+    if (_checking || !mounted) return;
+    _checking = true;
+    try {
+      final verified = await _auth.checkEmailVerified();
+      if (!verified || !mounted) return;
+      _poll?.cancel();
+      await _confirmed();
+    } catch (_) {
+      // A transient network error: the next tick tries again.
+    } finally {
+      _checking = false;
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _poll?.cancel();
     super.dispose();
   }
 
@@ -89,6 +113,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   }
 
   Future<void> _confirmed() async {
+    _poll?.cancel();
     final ok = await _auth.confirmEmailVerified();
     if (!mounted) return;
     if (!ok) {
@@ -103,10 +128,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sent to your barangay'),
+        title: const Text('Email confirmed'),
         content: const Text(
-          'Your email is confirmed. Barangay Batasan Hills will now check your '
-          'ID. You can sign in once they approve your account.',
+          'Barangay Batasan Hills will now check your ID. You can sign in and '
+          'track the collection truck while you wait; the rest of EcoConnect '
+          'unlocks once your account is verified.',
         ),
         actions: [
           FilledButton(

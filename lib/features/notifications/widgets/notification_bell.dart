@@ -47,16 +47,17 @@ class _NotificationBellState extends State<NotificationBell> {
     _stream = user == null
         ? null
         : switch (role) {
-            UserRole.admin =>
-              NotificationService().watchUnreadCountForStaff(user.uid),
+            UserRole.admin => NotificationService().watchUnreadCountForStaff(
+              user.uid,
+            ),
             UserRole.cityHall => NotificationService().watchUnreadCountForDesk(
-                user.uid,
-                NotificationService.cityHallChannel,
-              ),
+              user.uid,
+              NotificationService.cityHallChannel,
+            ),
             UserRole.iswim => NotificationService().watchUnreadCountForDesk(
-                user.uid,
-                NotificationService.iswimChannel,
-              ),
+              user.uid,
+              NotificationService.iswimChannel,
+            ),
             _ => NotificationService().watchUnreadCount(user.uid),
           };
   }
@@ -79,11 +80,7 @@ class _NotificationBellState extends State<NotificationBell> {
               color: widget.color,
             ),
             if (unread > 0)
-              Positioned(
-                right: -5,
-                top: -4,
-                child: _Badge(count: unread),
-              ),
+              Positioned(right: -5, top: -4, child: _Badge(count: unread)),
           ],
         );
         void open() => context.push('/notifications');
@@ -129,11 +126,11 @@ class _Badge extends StatelessWidget {
           Transform.scale(scale: scale, child: child),
       child: Container(
         constraints: const BoxConstraints(minWidth: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 3.5, vertical: 1),
-      decoration: BoxDecoration(
-        color: AppColors.error,
-        borderRadius: BorderRadius.circular(8),
-      ),
+        padding: const EdgeInsets.symmetric(horizontal: 3.5, vertical: 1),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Text(
           count > 9 ? '9+' : '$count',
           textAlign: TextAlign.center,

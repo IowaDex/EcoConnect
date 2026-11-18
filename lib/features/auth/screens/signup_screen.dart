@@ -5,17 +5,17 @@ import 'package:provider/provider.dart';
 
 import '../models/account_type.dart';
 import '../providers/auth_provider.dart';
-import '../services/psgc_service.dart';
+import '../../../core/constants/service_area.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/responsive.dart';
 import '../utils/phone.dart';
 import '../utils/validators.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/password_strength.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/utils/image_payload.dart';
-import '../widgets/psgc_field.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -32,19 +32,15 @@ class _SignupScreenState extends State<SignupScreen> {
   final _password = TextEditingController();
   final _name = TextEditingController();
   final _confirmPassword = TextEditingController();
-  final _age = TextEditingController();
+  final _birthdateText = TextEditingController();
   final _phone = TextEditingController();
   final _houseStreet = TextEditingController();
-  final _barangay = TextEditingController();
-  final _city = TextEditingController();
-  final _province = TextEditingController();
 
   int _step = 0;
   bool _obscure = true;
+  bool _confirmObscure = true;
 
-  PsgcOption? _provinceOption;
-  PsgcOption? _cityOption;
-  PsgcOption? _barangayOption;
+  DateTime? _birthdate;
 
   /// The resident's valid ID, checked by the barangay before they can sign in.
   UploadPayload? _idDocument;
@@ -56,12 +52,9 @@ class _SignupScreenState extends State<SignupScreen> {
       _password,
       _confirmPassword,
       _name,
-      _age,
+      _birthdateText,
       _phone,
       _houseStreet,
-      _barangay,
-      _city,
-      _province,
     ]) {
       c.dispose();
     }
@@ -89,9 +82,9 @@ class _SignupScreenState extends State<SignupScreen> {
     _next();
   }
 
-  void _toId() {
+  void _submitFromProfile() {
     if (!_profileKey.currentState!.validate()) return;
-    _next();
+    _submit();
   }
 
   void _toast(String message) {
@@ -100,58 +93,47 @@ class _SignupScreenState extends State<SignupScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _pickProvince() async {
-    final picked = await showPsgcPicker(
-      context,
-      title: 'Select province',
-      load: PsgcService.instance.provinces,
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      _provinceOption = picked;
-      _province.text = picked.name;
-      _cityOption = null;
-      _city.clear();
-      _barangayOption = null;
-      _barangay.clear();
-    });
+  static int _ageFromBirthdate(DateTime born) {
+    final now = DateTime.now();
+    var years = now.year - born.year;
+    if (now.month < born.month ||
+        (now.month == born.month && now.day < born.day)) {
+      years--;
+    }
+    return years;
   }
 
-  Future<void> _pickCity() async {
-    final province = _provinceOption;
-    if (province == null) {
-      _toast('Select your province first');
-      return;
-    }
-    final picked = await showPsgcPicker(
-      context,
-      title: 'Select city / municipality',
-      load: () => PsgcService.instance.cities(province.code),
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      _cityOption = picked;
-      _city.text = picked.name;
-      _barangayOption = null;
-      _barangay.clear();
-    });
+  static String _formatBirthdate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  Future<void> _pickBarangay() async {
-    final city = _cityOption;
-    if (city == null) {
-      _toast('Select your city first');
-      return;
-    }
-    final picked = await showPsgcPicker(
-      context,
-      title: 'Select barangay',
-      load: () => PsgcService.instance.barangays(city.code),
+  Future<void> _pickBirthdate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthdate ?? DateTime(now.year - 18, 1, 1),
+      firstDate: DateTime(now.year - 120),
+      lastDate: now,
+      helpText: 'Select your birthdate',
     );
     if (picked == null || !mounted) return;
     setState(() {
-      _barangayOption = picked;
-      _barangay.text = picked.name;
+      _birthdate = picked;
+      _birthdateText.text = _formatBirthdate(picked);
     });
   }
 
@@ -170,12 +152,13 @@ class _SignupScreenState extends State<SignupScreen> {
       accountType: AccountType.resident,
       verificationDocument: _idDocument,
       profile: {
-        'age': int.tryParse(_age.text.trim()),
+        if (_birthdate != null) 'birthdate': _birthdate!.toIso8601String(),
+        if (_birthdate != null) 'age': _ageFromBirthdate(_birthdate!),
         'phone': Phone.toE164(_phone.text),
         'houseStreet': _houseStreet.text.trim(),
-        'barangay': _barangayOption?.name ?? '',
-        'city': _cityOption?.name ?? '',
-        'province': _provinceOption?.name ?? '',
+        'barangay': ServiceArea.barangay,
+        'city': ServiceArea.city,
+        'province': ServiceArea.province,
       },
     );
 
@@ -239,8 +222,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     duration: const Duration(milliseconds: 260),
                     child: switch (_step) {
                       0 => _credentialsStep(auth),
-                      1 => _profileStep(auth),
-                      _ => _idStep(auth),
+                      _ => _profileStep(auth),
                     },
                   ),
                 ),
@@ -294,23 +276,23 @@ class _SignupScreenState extends State<SignupScreen> {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             // Same guard as the login screen: no invisible whitespace.
-            inputFormatters: [
-              FilteringTextInputFormatter.deny(RegExp(r'\s')),
-            ],
+            inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
             validator: Validators.validateEmail,
           ),
           const SizedBox(height: 14),
           AppTextField(
             label: 'Password',
-            hint: 'Input password',
+            hint: 'Create a strong password',
             controller: _password,
             obscureText: _obscure,
             textInputAction: TextInputAction.next,
-            validator: Validators.validatePassword,
+            onChanged: (_) => setState(() {}),
+            validator: Validators.validatePasswordStrength,
             suffix: IconButton(
               padding: EdgeInsets.zero,
               splashRadius: 18,
               iconSize: 18,
+              tooltip: _obscure ? 'Show password' : 'Hide password',
               icon: Icon(
                 _obscure
                     ? Icons.visibility_outlined
@@ -320,16 +302,32 @@ class _SignupScreenState extends State<SignupScreen> {
               onPressed: () => setState(() => _obscure = !_obscure),
             ),
           ),
+          const SizedBox(height: 10),
+          PasswordStrengthChecklist(password: _password.text),
           const SizedBox(height: 14),
           AppTextField(
             label: 'Confirm password',
             hint: 'Re-enter password',
             controller: _confirmPassword,
-            obscureText: _obscure,
+            obscureText: _confirmObscure,
             textInputAction: TextInputAction.done,
             validator: (v) =>
                 Validators.validateConfirmPassword(v, _password.text),
             onFieldSubmitted: (_) => _toProfile(),
+            suffix: IconButton(
+              padding: EdgeInsets.zero,
+              splashRadius: 18,
+              iconSize: 18,
+              tooltip: _confirmObscure ? 'Show password' : 'Hide password',
+              icon: Icon(
+                _confirmObscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: AppColors.inkMuted,
+              ),
+              onPressed: () =>
+                  setState(() => _confirmObscure = !_confirmObscure),
+            ),
           ),
           const SizedBox(height: 26),
           PrimaryButton(
@@ -392,51 +390,6 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget _idStep(AuthProvider auth) {
-    return Column(
-      key: const ValueKey('id'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Upload your\nvalid ID',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            height: 1.15,
-            color: AppColors.forest,
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Barangay Batasan Hills checks your ID before your account is '
-          'activated. Take or choose a clear photo of a government-issued ID '
-          'that shows your name and address.',
-          style: TextStyle(fontSize: 12, height: 1.45, color: AppColors.inkMuted),
-        ),
-        const SizedBox(height: 18),
-        ImagePickerField(
-          key: const ValueKey('id-upload'),
-          label: 'Valid ID',
-          helper: 'Photo · only you and barangay staff can see it',
-          value: _idDocument,
-          onChanged: (value) => setState(() => _idDocument = value),
-        ),
-        const SizedBox(height: 22),
-        PrimaryButton(
-          label: 'Create account',
-          loading: auth.isLoading,
-          onPressed: _submit,
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Next, we email you a link to confirm your address.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
-        ),
-      ],
-    );
-  }
-
   Widget _profileStep(AuthProvider auth) {
     return Form(
       key: _profileKey,
@@ -454,76 +407,40 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
           ),
           const SizedBox(height: 22),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: AppTextField(
-                  label: 'Age',
-                  hint: 'Age',
-                  controller: _age,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (v) {
-                    final n = int.tryParse(v?.trim() ?? '');
-                    if (n == null || n < 1 || n > 120) return 'Invalid age';
-                    return null;
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: AppTextField(
-                  label: 'Phone number',
-                  hint: '09XX XXX XXXX',
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(11),
-                  ],
-                  validator: Phone.validate,
-                ),
-              ),
+          AppTextField(
+            label: 'Birthdate',
+            hint: 'Select your birthdate',
+            controller: _birthdateText,
+            readOnly: true,
+            onTap: _pickBirthdate,
+            textInputAction: TextInputAction.next,
+            suffix: const Icon(
+              Icons.calendar_month_outlined,
+              size: 18,
+              color: AppColors.inkMuted,
+            ),
+            validator: (_) {
+              if (_birthdate == null) return 'Please select your birthdate';
+              final age = _ageFromBirthdate(_birthdate!);
+              if (age < 1 || age > 120) return 'Enter a valid birthdate';
+              return null;
+            },
+          ),
+          const SizedBox(height: 14),
+          AppTextField(
+            label: 'Phone number',
+            hint: '09XX XXX XXXX',
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(11),
             ],
+            validator: Phone.validate,
           ),
           const SizedBox(height: 14),
-          PsgcField(
-            label: 'Province',
-            hint: 'Select province',
-            controller: _province,
-            onTap: _pickProvince,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please select your province'
-                : null,
-          ),
-          const SizedBox(height: 14),
-          PsgcField(
-            label: 'City',
-            hint: _provinceOption == null
-                ? 'Select province first'
-                : 'Select city / municipality',
-            controller: _city,
-            enabled: _provinceOption != null,
-            onTap: _pickCity,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please select your city'
-                : null,
-          ),
-          const SizedBox(height: 14),
-          PsgcField(
-            label: 'Barangay',
-            hint: _cityOption == null ? 'Select city first' : 'Select barangay',
-            controller: _barangay,
-            enabled: _cityOption != null,
-            onTap: _pickBarangay,
-            validator: (v) => (v == null || v.trim().isEmpty)
-                ? 'Please select your barangay'
-                : null,
-          ),
+          const _ServiceAreaCard(),
           const SizedBox(height: 14),
           AppTextField(
             label: 'House no/Unit/street',
@@ -535,10 +452,60 @@ class _SignupScreenState extends State<SignupScreen> {
                 ? 'Please enter your street address'
                 : null,
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 22),
+          const Divider(height: 1),
+          const SizedBox(height: 20),
+          const Row(
+            children: [
+              Icon(
+                Icons.badge_outlined,
+                size: 17,
+                color: AppColors.primary,
+              ),
+              SizedBox(width: 7),
+              Text(
+                'UPLOAD YOUR VALID ID',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: AppColors.forest,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Barangay Batasan Hills checks your ID before activating your '
+            'account. Take or choose a clear photo of a government-issued ID '
+            'that shows your name and address.',
+            style: TextStyle(
+              fontSize: 10.5,
+              height: 1.5,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ImagePickerField(
+            key: const ValueKey('id-upload'),
+            label: 'Valid ID',
+            helper: 'Photo or PDF · only you and barangay staff can see it',
+            documentMode: true,
+            previewHeight: 150,
+            value: _idDocument,
+            onChanged: (value) => setState(() => _idDocument = value),
+          ),
+          const SizedBox(height: 22),
           PrimaryButton(
-            label: 'Next',
-            onPressed: _toId,
+            label: 'Create account',
+            loading: auth.isLoading,
+            onPressed: _submitFromProfile,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Next, we email you a link to confirm your address.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -585,6 +552,60 @@ class _SignupScreenState extends State<SignupScreen> {
           border: Border.all(color: AppColors.sage),
         ),
         child: Icon(icon, size: 19, color: color),
+      ),
+    );
+  }
+}
+
+/// The address is fixed: this deployment only serves one barangay.
+class _ServiceAreaCard extends StatelessWidget {
+  const _ServiceAreaCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppColors.lightGreen,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.location_on_outlined, size: 18, color: AppColors.primary),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ServiceArea.barangay,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkGreen,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '${ServiceArea.city} · ${ServiceArea.province}',
+                  style: TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'EcoConnect is deployed for this barangay only, so the '
+                  'address is set for you.',
+                  style: TextStyle(
+                    fontSize: 9,
+                    height: 1.45,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

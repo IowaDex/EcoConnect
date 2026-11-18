@@ -9,23 +9,23 @@ enum DelayStage { dsqc, districtOfficer, barangay, closed }
 
 extension DelayStageX on DelayStage {
   String get wireName => switch (this) {
-        DelayStage.dsqc => 'dsqc',
-        DelayStage.districtOfficer => 'districtOfficer',
-        DelayStage.barangay => 'barangay',
-        DelayStage.closed => 'closed',
-      };
+    DelayStage.dsqc => 'dsqc',
+    DelayStage.districtOfficer => 'districtOfficer',
+    DelayStage.barangay => 'barangay',
+    DelayStage.closed => 'closed',
+  };
 
   String get label => switch (this) {
-        DelayStage.dsqc => 'At DSQC',
-        DelayStage.districtOfficer => 'Forwarded to District Officer',
-        DelayStage.barangay => 'At Barangay',
-        DelayStage.closed => 'Closed',
-      };
+    DelayStage.dsqc => 'At DSQC',
+    DelayStage.districtOfficer => 'Forwarded to District Officer',
+    DelayStage.barangay => 'At Barangay',
+    DelayStage.closed => 'Closed',
+  };
 
   static DelayStage fromName(String? name) => DelayStage.values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => DelayStage.dsqc,
-      );
+    (s) => s.name == name,
+    orElse: () => DelayStage.dsqc,
+  );
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -77,19 +77,19 @@ class DelayReport {
   final DateTime? closedAt;
 
   Map<String, dynamic> toMap() => {
-        'code': code,
-        'plateNumber': plateNumber,
-        'driverName': driverName,
-        'reason': reason,
-        'minutesLate': minutesLate,
-        'notes': notes,
-        'stage': stage.wireName,
-        'filedBy': filedBy,
-        'filedByName': filedByName,
-        if (ticketId != null) 'ticketId': ticketId,
-        if (ticketCode != null) 'ticketCode': ticketCode,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+    'code': code,
+    'plateNumber': plateNumber,
+    'driverName': driverName,
+    'reason': reason,
+    'minutesLate': minutesLate,
+    'notes': notes,
+    'stage': stage.wireName,
+    'filedBy': filedBy,
+    'filedByName': filedByName,
+    if (ticketId != null) 'ticketId': ticketId,
+    if (ticketCode != null) 'ticketCode': ticketCode,
+    'createdAt': FieldValue.serverTimestamp(),
+  };
 
   static DelayReport? fromDoc(String id, Map<String, dynamic> data) {
     return DelayReport(

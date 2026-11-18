@@ -47,7 +47,8 @@ class _LoginScreenState extends State<LoginScreen> {
       // /welcome is a public route; the router redirect immediately resolves
       // the role home from the restored session, the same path sign-up uses.
       context.go('/welcome');
-    } else if (authProvider.loginErrorType == AuthErrorType.needsEmailVerification) {
+    } else if (authProvider.loginErrorType ==
+        AuthErrorType.needsEmailVerification) {
       // Signed up but has not confirmed their email: finish it now.
       context.go('/verify-email');
     } else if (authProvider.loginErrorType == AuthErrorType.emailNotVerified) {
@@ -209,6 +210,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   padding: EdgeInsets.zero,
                                   splashRadius: 18,
                                   iconSize: 18,
+                                  tooltip: _obscurePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
                                   icon: Icon(
                                     _obscurePassword
                                         ? Icons.visibility_outlined

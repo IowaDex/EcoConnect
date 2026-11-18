@@ -14,8 +14,10 @@ class LocationControls extends StatelessWidget {
     fontWeight: FontWeight.w700,
     color: AppColors.forest,
   );
-  static const _subtitleStyle =
-      TextStyle(fontSize: 10, color: AppColors.inkMuted);
+  static const _subtitleStyle = TextStyle(
+    fontSize: 10,
+    color: AppColors.inkMuted,
+  );
 
   @override
   Widget build(BuildContext context) {

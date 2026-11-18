@@ -18,22 +18,22 @@ enum ComplaintCategory {
 
 extension ComplaintCategoryX on ComplaintCategory {
   String get label => switch (this) {
-        ComplaintCategory.missedCollection => 'Missed collection',
-        ComplaintCategory.illegalDumping => 'Illegal dumping',
-        ComplaintCategory.overflowingBin => 'Overflowing bin',
-        ComplaintCategory.truckConduct => 'Truck crew conduct',
-        ComplaintCategory.schedule => 'Collection schedule',
-        ComplaintCategory.other => 'Other',
-      };
+    ComplaintCategory.missedCollection => 'Missed collection',
+    ComplaintCategory.illegalDumping => 'Illegal dumping',
+    ComplaintCategory.overflowingBin => 'Overflowing bin',
+    ComplaintCategory.truckConduct => 'Truck crew conduct',
+    ComplaintCategory.schedule => 'Collection schedule',
+    ComplaintCategory.other => 'Other',
+  };
 
   IconData get icon => switch (this) {
-        ComplaintCategory.missedCollection => Icons.local_shipping_outlined,
-        ComplaintCategory.illegalDumping => Icons.delete_outline_rounded,
-        ComplaintCategory.overflowingBin => Icons.delete_sweep_outlined,
-        ComplaintCategory.truckConduct => Icons.person_off_outlined,
-        ComplaintCategory.schedule => Icons.event_busy_outlined,
-        ComplaintCategory.other => Icons.report_outlined,
-      };
+    ComplaintCategory.missedCollection => Icons.local_shipping_outlined,
+    ComplaintCategory.illegalDumping => Icons.delete_outline_rounded,
+    ComplaintCategory.overflowingBin => Icons.delete_sweep_outlined,
+    ComplaintCategory.truckConduct => Icons.person_off_outlined,
+    ComplaintCategory.schedule => Icons.event_busy_outlined,
+    ComplaintCategory.other => Icons.report_outlined,
+  };
 
   static ComplaintCategory fromName(String? name) => ComplaintCategory.values
       .firstWhere((c) => c.name == name, orElse: () => ComplaintCategory.other);
@@ -43,18 +43,18 @@ enum ComplaintStatus { pending, underReview, resolved, rejected }
 
 extension ComplaintStatusX on ComplaintStatus {
   String get label => switch (this) {
-        ComplaintStatus.pending => 'Received',
-        ComplaintStatus.underReview => 'Under review',
-        ComplaintStatus.resolved => 'Resolved',
-        ComplaintStatus.rejected => 'Rejected',
-      };
+    ComplaintStatus.pending => 'Received',
+    ComplaintStatus.underReview => 'Under review',
+    ComplaintStatus.resolved => 'Resolved',
+    ComplaintStatus.rejected => 'Rejected',
+  };
 
   Color get color => switch (this) {
-        ComplaintStatus.pending => AppColors.warning,
-        ComplaintStatus.underReview => const Color(0xFF1565C0),
-        ComplaintStatus.resolved => AppColors.primary,
-        ComplaintStatus.rejected => AppColors.error,
-      };
+    ComplaintStatus.pending => AppColors.warning,
+    ComplaintStatus.underReview => const Color(0xFF1565C0),
+    ComplaintStatus.resolved => AppColors.primary,
+    ComplaintStatus.rejected => AppColors.error,
+  };
 
   bool get isOpen =>
       this == ComplaintStatus.pending || this == ComplaintStatus.underReview;
@@ -80,11 +80,11 @@ class ComplaintResponse {
   final DateTime? at;
 
   Map<String, dynamic> toMap() => {
-        'message': message,
-        'byName': byName,
-        'byRole': byRole,
-        'at': Timestamp.now(),
-      };
+    'message': message,
+    'byName': byName,
+    'byRole': byRole,
+    'at': Timestamp.now(),
+  };
 
   static ComplaintResponse? fromMap(dynamic raw) {
     if (raw is! Map) return null;
@@ -150,15 +150,15 @@ class Complaint {
       location: data['location'] as String?,
       images: rawImages is List
           ? rawImages
-              .map(UploadPayload.fromMap)
-              .whereType<UploadPayload>()
-              .toList(growable: false)
+                .map(UploadPayload.fromMap)
+                .whereType<UploadPayload>()
+                .toList(growable: false)
           : const [],
       responses: rawResponses is List
           ? rawResponses
-              .map(ComplaintResponse.fromMap)
-              .whereType<ComplaintResponse>()
-              .toList(growable: false)
+                .map(ComplaintResponse.fromMap)
+                .whereType<ComplaintResponse>()
+                .toList(growable: false)
           : const [],
       createdAt: _date(data['createdAt']),
       updatedAt: _date(data['updatedAt']),

@@ -10,19 +10,19 @@ enum UserRole { user, driver, admin, iswim, cityHall, auditor }
 extension UserRoleX on UserRole {
   /// Name shown on badges and the staff console.
   String get label => switch (this) {
-        UserRole.user => 'Resident',
-        UserRole.driver => 'Driver',
-        UserRole.admin => 'Barangay admin',
-        UserRole.iswim => 'Iswim',
-        UserRole.cityHall => 'City Hall · DSQC',
-        UserRole.auditor => 'Audit viewer',
-      };
+    UserRole.user => 'Resident',
+    UserRole.driver => 'Driver',
+    UserRole.admin => 'Barangay admin',
+    UserRole.iswim => 'Iswim',
+    UserRole.cityHall => 'City Hall · DSQC',
+    UserRole.auditor => 'Audit viewer',
+  };
 
   /// True for every role that signs a trip ticket.
   bool get isSigner => switch (this) {
-        UserRole.admin || UserRole.iswim || UserRole.cityHall => true,
-        _ => false,
-      };
+    UserRole.admin || UserRole.iswim || UserRole.cityHall => true,
+    _ => false,
+  };
 
   /// City Hall is the super admin: it provisions the accounts Iswim needs.
   bool get isSuperAdmin => this == UserRole.cityHall;
@@ -39,6 +39,10 @@ class AppUser {
   UserRole role;
 
   /// Profile details collected on the second signup step.
+  ///
+  /// [birthdate] is the source of truth; [age] is derived from it when the
+  /// account is created and kept for older records that only stored an age.
+  final DateTime? birthdate;
   final int? age;
   final String? phone;
 
@@ -84,6 +88,7 @@ class AppUser {
     this.displayName,
     this.emailVerified = false,
     this.role = UserRole.user,
+    this.birthdate,
     this.age,
     this.phone,
     this.photoUrl,
@@ -101,6 +106,34 @@ class AppUser {
   });
 
   bool get isPendingApproval => accountStatus == 'pending';
+
+  /// A resident whose ID the barangay has not approved yet. They may sign in,
+  /// but the dashboard is limited to tracking the collection truck until
+  /// staff verify the account.
+  ///
+  /// Keyed on [verificationStatus], not [accountStatus]: an account can be
+  /// active and still unverified (an older record, or one approved before the
+  /// ID check existed), and those residents must stay locked too.
+  bool get isRestrictedResident =>
+      role == UserRole.user &&
+      verificationStatus != VerificationStatus.verified;
+
+  /// A pending account cannot write `sessions/{uid}` — the rules require an
+  /// active account — so the device claim waits until the barangay approves.
+  bool get canClaimSession => !isPendingApproval;
+
+  /// Age in whole years, derived from [birthdate] when it is available.
+  int? get ageYears {
+    final born = birthdate;
+    if (born == null) return age;
+    final now = DateTime.now();
+    var years = now.year - born.year;
+    if (now.month < born.month ||
+        (now.month == born.month && now.day < born.day)) {
+      years--;
+    }
+    return years < 0 ? 0 : years;
+  }
 
   /// The barangay approved this resident and is waiting for them to accept.
   bool get needsRegistrationDecision =>
@@ -129,6 +162,7 @@ class AppUser {
     String? displayName,
     bool? emailVerified,
     UserRole? role,
+    DateTime? birthdate,
     int? age,
     String? phone,
     String? photoUrl,
@@ -150,6 +184,7 @@ class AppUser {
       displayName: displayName ?? this.displayName,
       emailVerified: emailVerified ?? this.emailVerified,
       role: role ?? this.role,
+      birthdate: birthdate ?? this.birthdate,
       age: age ?? this.age,
       phone: phone ?? this.phone,
       photoUrl: photoUrl ?? this.photoUrl,
@@ -180,18 +215,22 @@ class AppUser {
 
   String get fullAddress {
     // Street first, province last, the way a Philippine address is written.
-    final parts = [houseStreet, barangay, city, province]
-        .where((p) => p != null && p.trim().isNotEmpty)
-        .cast<String>();
+    final parts = [
+      houseStreet,
+      barangay,
+      city,
+      province,
+    ].where((p) => p != null && p.trim().isNotEmpty).cast<String>();
     return parts.isEmpty ? 'No address on file' : parts.join(', ');
   }
 
   Map<String, dynamic> toProfileMap() => {
-        if (age != null) 'age': age,
-        if (phone != null) 'phone': phone,
-        if (houseStreet != null) 'houseStreet': houseStreet,
-        if (barangay != null) 'barangay': barangay,
-        if (city != null) 'city': city,
-        if (province != null) 'province': province,
-      };
+    if (birthdate != null) 'birthdate': birthdate!.toIso8601String(),
+    if (age != null) 'age': age,
+    if (phone != null) 'phone': phone,
+    if (houseStreet != null) 'houseStreet': houseStreet,
+    if (barangay != null) 'barangay': barangay,
+    if (city != null) 'city': city,
+    if (province != null) 'province': province,
+  };
 }

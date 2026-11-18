@@ -9,9 +9,7 @@ String _durationLabel(double seconds) {
   if (minutes < 60) return '$minutes min';
   final hours = minutes ~/ 60;
   final rest = minutes % 60;
-  return rest == 0
-      ? '$hours h'
-      : '$hours h ${rest.toString().padLeft(2, '0')}';
+  return rest == 0 ? '$hours h' : '$hours h ${rest.toString().padLeft(2, '0')}';
 }
 
 /// One leg of a driving route: the drive between two consecutive waypoints.

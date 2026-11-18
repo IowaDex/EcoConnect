@@ -6,6 +6,7 @@ import '../../driver/models/truck_crew_role.dart';
 import '../../notifications/models/app_notification.dart';
 import '../../notifications/services/notification_service.dart';
 import 'session_service.dart';
+import '../../../core/constants/service_area.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/utils/image_payload.dart';
 export '../models/user.dart';
@@ -18,9 +19,15 @@ enum AuthErrorType {
   accountRemoved,
   accountPending,
   accountSuspended,
+
+  /// A resident record names a barangay other than the one this deployment
+  /// serves.
+  outOfArea,
+
   /// A resident signed up but has not confirmed their email yet. The session
   /// is kept so the confirmation screen can finish it.
   needsEmailVerification,
+
   /// The barangay rejected the registration; [AuthException.reason] says why.
   accountDeclined,
 }
@@ -35,8 +42,7 @@ class AuthService {
   static final AuthService _instance = AuthService._internal();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final SessionService _sessions =
-      SessionService(_currentAuthTime);
+  late final SessionService _sessions = SessionService(_currentAuthTime);
   bool _loggingIn = false;
 
   factory AuthService() {
@@ -57,7 +63,10 @@ class AuthService {
   /// Returns null when there is no profile: an admin deleted it, or signup
   /// hasn't written it yet.
   Future<AppUser?> _getAppUser(User firebaseUser) async {
-    final doc = await _firestore.collection('users').doc(firebaseUser.uid).get();
+    final doc = await _firestore
+        .collection('users')
+        .doc(firebaseUser.uid)
+        .get();
     final data = doc.data();
     if (data == null) return null;
     final roleStr = data['role'] ?? 'user';
@@ -67,7 +76,8 @@ class AuthService {
       email: firebaseUser.email,
       // The desk that provisions a login types the full name, so it wins over
       // whatever display name Firebase kept from signup.
-      displayName: data['name'] as String? ??
+      displayName:
+          data['name'] as String? ??
           firebaseUser.displayName ??
           firebaseUser.email?.split('@').first,
       // Either the person clicked the link Firebase mailed, or the desk that
@@ -83,6 +93,7 @@ class AuthService {
       // Profiles created before the registration decision existed count as
       // accepted, so nobody is asked to re-approve an old account.
       registrationStatus: data['registrationStatus'] as String? ?? 'accepted',
+      birthdate: _asDate(data['birthdate']),
       age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
       phone: data['phone'] as String?,
       photoUrl: data['photoUrl'] as String?,
@@ -91,13 +102,23 @@ class AuthService {
       city: data['city'] as String?,
       province: data['province'] as String?,
       accountType: AccountTypeX.fromName(data['accountType'] as String?),
-      verificationStatus:
-          VerificationStatusX.fromName(data['verificationStatus'] as String?),
+      verificationStatus: VerificationStatusX.fromName(
+        data['verificationStatus'] as String?,
+      ),
       rejectionReason: data['rejectionReason'] as String?,
       crewRole: TruckCrewRoleX.fromName(data['crewRole'] as String?),
       // Provisioned drivers open straight onto the truck City Hall linked.
       assignedTruckId: data['assignedTruckId'] as String?,
     );
+  }
+
+  /// Date of birth is written as an ISO string, but an older profile or a
+  /// hand-edited document may hold a Firestore timestamp.
+  static DateTime? _asDate(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
   }
 
   /// Re-reads the signed-in profile. Used after staff approve a verification
@@ -126,6 +147,15 @@ class AuthService {
       throw Exception('Please upload your ID to continue.');
     }
 
+    // EcoConnect serves one barangay. Refuse a mismatched profile before the
+    // login is created, so no orphaned account is left behind.
+    final barangay = (profile?['barangay'] as String?)?.trim() ?? '';
+    if (barangay.isNotEmpty && !ServiceArea.covers(barangay)) {
+      throw Exception(
+        'EcoConnect is only available to residents of ${ServiceArea.barangay}.',
+      );
+    }
+
     final credential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -133,9 +163,9 @@ class AuthService {
     await credential.user?.updateDisplayName(name);
     final uid = credential.user!.uid;
 
-    // Pending until two things happen: the resident confirms their email
-    // (the Firebase link) and the barangay approves their ID. Only then can
-    // they sign in.
+    // Pending until the barangay approves the ID. The resident must confirm
+    // their email before signing in; until approval the dashboard is limited
+    // to tracking the collection truck.
     await _firestore.collection('users').doc(uid).set({
       'name': name,
       'email': email,
@@ -173,6 +203,15 @@ class AuthService {
     await _auth.currentUser?.sendEmailVerification();
   }
 
+  /// Reloads the Firebase user and reports whether the link was clicked.
+  /// Does not end the session or write anything.
+  Future<bool> checkEmailVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    await user.reload();
+    return _auth.currentUser?.emailVerified ?? false;
+  }
+
   /// Checks whether the resident clicked the link. If so, the profile records
   /// it, the barangay is told a registration is waiting, and the session ends:
   /// the resident signs in once the barangay approves. False if not yet.
@@ -198,7 +237,7 @@ class AuthService {
     // The rules accept this only when the sign-in token says the email is
     // confirmed. Firestore can pick up a just-refreshed token a moment late,
     // so a refusal is retried with a fresh token before giving up.
-    for (var attempt = 1;; attempt++) {
+    for (var attempt = 1; ; attempt++) {
       try {
         await ref.update({'emailVerified': true});
         break;
@@ -210,10 +249,14 @@ class AuthService {
     }
     await NotificationService().notifyStaff(
       title: 'New resident registration',
-      body: '${name ?? data['name'] ?? 'A resident'} confirmed their email '
+      body:
+          '${name ?? data['name'] ?? 'A resident'} confirmed their email '
           'and is waiting for ID review.',
       type: AppNotificationType.account,
       data: {'uid': uid},
+      // The verification screen polls, and a retry must not stack a second
+      // "new registration" alert on the barangay desk.
+      dedupeKey: 'registration_${uid}_submitted',
     );
   }
 
@@ -260,7 +303,10 @@ class AuthService {
         await _markEmailConfirmed(appUser.uid, appUser.displayName);
       }
 
-      if (appUser.isPendingApproval) {
+      // Crew and staff accounts wait for approval before they may sign in. A
+      // resident does not: they sign in with the dashboard locked to truck
+      // tracking while the barangay checks their ID.
+      if (appUser.isPendingApproval && appUser.role != UserRole.user) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.accountPending);
       }
@@ -284,6 +330,15 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountSuspended);
       }
 
+      // One barangay only. A resident record that names another barangay is
+      // refused here even if it was created before the restriction existed.
+      if (appUser.role == UserRole.user &&
+          (appUser.barangay ?? '').trim().isNotEmpty &&
+          !ServiceArea.covers(appUser.barangay)) {
+        await _auth.signOut();
+        throw const AuthException(AuthErrorType.outOfArea);
+      }
+
       // Residents must verify their email. Drivers and staff are provisioned
       // by the barangay, so staff approval (accountStatus) is the gate instead.
       if (!appUser.emailVerified && appUser.role == UserRole.user) {
@@ -292,11 +347,15 @@ class AuthService {
       }
 
       // The newest login owns the account; any other device is signed out.
-      try {
-        await _sessions.claim(appUser.uid);
-      } catch (_) {
-        await _auth.signOut();
-        rethrow;
+      // A pending account cannot write the session record yet (the rules only
+      // allow active accounts), so it skips this until the barangay approves.
+      if (appUser.canClaimSession) {
+        try {
+          await _sessions.claim(appUser.uid);
+        } catch (_) {
+          await _auth.signOut();
+          rethrow;
+        }
       }
 
       AppLogger.info('Login successful');
@@ -332,6 +391,10 @@ class AuthService {
   }
 
   bool get isClaimingSession => _loggingIn || _sessions.isClaiming;
+
+  /// Claims the single-device session for an account that was just approved
+  /// while signed in. Pending accounts skip the claim at login.
+  Future<void> claimSession(String uid) => _sessions.claim(uid);
 
   /// False once another device signs in to this account.
   Stream<bool> watchSession(String uid) => _sessions.watch(uid);
@@ -372,12 +435,14 @@ class AuthService {
     final snapshot = await _firestore.collection('users').get();
     return snapshot.docs
         .map((doc) => {'uid': doc.id, ...doc.data()})
-        .where((u) =>
-            (u['role'] ?? 'user') == 'user' &&
-            (u['registrationStatus'] ?? 'accepted') == 'pending' &&
-            // A rejected application is no longer waiting on the desk; it only
-            // comes back if the resident resubmits.
-            (u['verificationStatus'] ?? 'unverified') != 'rejected')
+        .where(
+          (u) =>
+              (u['role'] ?? 'user') == 'user' &&
+              (u['registrationStatus'] ?? 'accepted') == 'pending' &&
+              // A rejected application is no longer waiting on the desk; it only
+              // comes back if the resident resubmits.
+              (u['verificationStatus'] ?? 'unverified') != 'rejected',
+        )
         .toList();
   }
 
@@ -410,9 +475,10 @@ class AuthService {
       body: accepted
           ? '${name ?? 'A resident'} accepted the barangay approval.'
           : '${name ?? 'A resident'} declined the barangay approval. '
-              'The registration is withdrawn.',
+                'The registration is withdrawn.',
       type: AppNotificationType.account,
       data: {'uid': uid},
+      dedupeKey: 'registration_${uid}_${accepted ? 'accepted' : 'declined'}',
     );
   }
 
@@ -424,25 +490,38 @@ class AuthService {
         .get();
     return snapshot.docs
         .map((doc) => {'uid': doc.id, ...doc.data()})
-        .where((driver) =>
-            (driver['accountStatus'] as String? ?? 'active') == 'active')
+        .where(
+          (driver) =>
+              (driver['accountStatus'] as String? ?? 'active') == 'active',
+        )
         .toList();
   }
 
   // Get all users (for admin panel)
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     final snapshot = await _firestore.collection('users').get();
-    return snapshot.docs.map((doc) => {
-      'uid': doc.id,
-      ...doc.data(),
-    }).toList();
+    return snapshot.docs.map((doc) => {'uid': doc.id, ...doc.data()}).toList();
+  }
+
+  /// Live resident directory for the barangay validation desk.
+  ///
+  /// A stream, not a one-shot read, so an approval, a new sign-up or a
+  /// resubmitted ID appears without pulling to refresh.
+  Stream<List<Map<String, dynamic>>> watchResidents() {
+    return _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'user')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => {'uid': doc.id, ...doc.data()})
+              .toList(),
+        );
   }
 
   // Update user role (for admin)
   Future<void> updateUserRole(String uid, UserRole role) async {
-    await _firestore.collection('users').doc(uid).update({
-      'role': role.name,
-    });
+    await _firestore.collection('users').doc(uid).update({'role': role.name});
   }
 
   // Delete all of a user's data (for admin). The login account itself can only

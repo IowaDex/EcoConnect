@@ -11,8 +11,9 @@ import 'package:flutter/foundation.dart';
 /// happen before the widget tree — and therefore before any provider — exists.
 abstract final class BootProgress {
   /// Human-readable description of the current step.
-  static final ValueNotifier<String> message =
-      ValueNotifier<String>('Starting up');
+  static final ValueNotifier<String> message = ValueNotifier<String>(
+    'Starting up',
+  );
 
   /// Records the step that just started.
   static void report(String step) => message.value = step;

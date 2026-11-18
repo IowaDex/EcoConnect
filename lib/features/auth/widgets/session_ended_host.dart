@@ -33,8 +33,11 @@ class SessionEndedHost extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.devices_other_rounded,
-                          size: 34, color: AppColors.forest),
+                      const Icon(
+                        Icons.devices_other_rounded,
+                        size: 34,
+                        color: AppColors.forest,
+                      ),
                       const SizedBox(height: 12),
                       const Text(
                         'Signed in on another device',

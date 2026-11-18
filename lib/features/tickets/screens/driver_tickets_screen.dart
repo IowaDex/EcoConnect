@@ -39,9 +39,11 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
     final query = _search.text.trim().toLowerCase();
     if (query.isEmpty) return tickets;
     return tickets
-        .where((ticket) =>
-            ticket.code.toLowerCase().contains(query) ||
-            ticket.plateNumber.toLowerCase().contains(query))
+        .where(
+          (ticket) =>
+              ticket.code.toLowerCase().contains(query) ||
+              ticket.plateNumber.toLowerCase().contains(query),
+        )
         .toList(growable: false);
   }
 
@@ -86,8 +88,7 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
                   : StreamBuilder<List<TripTicket>>(
                       stream: TicketService().watchForDriver(uid),
                       builder: (context, snapshot) {
-                        final tickets =
-                            snapshot.data ?? const <TripTicket>[];
+                        final tickets = snapshot.data ?? const <TripTicket>[];
                         if (snapshot.connectionState ==
                                 ConnectionState.waiting &&
                             tickets.isEmpty) {
@@ -148,10 +149,7 @@ class _Inbox extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _SearchField(
-            controller: search,
-            onChanged: onSearchChanged,
-          ),
+          child: _SearchField(controller: search, onChanged: onSearchChanged),
         ),
         Expanded(
           child: visible.isEmpty
@@ -289,8 +287,11 @@ class _LiveTicketCard extends StatelessWidget {
           const SizedBox(height: 9),
           Row(
             children: [
-              const Icon(Icons.local_shipping_rounded,
-                  size: 14, color: AppColors.forest),
+              const Icon(
+                Icons.local_shipping_rounded,
+                size: 14,
+                color: AppColors.forest,
+              ),
               const SizedBox(width: 6),
               Text(
                 ticket.plateNumber,
@@ -502,8 +503,11 @@ class _EmptyInbox extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.confirmation_number_outlined,
-                size: 42, color: AppColors.sage),
+            Icon(
+              Icons.confirmation_number_outlined,
+              size: 42,
+              color: AppColors.sage,
+            ),
             SizedBox(height: 12),
             Text(
               'No trip tickets yet',

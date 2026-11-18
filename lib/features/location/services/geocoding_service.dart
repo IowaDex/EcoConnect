@@ -43,17 +43,20 @@ class GeocodingService {
       'limit': '$limit',
       'addressdetails': '0',
       'bounded': '1',
-      'viewbox': '${bounds.west},${bounds.north},${bounds.east},${bounds.south}',
+      'viewbox':
+          '${bounds.west},${bounds.north},${bounds.east},${bounds.south}',
     });
 
-    final response = await http.get(
-      uri,
-      headers: const {
-        // Nominatim asks every client to identify itself.
-        'User-Agent': 'EcoConnect/1.0 (barangay waste collection app)',
-        'Accept': 'application/json',
-      },
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .get(
+          uri,
+          headers: const {
+            // Nominatim asks every client to identify itself.
+            'User-Agent': 'EcoConnect/1.0 (barangay waste collection app)',
+            'Accept': 'application/json',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
       throw Exception('Location search failed (${response.statusCode})');

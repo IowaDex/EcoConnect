@@ -12,16 +12,16 @@ enum RequestKind { resident, special, uncollected }
 
 extension RequestKindX on RequestKind {
   String get label => switch (this) {
-        RequestKind.special => 'Special collection',
-        RequestKind.uncollected => 'Uncollected garbage (Wave 2)',
-        RequestKind.resident => 'Residential collection',
-      };
+    RequestKind.special => 'Special collection',
+    RequestKind.uncollected => 'Uncollected garbage (Wave 2)',
+    RequestKind.resident => 'Residential collection',
+  };
 
   static RequestKind fromName(String? name) => switch (name) {
-        'special' => RequestKind.special,
-        'uncollected' => RequestKind.uncollected,
-        _ => RequestKind.resident,
-      };
+    'special' => RequestKind.special,
+    'uncollected' => RequestKind.uncollected,
+    _ => RequestKind.resident,
+  };
 }
 
 enum RequestStatus {

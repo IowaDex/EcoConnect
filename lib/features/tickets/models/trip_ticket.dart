@@ -21,31 +21,32 @@ enum TicketStatus {
 
 extension TicketStatusX on TicketStatus {
   String get label => switch (this) {
-        TicketStatus.issued => 'Issued by Iswim',
-        TicketStatus.accepted => 'Received by driver',
-        TicketStatus.declined => 'Declined by driver',
-        TicketStatus.running => 'In progress',
-        TicketStatus.submitted => 'Awaiting barangay verification',
-        TicketStatus.barangaySigned => 'Barangay approved',
-        TicketStatus.iswimSigned => 'Iswim verified',
-        TicketStatus.completed => 'Completed',
-        TicketStatus.missed => 'Missed',
-        TicketStatus.cancelled => 'Cancelled',
-        TicketStatus.revisionRequired => 'Requires revision',
-        TicketStatus.rejected => 'Rejected',
-      };
+    TicketStatus.issued => 'Issued by Iswim',
+    TicketStatus.accepted => 'Received by driver',
+    TicketStatus.declined => 'Declined by driver',
+    TicketStatus.running => 'In progress',
+    TicketStatus.submitted => 'Awaiting barangay verification',
+    TicketStatus.barangaySigned => 'Barangay approved',
+    TicketStatus.iswimSigned => 'Iswim verified',
+    TicketStatus.completed => 'Completed',
+    TicketStatus.missed => 'Missed',
+    TicketStatus.cancelled => 'Cancelled',
+    TicketStatus.revisionRequired => 'Requires revision',
+    TicketStatus.rejected => 'Rejected',
+  };
 
   /// Who the ticket is sitting with right now.
   TicketStatusSigner? get pendingSigner => switch (this) {
-        TicketStatus.issued => TicketStatusSigner.driver,
-        TicketStatus.submitted => TicketStatusSigner.barangay,
-        TicketStatus.barangaySigned => TicketStatusSigner.iswim,
-        TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
-        TicketStatus.revisionRequired => TicketStatusSigner.driver,
-        _ => null,
-      };
+    TicketStatus.issued => TicketStatusSigner.driver,
+    TicketStatus.submitted => TicketStatusSigner.barangay,
+    TicketStatus.barangaySigned => TicketStatusSigner.iswim,
+    TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
+    TicketStatus.revisionRequired => TicketStatusSigner.driver,
+    _ => null,
+  };
 
-  bool get isOpen => this != TicketStatus.completed &&
+  bool get isOpen =>
+      this != TicketStatus.completed &&
       this != TicketStatus.cancelled &&
       this != TicketStatus.missed &&
       this != TicketStatus.rejected;
@@ -53,9 +54,9 @@ extension TicketStatusX on TicketStatus {
   bool get isSigned => this == TicketStatus.completed;
 
   static TicketStatus fromName(String? name) => TicketStatus.values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => TicketStatus.issued,
-      );
+    (s) => s.name == name,
+    orElse: () => TicketStatus.issued,
+  );
 }
 
 /// Everyone who touches a ticket, in the order they sign it.
@@ -63,18 +64,18 @@ enum TicketStatusSigner { driver, barangay, iswim, cityHall }
 
 extension TicketStatusSignerX on TicketStatusSigner {
   String get wireName => switch (this) {
-        TicketStatusSigner.driver => 'driver',
-        TicketStatusSigner.barangay => 'barangay',
-        TicketStatusSigner.iswim => 'iswim',
-        TicketStatusSigner.cityHall => 'cityHall',
-      };
+    TicketStatusSigner.driver => 'driver',
+    TicketStatusSigner.barangay => 'barangay',
+    TicketStatusSigner.iswim => 'iswim',
+    TicketStatusSigner.cityHall => 'cityHall',
+  };
 
   String get label => switch (this) {
-        TicketStatusSigner.driver => 'Driver',
-        TicketStatusSigner.barangay => 'Barangay',
-        TicketStatusSigner.iswim => 'Iswim',
-        TicketStatusSigner.cityHall => 'City Hall',
-      };
+    TicketStatusSigner.driver => 'Driver',
+    TicketStatusSigner.barangay => 'Barangay',
+    TicketStatusSigner.iswim => 'Iswim',
+    TicketStatusSigner.cityHall => 'City Hall',
+  };
 
   /// The signature this hop leaves behind (the driver accepts, not signs).
   bool get isSignature => this != TicketStatusSigner.driver;
@@ -111,11 +112,11 @@ class TicketSignature {
   bool get isPresent => signedAt != null && (image ?? '').isNotEmpty;
 
   Map<String, dynamic> toMap() => {
-        'name': name,
-        'uid': uid,
-        if (image != null) 'image': image,
-        'signedAt': FieldValue.serverTimestamp(),
-      };
+    'name': name,
+    'uid': uid,
+    if (image != null) 'image': image,
+    'signedAt': FieldValue.serverTimestamp(),
+  };
 
   static TicketSignature? fromMap(TicketStatusSigner signer, dynamic raw) {
     if (raw is! Map) return null;
@@ -153,15 +154,15 @@ class TicketHistoryEntry {
   final DateTime? at;
 
   Map<String, dynamic> toMap() => {
-        'status': status.name,
-        if (previousStatus != null) 'previousStatus': previousStatus!.name,
-        'byUid': byUid,
-        'byName': byName,
-        'note': note,
-        // FieldValue is rejected inside an array, so the entry carries a
-        // client timestamp while the document keeps server timestamps.
-        'at': Timestamp.now(),
-      };
+    'status': status.name,
+    if (previousStatus != null) 'previousStatus': previousStatus!.name,
+    'byUid': byUid,
+    'byName': byName,
+    'note': note,
+    // FieldValue is rejected inside an array, so the entry carries a
+    // client timestamp while the document keeps server timestamps.
+    'at': Timestamp.now(),
+  };
 
   static TicketHistoryEntry? fromMap(dynamic raw) {
     if (raw is! Map) return null;
@@ -255,49 +256,50 @@ class TripTicket {
   bool get canStartTrip =>
       status == TicketStatus.accepted || status == TicketStatus.running;
 
-  TicketSignature? signatureFor(TicketStatusSigner signer) => signatures[signer];
+  TicketSignature? signatureFor(TicketStatusSigner signer) =>
+      signatures[signer];
 
   /// The next signature the chain expects, or null when the chain is not at a
   /// signing step.
   TicketStatusSigner? get awaitingSignature => switch (status) {
-        TicketStatus.submitted => TicketStatusSigner.barangay,
-        TicketStatus.barangaySigned => TicketStatusSigner.iswim,
-        TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
-        _ => null,
-      };
+    TicketStatus.submitted => TicketStatusSigner.barangay,
+    TicketStatus.barangaySigned => TicketStatusSigner.iswim,
+    TicketStatus.iswimSigned => TicketStatusSigner.cityHall,
+    _ => null,
+  };
 
   String get waveLabel => 'Wave $wave';
 
   String get windowLabel => '$windowStart – $windowEnd';
 
   Map<String, dynamic> toMap() => {
-        'code': code,
-        'wave': wave,
-        'truckId': truckId,
-        'plateNumber': plateNumber,
-        'wheelers': wheelers,
-        'driverId': driverId,
-        'driverName': driverName,
-        'route': route,
-        'zone': zone,
-        'date': date,
-        'windowStart': windowStart,
-        'windowEnd': windowEnd,
-        'notes': notes,
-        'status': status.name,
-        'pendingSigner': status.pendingSigner?.wireName,
-        'createdBy': createdBy,
-        'createdAt': FieldValue.serverTimestamp(),
-        'signatures': <String, dynamic>{},
-        'history': [
-          TicketHistoryEntry(
-            status: TicketStatus.issued,
-            byUid: createdBy,
-            byName: 'Iswim',
-            note: 'Trip ticket issued',
-          ).toMap(),
-        ],
-      };
+    'code': code,
+    'wave': wave,
+    'truckId': truckId,
+    'plateNumber': plateNumber,
+    'wheelers': wheelers,
+    'driverId': driverId,
+    'driverName': driverName,
+    'route': route,
+    'zone': zone,
+    'date': date,
+    'windowStart': windowStart,
+    'windowEnd': windowEnd,
+    'notes': notes,
+    'status': status.name,
+    'pendingSigner': status.pendingSigner?.wireName,
+    'createdBy': createdBy,
+    'createdAt': FieldValue.serverTimestamp(),
+    'signatures': <String, dynamic>{},
+    'history': [
+      TicketHistoryEntry(
+        status: TicketStatus.issued,
+        byUid: createdBy,
+        byName: 'Iswim',
+        note: 'Trip ticket issued',
+      ).toMap(),
+    ],
+  };
 
   static TripTicket? fromDoc(String id, Map<String, dynamic> data) {
     final rawSignatures = data['signatures'];
@@ -315,9 +317,9 @@ class TripTicket {
     final rawHistory = data['history'];
     final history = rawHistory is List
         ? rawHistory
-            .map(TicketHistoryEntry.fromMap)
-            .whereType<TicketHistoryEntry>()
-            .toList(growable: false)
+              .map(TicketHistoryEntry.fromMap)
+              .whereType<TicketHistoryEntry>()
+              .toList(growable: false)
         : const <TicketHistoryEntry>[];
 
     return TripTicket(

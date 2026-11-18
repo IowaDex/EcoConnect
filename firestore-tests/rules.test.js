@@ -331,31 +331,49 @@ test('ending a run lets the driver clear the published position', async () => {
 
 test('signup cannot choose the admin role', async () => {
   await assertFails(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'admin', accountStatus: 'active'}));
-  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {name: 'Eve', role: 'user', accountStatus: 'pending'}));
+  await assertSucceeds(setDoc(doc(as('eve'), 'users/eve'), {
+    name: 'Eve', role: 'user', accountStatus: 'pending', barangay: 'Batasan Hills',
+  }));
 });
 
 test('signup is residents only, waits for the barangay and cannot self-verify', async () => {
+  const home = {barangay: 'Batasan Hills'};
   // Residents start pending; nobody signs themselves up active or as a driver.
-  await assertFails(setDoc(doc(as('u0'), 'users/u0'), {name: 'U', role: 'user', accountStatus: 'active'}));
-  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active'}));
-  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending'}));
-  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'pending', points: 999}));
-  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'pending', photoUrl: 'x'.repeat(150000)}));
+  await assertFails(setDoc(doc(as('u0'), 'users/u0'), {name: 'U', role: 'user', accountStatus: 'active', ...home}));
+  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'active', ...home}));
+  await assertFails(setDoc(doc(as('d1'), 'users/d1'), {name: 'D', role: 'driver', accountStatus: 'pending', ...home}));
+  await assertFails(setDoc(doc(as('u1'), 'users/u1'), {name: 'U', role: 'user', accountStatus: 'pending', points: 999, ...home}));
+  await assertFails(setDoc(doc(as('u2'), 'users/u2'), {name: 'U', role: 'user', accountStatus: 'pending', photoUrl: 'x'.repeat(150000), ...home}));
   // A new profile never claims a confirmed email.
-  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailVerified: true}));
+  await assertFails(setDoc(doc(as('u3'), 'users/u3'), {name: 'U', role: 'user', accountStatus: 'pending', emailVerified: true, ...home}));
+  // The address is fixed: sign-up cannot pick a barangay outside the service area.
+  await assertFails(setDoc(doc(as('u9'), 'users/u9'), {
+    name: 'U', role: 'user', accountStatus: 'pending', barangay: 'Payatas',
+  }));
+  await assertFails(setDoc(doc(as('u8'), 'users/u8'), {name: 'U', role: 'user', accountStatus: 'pending'}));
   const pending = {
     name: 'U', role: 'user', accountStatus: 'pending', registrationStatus: 'pending',
-    verificationStatus: 'pending', emailVerified: false,
+    verificationStatus: 'pending', emailVerified: false, ...home,
   };
   await assertSucceeds(setDoc(doc(as('u4', false), 'users/u4'), pending));
   await assertFails(updateDoc(doc(as('u4', false), 'users/u4'), {accountStatus: 'active'}));
 });
 
-test('only City Hall creates driver and staff accounts; the barangay does not', async () => {
+test('City Hall creates every crew and staff login; Iswim creates its own and the crew', async () => {
   const crew = (role) => ({name: 'Crew', role, accountStatus: 'active'});
+  // The barangay desk provisions nobody.
   await assertFails(setDoc(doc(as('root'), 'users/newdriver'), crew('driver')));
   await assertFails(setDoc(doc(as('root'), 'users/newstaff'), crew('admin')));
   await assertSucceeds(setDoc(doc(as('carl'), 'users/newdriver'), crew('driver')));
+  // Iswim runs its own account desk: colleagues and drivers, never the
+  // barangay, City Hall or an auditor.
+  await assertSucceeds(setDoc(doc(as('ivy'), 'users/newiswim'), crew('iswim')));
+  await assertSucceeds(setDoc(doc(as('ivy'), 'users/newcrew'), crew('driver')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/newadmin'), crew('admin')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/newcarl'), crew('cityHall')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/newauditor'), crew('auditor')));
+  // A provisioned login is active on arrival, never pending.
+  await assertFails(setDoc(doc(as('ivy'), 'users/pending'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
 });
 
 test('City Hall alone keeps the District Officer email address', async () => {
@@ -417,6 +435,61 @@ test('a pending driver cannot publish a route or plan until approved', async () 
     updateDoc(doc(c.firestore(), 'users/pd'), {accountStatus: 'active'}));
   await assertSucceeds(setDoc(doc(as('pd'), 'routes/pd'), live));
   await assertSucceeds(setDoc(doc(as('pd'), 'routePlans/p1'), plan));
+});
+
+test('a resident uploads an ID and may replace it while pending or after a rejection', async () => {
+  const id = (overrides = {}) => ({
+    userId: 'alice',
+    status: 'pending',
+    accountType: 'resident',
+    document: {dataUrl: 'data:image/jpeg;base64,AAAA'},
+    ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('alice'), 'verificationRequests/alice'), id()));
+  await assertSucceeds(getDoc(doc(as('alice'), 'verificationRequests/alice')));
+  // The ID is private to its owner and the barangay desk.
+  await assertFails(getDoc(doc(as('bob'), 'verificationRequests/alice')));
+  await assertFails(getDoc(doc(as('dan'), 'verificationRequests/alice')));
+  await assertSucceeds(getDoc(doc(as('root'), 'verificationRequests/alice')));
+  // Nobody files an ID in another resident's name, nor approves themselves.
+  await assertFails(setDoc(doc(as('bob'), 'verificationRequests/bob'), id()));
+  await assertFails(setDoc(doc(as('bob'), 'verificationRequests/bob2'), id({userId: 'bob', status: 'verified'})));
+  // A resident swaps in a clearer photo while the desk is still looking.
+  await assertSucceeds(setDoc(
+      doc(as('alice'), 'verificationRequests/alice'),
+      id({document: {dataUrl: 'data:image/png;base64,BBBB'}}),
+  ));
+  // The desk rejects it; the resident may try again.
+  await assertSucceeds(updateDoc(doc(as('root'), 'verificationRequests/alice'), {
+    status: 'rejected', rejectionReason: 'The photo is blurry.',
+  }));
+  await assertSucceeds(updateDoc(doc(as('alice'), 'verificationRequests/alice'), id()));
+  // Once approved, the resident cannot keep rewriting it.
+  await assertSucceeds(updateDoc(doc(as('root'), 'verificationRequests/alice'), {status: 'verified'}));
+  await assertFails(updateDoc(doc(as('alice'), 'verificationRequests/alice'), id()));
+  // A scan past the size cap is refused.
+  await assertFails(setDoc(
+      doc(as('alice'), 'verificationRequests/big'),
+      id({document: {dataUrl: 'x'.repeat(900000)}}),
+  ));
+});
+
+test('a device token belongs to its owner and must be a real token', async () => {
+  const row = (overrides = {}) => ({
+    token: 'f'.repeat(140), platform: 'android', updatedAt: Timestamp.now(), ...overrides,
+  });
+  await assertSucceeds(setDoc(doc(as('alice'), 'users/alice/devices/d1'), row()));
+  await assertSucceeds(getDoc(doc(as('alice'), 'users/alice/devices/d1')));
+  await assertFails(getDoc(doc(as('dan'), 'users/alice/devices/d1')));
+  await assertSucceeds(getDoc(doc(as('root'), 'users/alice/devices/d1')));
+  // A token cannot be planted in someone else's profile.
+  await assertFails(setDoc(doc(as('dan'), 'users/alice/devices/d2'), row()));
+  await assertFails(setDoc(doc(as('alice'), 'users/alice/devices/d3'), row({token: 'short'})));
+  await assertFails(setDoc(doc(as('alice'), 'users/alice/devices/d4'), row({token: 'x'.repeat(5000)})));
+  await assertFails(setDoc(doc(as('alice'), 'users/alice/devices/d5'), row({platform: 3})));
+  // A reinstall refreshes the same row, and signing out drops it.
+  await assertSucceeds(setDoc(doc(as('alice'), 'users/alice/devices/d1'), row({token: 'g'.repeat(140)})));
+  await assertSucceeds(deleteDoc(doc(as('alice'), 'users/alice/devices/d1')));
 });
 
 test('only admins, City Hall, and auditors read immutable server audit entries', async () => {
@@ -772,25 +845,22 @@ test('a resident replies in their own open complaint thread, and nothing more', 
   }));
 });
 
-// --- Points ledger ----------------------------------------------------------
+// --- Removed recycling points ----------------------------------------------
 
-test('points ledger rows are written by staff and read by their owner', async () => {
-  const row = {
+test('the recycling station and its points ledger are gone', async () => {
+  // The drop-off desk and the resident points wallet were removed from the
+  // product, so nothing may recreate their collections.
+  await assertFails(setDoc(doc(as('root'), 'points_transactions/p1'), {
     residentId: 'alice',
-    residentName: 'Alice',
     points: 10,
     reason: 'Waste validation · Recyclable',
-    sourceType: 'wasteSubmission',
-    sourceId: 'w1',
-    byUid: 'root',
-    byName: 'Root',
-    createdAt: serverTimestamp(),
-  };
-  await assertSucceeds(setDoc(doc(as('root'), 'points_transactions/p1'), row));
-  await assertSucceeds(getDoc(doc(as('alice'), 'points_transactions/p1')));
-  await assertFails(getDoc(doc(as('bob'), 'points_transactions/p1')));
-  await assertFails(setDoc(doc(as('alice'), 'points_transactions/p2'), {...row, byUid: 'alice'}));
-  await assertFails(updateDoc(doc(as('root'), 'points_transactions/p1'), {points: 999}));
+  }));
+  await assertFails(setDoc(doc(as('root'), 'dropOffs/d1'), {
+    residentId: 'alice',
+    points: 10,
+    weightKg: 2,
+  }));
+  await assertFails(getDoc(doc(as('alice'), 'points_transactions/p1')));
 });
 
 // --- Desk notification channels -------------------------------------------

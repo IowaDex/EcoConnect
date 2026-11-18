@@ -41,8 +41,9 @@ class BatasanHills {
 
   /// Keeps the camera centre near the barangay, the way Leaflet's `maxBounds`
   /// does, while still letting the user look at what surrounds it.
-  static final CameraConstraint constraint =
-      CameraConstraint.containCenter(bounds: panBounds);
+  static final CameraConstraint constraint = CameraConstraint.containCenter(
+    bounds: panBounds,
+  );
 
   static LatLngBounds _inflate(LatLngBounds box, double factor) {
     final dLat = (box.north - box.south) * factor;
@@ -92,38 +93,38 @@ class BatasanHills {
 
   /// The OpenStreetMap tile layer every map shares.
   static TileLayer tiles({TileProvider? tileProvider}) => TileLayer(
-        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        userAgentPackageName: 'com.example.ecoconnect',
-        maxZoom: maxZoom,
-        tileProvider: tileProvider,
-      );
+    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    userAgentPackageName: 'com.example.ecoconnect',
+    maxZoom: maxZoom,
+    tileProvider: tileProvider,
+  );
 
   /// Dims everything outside the barangay and outlines its boundary.
   ///
   /// Place it directly above [tiles] so the map stays readable outside while
   /// markers and routes still draw on top, at full brightness.
   static PolygonLayer boundaryLayer() => PolygonLayer(
-        polygons: [
-          // Everything but the barangay, washed out.
-          Polygon(
-            points: _surroundings,
-            holePointsList: const [batasanHillsBoundary],
-            color: AppColors.darkGreen.withValues(alpha: 0.42),
-            isFilled: true,
-          ),
-          // A pale halo under the line keeps it legible over the dimmed area.
-          Polygon(
-            points: batasanHillsBoundary,
-            borderColor: Colors.white.withValues(alpha: 0.92),
-            borderStrokeWidth: 8,
-          ),
-          Polygon(
-            points: batasanHillsBoundary,
-            borderColor: AppColors.primary,
-            borderStrokeWidth: 4,
-          ),
-        ],
-      );
+    polygons: [
+      // Everything but the barangay, washed out.
+      Polygon(
+        points: _surroundings,
+        holePointsList: const [batasanHillsBoundary],
+        color: AppColors.darkGreen.withValues(alpha: 0.42),
+        isFilled: true,
+      ),
+      // A pale halo under the line keeps it legible over the dimmed area.
+      Polygon(
+        points: batasanHillsBoundary,
+        borderColor: Colors.white.withValues(alpha: 0.92),
+        borderStrokeWidth: 8,
+      ),
+      Polygon(
+        points: batasanHillsBoundary,
+        borderColor: AppColors.primary,
+        borderStrokeWidth: 4,
+      ),
+    ],
+  );
 }
 
 /// Leaflet-style credit required by the OpenStreetMap tile usage policy.

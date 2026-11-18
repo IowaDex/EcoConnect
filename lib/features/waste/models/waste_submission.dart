@@ -9,33 +9,33 @@ enum WasteStatus { pending, approved, rejected, scheduled, collected }
 
 extension WasteStatusX on WasteStatus {
   String get label => switch (this) {
-        WasteStatus.pending => 'Pending validation',
-        WasteStatus.approved => 'Approved',
-        WasteStatus.rejected => 'Rejected',
-        WasteStatus.scheduled => 'Scheduled for collection',
-        WasteStatus.collected => 'Collected',
-      };
+    WasteStatus.pending => 'Pending validation',
+    WasteStatus.approved => 'Approved',
+    WasteStatus.rejected => 'Rejected',
+    WasteStatus.scheduled => 'Scheduled for collection',
+    WasteStatus.collected => 'Collected',
+  };
 
   Color get color => switch (this) {
-        WasteStatus.pending => AppColors.warning,
-        WasteStatus.approved => AppColors.primary,
-        WasteStatus.rejected => AppColors.error,
-        WasteStatus.scheduled => const Color(0xFF6A1B9A),
-        WasteStatus.collected => const Color(0xFF00897B),
-      };
+    WasteStatus.pending => AppColors.warning,
+    WasteStatus.approved => AppColors.primary,
+    WasteStatus.rejected => AppColors.error,
+    WasteStatus.scheduled => const Color(0xFF6A1B9A),
+    WasteStatus.collected => const Color(0xFF00897B),
+  };
 
   IconData get icon => switch (this) {
-        WasteStatus.pending => Icons.hourglass_empty_rounded,
-        WasteStatus.approved => Icons.verified_rounded,
-        WasteStatus.rejected => Icons.cancel_outlined,
-        WasteStatus.scheduled => Icons.event_available_rounded,
-        WasteStatus.collected => Icons.inventory_2_rounded,
-      };
+    WasteStatus.pending => Icons.hourglass_empty_rounded,
+    WasteStatus.approved => Icons.verified_rounded,
+    WasteStatus.rejected => Icons.cancel_outlined,
+    WasteStatus.scheduled => Icons.event_available_rounded,
+    WasteStatus.collected => Icons.inventory_2_rounded,
+  };
 
   static WasteStatus fromName(String? name) => WasteStatus.values.firstWhere(
-        (s) => s.name == name,
-        orElse: () => WasteStatus.pending,
-      );
+    (s) => s.name == name,
+    orElse: () => WasteStatus.pending,
+  );
 }
 
 DateTime? _asDate(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
@@ -56,7 +56,6 @@ class WasteSubmission {
     this.remarks,
     this.validatedBy,
     this.validatedAt,
-    this.pointsAwarded = 0,
     this.createdAt,
     this.updatedAt,
   });
@@ -74,7 +73,6 @@ class WasteSubmission {
   final String? remarks;
   final String? validatedBy;
   final DateTime? validatedAt;
-  final int pointsAwarded;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -93,15 +91,14 @@ class WasteSubmission {
       barangay: data['barangay'] as String?,
       images: rawImages is List
           ? rawImages
-              .map(UploadPayload.fromMap)
-              .whereType<UploadPayload>()
-              .toList(growable: false)
+                .map(UploadPayload.fromMap)
+                .whereType<UploadPayload>()
+                .toList(growable: false)
           : const [],
       status: WasteStatusX.fromName(data['status'] as String?),
       remarks: data['remarks'] as String?,
       validatedBy: data['validatedBy'] as String?,
       validatedAt: _asDate(data['validatedAt']),
-      pointsAwarded: (data['pointsAwarded'] as num?)?.toInt() ?? 0,
       createdAt: _asDate(data['createdAt']),
       updatedAt: _asDate(data['updatedAt']),
     );

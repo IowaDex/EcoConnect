@@ -46,14 +46,17 @@ class LocalDatabase {
         record.toDatabase(),
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
-      await transaction.rawDelete('''
+      await transaction.rawDelete(
+        '''
         DELETE FROM location_queue
         WHERE rowid IN (
           SELECT rowid FROM location_queue
           ORDER BY recorded_at ASC
           LIMIT MAX(0, (SELECT COUNT(*) FROM location_queue) - ?)
         )
-      ''', [maxPendingLocations]);
+      ''',
+        [maxPendingLocations],
+      );
     });
   }
 

@@ -4,8 +4,12 @@ import '../theme/app_colors.dart';
 
 /// One place for transient feedback and destructive-action confirmation.
 abstract final class AppFeedback {
-  static void success(BuildContext context, String message) =>
-      _show(context, message, AppColors.primary, Icons.check_circle_outline_rounded);
+  static void success(BuildContext context, String message) => _show(
+    context,
+    message,
+    AppColors.primary,
+    Icons.check_circle_outline_rounded,
+  );
 
   static void error(BuildContext context, String message) =>
       _show(context, message, AppColors.error, Icons.error_outline_rounded);
@@ -80,7 +84,8 @@ abstract final class AppFeedback {
   /// Human-readable message for Firestore / auth failures.
   static String describe(Object error) {
     final raw = error.toString();
-    if (raw.contains('permission-denied') || raw.contains('PERMISSION_DENIED')) {
+    if (raw.contains('permission-denied') ||
+        raw.contains('PERMISSION_DENIED')) {
       return 'You do not have permission to do that. '
           'Ask barangay staff if this keeps happening.';
     }

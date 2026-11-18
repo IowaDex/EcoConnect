@@ -72,7 +72,8 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
         await NotificationService().push(
           userId: driverId,
           title: 'You have a truck guide',
-          body: '${user.displayName ?? 'Your guide'} is your truck guide for '
+          body:
+              '${user.displayName ?? 'Your guide'} is your truck guide for '
               '${truck.plateNumber}.',
           // Drivers may only send route or collection alerts; a guide shares
           // the driver role, so this keeps the write inside the rules.
@@ -134,8 +135,11 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
                     borderRadius: BorderRadius.circular(20),
                     child: const Padding(
                       padding: EdgeInsets.all(6),
-                      child: Icon(Icons.logout_rounded,
-                          size: 18, color: AppColors.inkMuted),
+                      child: Icon(
+                        Icons.logout_rounded,
+                        size: 18,
+                        color: AppColors.inkMuted,
+                      ),
                     ),
                   ),
                 ],
@@ -184,10 +188,13 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
                               for (final truck in fleet) ...[
                                 TruckCard(
                                   truck: truck,
-                                  selected: trucks.selectedTruck?.id == truck.id,
+                                  selected:
+                                      trucks.selectedTruck?.id == truck.id,
                                   status: TruckStatusX.resolve(
                                     truck: truck,
-                                    inTransit: moving.contains(truck.plateNumber),
+                                    inTransit: moving.contains(
+                                      truck.plateNumber,
+                                    ),
                                     hasTicket: ready.contains(truck.id),
                                   ),
                                   onTap: () => _open(truck),

@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -14,8 +16,35 @@ import '../services/manual_service.dart';
 
 /// City Hall asks Iswim for a manual; Iswim answers by linking a submitted
 /// manual to the request.
-class ManualRequestsScreen extends StatelessWidget {
+class ManualRequestsScreen extends StatefulWidget {
   const ManualRequestsScreen({super.key});
+
+  @override
+  State<ManualRequestsScreen> createState() => _ManualRequestsScreenState();
+}
+
+class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<ManualRequest> _filter(List<ManualRequest> requests) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return requests;
+    return requests.where((r) {
+      return r.title.toLowerCase().contains(q) ||
+          r.code.toLowerCase().contains(q) ||
+          r.details.toLowerCase().contains(q) ||
+          r.requestedByName.toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,13 +108,67 @@ class ManualRequestsScreen extends StatelessWidget {
               onAction: isIswim ? null : () => _openRequest(context),
             );
           }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 96),
+          final items = _filter(requests);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
+          return Column(
             children: [
-              for (final request in requests) ...[
-                _RequestCard(request: request, isIswim: isIswim),
-                const SizedBox(height: 10),
-              ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 6),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search title, code or requester',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                child: EcoResultCount(
+                  shown: items.length,
+                  total: requests.length,
+                  singular: 'request',
+                  plural: 'requests',
+                ),
+              ),
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No request matches your search.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(18, 6, 18, 96),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, i) =>
+                            _RequestCard(request: visible[i], isIswim: isIswim),
+                      ),
+              ),
+              if (items.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: items.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
             ],
           );
         },

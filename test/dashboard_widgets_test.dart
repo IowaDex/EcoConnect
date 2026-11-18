@@ -125,6 +125,61 @@ void main() {
       await tester.pumpAndSettle();
       expect(routes, ['/tracking']);
     });
+
+    testWidgets('a locked tile explains instead of navigating', (tester) async {
+      final lockedNotes = <String>[];
+      final routes = <String>[];
+      const actions = <QuickAction>[
+        QuickAction(
+          label: 'Track truck',
+          icon: Icons.local_shipping_rounded,
+          route: '/tracking',
+        ),
+        QuickAction(
+          label: 'My requests',
+          icon: Icons.fact_check_outlined,
+          route: '/my-requests',
+          locked: true,
+          lockedNote: 'follow your pickup requests',
+        ),
+      ];
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, __) => Scaffold(
+              body: SingleChildScrollView(
+                child: QuickActionGrid(
+                  actions: actions,
+                  onLocked: (action) => lockedNotes.add(action.lockedNote),
+                ),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/tracking',
+            builder: (context, state) {
+              routes.add(state.uri.path);
+              return const Scaffold(body: Text('destination'));
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('My requests'));
+      await tester.pumpAndSettle();
+
+      // The grid hands back the tapped tile so the dashboard can name the
+      // feature the resident was trying to reach.
+      expect(lockedNotes, ['follow your pickup requests']);
+      expect(routes, isEmpty);
+      expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
+    });
   });
 
   group('section label', () {

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/paging.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
@@ -238,7 +240,7 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
 
 /// The delay list. DSQC can push to the district officer, the barangay can
 /// close its copy.
-class DelayListScreen extends StatelessWidget {
+class DelayListScreen extends StatefulWidget {
   const DelayListScreen({
     super.key,
     required this.canForward,
@@ -252,7 +254,35 @@ class DelayListScreen extends StatelessWidget {
   final bool canForward;
 
   @override
+  State<DelayListScreen> createState() => _DelayListScreenState();
+}
+
+class _DelayListScreenState extends State<DelayListScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<DelayReport> _filter(List<DelayReport> reports) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return reports;
+    return reports.where((r) {
+      return r.code.toLowerCase().contains(q) ||
+          r.plateNumber.toLowerCase().contains(q) ||
+          r.reason.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final canForward = widget.canForward;
+    final canAnnounce = widget.canAnnounce;
     return Scaffold(
       backgroundColor: AppColors.creamBright,
       appBar: AppBar(
@@ -289,17 +319,67 @@ class DelayListScreen extends StatelessWidget {
               ),
             );
           }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 26),
+          final items = _filter(reports);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
+          return Column(
             children: [
-              for (final report in reports) ...[
-                _DelayCard(
-                  report: report,
-                  canForward: canForward,
-                  canAnnounce: canAnnounce,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search ticket, plate or reason',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
                 ),
-                const SizedBox(height: 9),
-              ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                child: EcoResultCount(
+                  shown: items.length,
+                  total: reports.length,
+                  singular: 'report',
+                  plural: 'reports',
+                ),
+              ),
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No report matches your search.',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 9),
+                        itemBuilder: (context, i) => _DelayCard(
+                          report: visible[i],
+                          canForward: canForward,
+                          canAnnounce: canAnnounce,
+                        ),
+                      ),
+              ),
+              if (items.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: items.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
             ],
           );
         },
@@ -355,10 +435,12 @@ class _DelayCard extends StatelessWidget {
         const SnackBar(content: Text('Delay announced to residents')),
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text('Could not announce the delay: $e'),
-        backgroundColor: AppColors.error,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not announce the delay: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 

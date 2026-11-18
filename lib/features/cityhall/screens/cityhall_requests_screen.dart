@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -26,7 +28,28 @@ class CityHallRequestsScreen extends StatefulWidget {
 }
 
 class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
+  final _search = TextEditingController();
   bool _openOnly = true;
+  String _query = '';
+  int _page = 0;
+  int _pageSize = 10;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<CollectionRequest> _filter(List<CollectionRequest> items) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items.where((r) {
+      return r.title.toLowerCase().contains(q) ||
+          r.description.toLowerCase().contains(q) ||
+          r.requesterName.toLowerCase().contains(q) ||
+          r.location.toLowerCase().contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,11 +89,25 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
             );
           }
           final all = snapshot.data ?? const <CollectionRequest>[];
-          final items = _openOnly
+          final open = _openOnly
               ? all.where((r) => r.status.isOpen).toList(growable: false)
               : all;
+          final items = _filter(open);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
           return Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search requester, title or place',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
                 child: Row(
@@ -78,7 +115,10 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                     FilterChip(
                       label: const Text('Open only'),
                       selected: _openOnly,
-                      onSelected: (value) => setState(() => _openOnly = value),
+                      onSelected: (value) => setState(() {
+                        _openOnly = value;
+                        _page = 0;
+                      }),
                       selectedColor: AppColors.lightGreen,
                       checkmarkColor: AppColors.primary,
                       labelStyle: const TextStyle(
@@ -89,7 +129,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                     ),
                     const Spacer(),
                     Text(
-                      '${items.length} shown',
+                      '${items.length} of ${all.length}',
                       style: const TextStyle(
                         fontSize: 10.5,
                         color: AppColors.inkMuted,
@@ -108,15 +148,29 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                             'resident and barangay both see the response.',
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                        itemCount: items.length,
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                        itemCount: visible.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, i) => _RequestTile(
-                          request: items[i],
-                          onTap: () => _open(context, items[i], byName),
+                          request: visible[i],
+                          onTap: () => _open(context, visible[i], byName),
                         ),
                       ),
               ),
+              if (items.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: items.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
             ],
           );
         },

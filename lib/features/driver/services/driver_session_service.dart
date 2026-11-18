@@ -12,33 +12,33 @@ enum DriverLocationState { ok, disabled, permission, offline, unknown }
 
 extension DriverLocationStateX on DriverLocationState {
   String get wireName => switch (this) {
-        DriverLocationState.ok => 'ok',
-        DriverLocationState.disabled => 'disabled',
-        DriverLocationState.permission => 'permission',
-        DriverLocationState.offline => 'offline',
-        DriverLocationState.unknown => 'unknown',
-      };
+    DriverLocationState.ok => 'ok',
+    DriverLocationState.disabled => 'disabled',
+    DriverLocationState.permission => 'permission',
+    DriverLocationState.offline => 'offline',
+    DriverLocationState.unknown => 'unknown',
+  };
 
   String get label => switch (this) {
-        DriverLocationState.ok => 'Location active',
-        DriverLocationState.disabled => 'GPS turned off',
-        DriverLocationState.permission => 'Location permission needed',
-        DriverLocationState.offline => 'No internet connection',
-        DriverLocationState.unknown => 'Location unavailable',
-      };
+    DriverLocationState.ok => 'Location active',
+    DriverLocationState.disabled => 'GPS turned off',
+    DriverLocationState.permission => 'Location permission needed',
+    DriverLocationState.offline => 'No internet connection',
+    DriverLocationState.unknown => 'Location unavailable',
+  };
 
   /// Neutral wording for staff: states what the device reported, never intent.
   String get staffMessage => switch (this) {
-        DriverLocationState.ok => 'Driver location is updating.',
-        DriverLocationState.disabled =>
-          'The driver\'s device location is turned off. Tracking will resume when it is enabled.',
-        DriverLocationState.permission =>
-          'The app cannot access the driver\'s location because permission was not granted.',
-        DriverLocationState.offline =>
-          'The driver appears to be offline. The last known position is shown.',
-        DriverLocationState.unknown =>
-          'The driver\'s location is unavailable. The last known position is shown.',
-      };
+    DriverLocationState.ok => 'Driver location is updating.',
+    DriverLocationState.disabled =>
+      'The driver\'s device location is turned off. Tracking will resume when it is enabled.',
+    DriverLocationState.permission =>
+      'The app cannot access the driver\'s location because permission was not granted.',
+    DriverLocationState.offline =>
+      'The driver appears to be offline. The last known position is shown.',
+    DriverLocationState.unknown =>
+      'The driver\'s location is unavailable. The last known position is shown.',
+  };
 
   bool get needsAttention => this != DriverLocationState.ok;
 
@@ -53,7 +53,8 @@ extension DriverLocationStateX on DriverLocationState {
 /// Publishes location-health changes on the driver's live route document and
 /// raises a staff notification the first time a problem appears.
 class DriverSessionService {
-  static final DriverSessionService _instance = DriverSessionService._internal();
+  static final DriverSessionService _instance =
+      DriverSessionService._internal();
   factory DriverSessionService() => _instance;
   DriverSessionService._internal();
 
@@ -82,7 +83,19 @@ class DriverSessionService {
         body: '$driverName: ${state.staffMessage}',
         type: AppNotificationType.route,
         data: {'driverId': driverId, 'state': state.wireName},
+        // A flapping connection must not flood the desk: one alert per driver,
+        // state and day.
+        dedupeKey:
+            'driver_location_${driverId}_${state.wireName}_${_dayKey()}',
       );
     }
+  }
+
+  /// `2026-11-18`, used to bucket the location alert.
+  static String _dayKey() {
+    final now = DateTime.now();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
   }
 }

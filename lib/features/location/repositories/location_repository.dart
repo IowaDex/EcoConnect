@@ -12,9 +12,9 @@ class LocationRepository {
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
     LocalDatabase? database,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance,
-        _database = database ?? LocalDatabase.instance;
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance,
+       _database = database ?? LocalDatabase.instance;
 
   static const _minimumDistanceMeters = 20.0;
   static const _minimumInterval = Duration(seconds: 30);
@@ -61,7 +61,8 @@ class LocationRepository {
     }
 
     final recordedAt = position.timestamp.toUtc();
-    final id = '${userId}_${recordedAt.microsecondsSinceEpoch}_'
+    final id =
+        '${userId}_${recordedAt.microsecondsSinceEpoch}_'
         '${position.latitude}_${position.longitude}';
     final record = LocationRecord(
       id: id,
@@ -163,8 +164,10 @@ class LocationRepository {
 
   /// Deletes everything location-related stored for [userId] (admin cleanup).
   Future<void> deleteAllFor(String userId) async {
-    final history =
-        _firestore.collection('users').doc(userId).collection('locations');
+    final history = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('locations');
     while (true) {
       final page = await history.limit(400).get();
       if (page.docs.isEmpty) break;

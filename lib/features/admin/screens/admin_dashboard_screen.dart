@@ -197,7 +197,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   route: '/waste-validation',
                                 ),
                                 const QuickAction(
-                                  label: 'Points',
+                                  label: 'Stops',
                                   icon: Icons.add_location_alt_outlined,
                                   route: '/collection-points',
                                 ),
@@ -216,16 +216,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   icon: Icons.groups_2_outlined,
                                   route: '/event-participation',
                                 ),
-                                const QuickAction(
-                                  label: 'Recycling',
-                                  icon: Icons.recycling_rounded,
-                                  route: '/dropoff',
-                                ),
-                                const QuickAction(
-                                  label: 'Users',
-                                  icon: Icons.person_add_alt_1_rounded,
-                                  route: '/admin',
-                                ),
                               ],
                             ),
                           ],
@@ -242,4 +232,3 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 }
-
