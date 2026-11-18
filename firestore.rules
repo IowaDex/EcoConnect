@@ -74,6 +74,16 @@ service cloud.firestore {
         && profile(request.auth.uid).get('accountStatus', 'active') == 'active';
     }
 
+    // Sending an ID is the resident's own step: it never needs the barangay's
+    // permission. The desk still makes the decision, so an account that is
+    // already verified has nothing left to send.
+    function canSendId() {
+      return signedIn()
+        && hasProfile(request.auth.uid)
+        && profile(request.auth.uid).get('verificationStatus', 'unverified')
+             != 'verified';
+    }
+
     // Avatars are stored inline in the profile, so cap their size.
     function photoOk(data) {
       return !('photoUrl' in data) || data.photoUrl == null
@@ -93,6 +103,21 @@ service cloud.firestore {
         && request.auth.token.get('email_verified', false) == true
         && request.resource.data.userId == 'staff'
         && request.resource.data.get('type', '') == 'account';
+    }
+
+    // A resident who sends a photo from the dashboard puts their own record
+    // back in line for review: 'pending', with the old reason cleared. That is
+    // the only profile change they may make here — never 'verified', never a
+    // reason of their own — and the desk still makes the decision.
+    function residentIdResubmission() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['verificationStatus', 'rejectionReason'])
+        || (request.resource.data.get('verificationStatus', 'unverified')
+              == 'pending'
+            && resource.data.get('verificationStatus', 'unverified')
+                 != 'verified'
+            && request.resource.data.get('rejectionReason', null) == null
+            && changed.hasOnly(['verificationStatus', 'rejectionReason']));
     }
 
     function residentAnswer() {
@@ -204,8 +229,8 @@ service cloud.firestore {
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
-                         'accountType', 'verificationStatus', 'verifiedBy',
-                         'verificationDate', 'rejectionReason', 'approvedAt',
+                         'accountType', 'verifiedBy',
+                         'verificationDate', 'approvedAt',
                          // Set by the barangay desk when it approves the
                          // registration; the resident only answers it.
                          'registrationApprovedAt'])
@@ -214,6 +239,7 @@ service cloud.firestore {
                   .hasAny(['emailVerified'])
               || request.resource.data.emailVerified
                    == request.auth.token.get('email_verified', false))
+          && residentIdResubmission()
           && residentAnswer()
           && photoOk(request.resource.data))
         || isCityHall()
@@ -572,24 +598,31 @@ service cloud.firestore {
     // Government ID submissions. Readable only by the applicant and staff.
     match /verificationRequests/{requestId} {
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      // Sending an ID never needs the barangay's permission: the resident
+      // always makes the decision to send, the desk makes the decision to
+      // approve, and the write pins the record back to 'pending'.
       allow create: if isSelf(request.resource.data.userId)
+        && canSendId()
         && request.resource.data.status == 'pending'
         // Every resident uploads an ID at sign-up; government accounts too.
         && request.resource.data.accountType in ['resident', 'government']
         && request.resource.data.document is map
         && request.resource.data.document.dataUrl is string
         && request.resource.data.document.dataUrl.size() < 900000;
-      // A resident may replace their own ID while it is waiting for review or
-      // after a rejection, so a bad photo never locks them out for good.
-      allow update: if (isAdmin()
-        || (isSelf(resource.data.userId)
-          && resource.data.status in ['pending', 'rejected']
-          && request.resource.data.status == 'pending'
-          && request.resource.data.userId == resource.data.userId
-          && request.resource.data.document is map
-          && request.resource.data.document.dataUrl is string
-          && request.resource.data.document.dataUrl.size() < 900000));
-      allow delete: if isAdmin();
+      // A resubmission goes to the record named after the resident, so nothing
+      // here reads the rejected one: an ID saved by an older version of the
+      // app (no owner field, a status this build never sends) can always be
+      // replaced instead of locking the resident out.
+      allow update: if isSelf(requestId)
+        && canSendId()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        // Every resident uploads an ID at sign-up; government accounts too.
+        && request.resource.data.accountType in ['resident', 'government']
+        && request.resource.data.document is map
+        && request.resource.data.document.dataUrl is string
+        && request.resource.data.document.dataUrl.size() < 900000;
+      allow update, delete: if isAdmin();
     }
 
     // In-app notifications. Residents may notify themselves or the City Hall

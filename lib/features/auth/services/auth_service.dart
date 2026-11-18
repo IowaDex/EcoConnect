@@ -27,9 +27,6 @@ enum AuthErrorType {
   /// A resident signed up but has not confirmed their email yet. The session
   /// is kept so the confirmation screen can finish it.
   needsEmailVerification,
-
-  /// The barangay rejected the registration; [AuthException.reason] says why.
-  accountDeclined,
 }
 
 class AuthException implements Exception {
@@ -311,17 +308,10 @@ class AuthService {
         throw const AuthException(AuthErrorType.accountPending);
       }
 
-      // The barangay checked the ID and the address and said no — usually
-      // because the applicant is not from Batasan Hills. Records written
-      // before the registration decision existed say 'rejected'.
-      if (appUser.accountStatus == 'declined' ||
-          appUser.accountStatus == 'rejected') {
-        await _auth.signOut();
-        throw AuthException(
-          AuthErrorType.accountDeclined,
-          reason: appUser.rejectionReason,
-        );
-      }
+      // A rejected ID is not a closed account. The resident signs in to the
+      // restricted dashboard and sends a clearer photo from there, so the
+      // desk's rejection must never lock them out of their own resubmission.
+      // Only a suspension takes the account away.
 
       // A frozen login keeps its data but loses access: City Hall suspends a
       // crew member instead of deleting the tickets he signed.

@@ -63,7 +63,6 @@ class VerificationService {
     required UploadPayload document,
   }) async {
     final ref = _col.doc(userId);
-    final existing = await ref.get();
     final payload = <String, dynamic>{
       'userId': userId,
       'name': name,
@@ -77,10 +76,35 @@ class VerificationService {
       'submittedAt': FieldValue.serverTimestamp(),
     };
 
-    if (existing.exists) {
-      await ref.update(payload);
-    } else {
-      await ref.set(payload);
+    // One write, merged onto whatever the desk already read: a resubmission
+    // replaces the photo and puts the record back to 'pending'. Reading the
+    // old record first would fail for an ID written by an older version of the
+    // app, and the resident must never need the barangay's permission to send
+    // their own ID.
+    //
+    // The profile moves with it. Without that the dashboard keeps showing the
+    // rejection, the desk's pending list keeps skipping the resident, and the
+    // resident cannot tell a saved photo from a failed one.
+    final batch = _db.batch()
+      ..set(ref, payload, SetOptions(merge: true))
+      ..update(_db.collection('users').doc(userId), {
+        'verificationStatus': VerificationStatus.pending.name,
+        'rejectionReason': null,
+      });
+
+    try {
+      await batch.commit();
+    } on FirebaseException catch (e) {
+      // The one refusal left is a stale login or rules that were never
+      // deployed. Neither is the resident's fault, and neither is fixed by
+      // asking the desk for permission to send their own ID.
+      if (e.code == 'permission-denied') {
+        throw const UploadException(
+          'Could not send your ID. Sign in again and resubmit; if it still '
+          'fails, ask the admin to deploy the latest Firestore rules.',
+        );
+      }
+      rethrow;
     }
 
     // Best effort. A resident whose account is still pending may not be allowed

@@ -464,14 +464,60 @@ test('a resident uploads an ID and may replace it while pending or after a rejec
     status: 'rejected', rejectionReason: 'The photo is blurry.',
   }));
   await assertSucceeds(updateDoc(doc(as('alice'), 'verificationRequests/alice'), id()));
-  // Once approved, the resident cannot keep rewriting it.
+  // Once approved, the resident cannot keep rewriting it. Approving sets the
+  // account to verified (setUserVerification writes both records).
   await assertSucceeds(updateDoc(doc(as('root'), 'verificationRequests/alice'), {status: 'verified'}));
+  await env.withSecurityRulesDisabled((context) =>
+    updateDoc(doc(context.firestore(), 'users/alice'), {verificationStatus: 'verified'}));
   await assertFails(updateDoc(doc(as('alice'), 'verificationRequests/alice'), id()));
   // A scan past the size cap is refused.
   await assertFails(setDoc(
       doc(as('alice'), 'verificationRequests/big'),
       id({document: {dataUrl: 'x'.repeat(900000)}}),
   ));
+});
+
+test('a resident resubmits an ID saved by an older version of the app', async () => {
+  const id = {
+    userId: 'alice',
+    status: 'pending',
+    accountType: 'resident',
+    document: {dataUrl: 'data:image/jpeg;base64,CCCC'},
+  };
+  // The desk rejected the last photo, but the record it left behind names no
+  // owner and carries a status this build never sends. The resident still owns
+  // the record named after their uid and must be able to send another one
+  // without the barangay acting first.
+  await env.withSecurityRulesDisabled((context) =>
+    setDoc(doc(context.firestore(), 'verificationRequests/alice'), {
+      status: 'unverified',
+      document: {dataUrl: 'data:image/jpeg;base64,AAAA'},
+    }));
+  await assertSucceeds(setDoc(doc(as('alice'), 'verificationRequests/alice'), id));
+  // Nobody else may write the resident's record, and it can never be approved
+  // by its owner: the resubmission is always pending.
+  await assertFails(setDoc(doc(as('bob'), 'verificationRequests/alice'), id));
+  await assertFails(setDoc(
+      doc(as('alice'), 'verificationRequests/alice'),
+      {...id, status: 'verified'},
+  ));
+
+  // The resubmission also puts the profile back to 'pending' and clears the
+  // old reason, so the dashboard stops showing the rejection.
+  await env.withSecurityRulesDisabled((context) =>
+    updateDoc(doc(context.firestore(), 'users/alice'), {
+      verificationStatus: 'rejected', rejectionReason: 'The photo is blurry.',
+    }));
+  await assertSucceeds(updateDoc(doc(as('alice'), 'users/alice'), {
+    verificationStatus: 'pending', rejectionReason: null,
+  }));
+  // A resident can never mark themselves verified, nor reopen any other way.
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {
+    verificationStatus: 'verified',
+  }));
+  await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {
+    verificationStatus: 'rejected', rejectionReason: null,
+  }));
 });
 
 test('a device token belongs to its owner and must be a real token', async () => {
