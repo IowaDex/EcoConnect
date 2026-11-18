@@ -10,6 +10,7 @@ import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/landing/screens/landing_screen.dart';
 import 'features/user/screens/user_screen.dart';
+import 'features/driver/models/truck_crew_role.dart';
 import 'features/driver/screens/truck_picker_screen.dart';
 import 'features/driver/screens/driver_screen.dart';
 import 'features/driver/screens/driver_routes_screen.dart';
@@ -179,11 +180,15 @@ const _staffRoutes = {
   ..._sharedRoutes,
 };
 
-String _homeFor(UserRole role) => switch (role) {
+String _homeFor(UserRole role, {TruckCrewRole? crewRole}) => switch (role) {
   UserRole.admin => '/admin-dashboard',
   // A driver already owns a truck, so the dashboard opens straight away.
-  // A guide starts on the fleet list and taps the plate he is riding today.
-  UserRole.driver => '/driver',
+  // A guide has no plate of his own: he starts on the fleet list and taps the
+  // truck he is riding today. Decided here, in the redirect, so the dashboard
+  // never flashes up as a landing page for him.
+  UserRole.driver => crewRole == TruckCrewRole.guide
+      ? '/driver-trucks'
+      : '/driver',
   UserRole.iswim => '/iswim',
   UserRole.cityHall => '/cityhall',
   UserRole.user => '/user',
@@ -214,6 +219,7 @@ String? authRedirect({
   required UserRole? role,
   required String location,
   bool restrictedResident = false,
+  TruckCrewRole? crewRole,
 }) {
   // Stay on the splash until the saved session is restored, so a
   // logged-in user never sees the login screen flash.
@@ -231,7 +237,7 @@ String? authRedirect({
   // There is no splash screen to navigate away: the redirect sends a restored
   // session straight to its home.
   if (location == '/splash' || location == '/welcome' || isPublic) {
-    return _homeFor(role);
+    return _homeFor(role, crewRole: crewRole);
   }
 
   // A resident whose ID is still being checked may only track the truck and
@@ -248,7 +254,7 @@ String? authRedirect({
   }
 
   // A driver must not reach the staff desk by typing the URL, and vice versa.
-  if (!_canOpen(role, location)) return _homeFor(role);
+  if (!_canOpen(role, location)) return _homeFor(role, crewRole: crewRole);
   return null;
 }
 
@@ -287,6 +293,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           role: auth.currentUser?.role,
           location: state.matchedLocation,
           restrictedResident: auth.currentUser?.isRestrictedResident ?? false,
+          crewRole: auth.currentUser?.crewRole,
         );
       },
       routes: [

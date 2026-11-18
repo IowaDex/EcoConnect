@@ -1,5 +1,6 @@
 import 'package:eco_connect/app.dart';
 import 'package:eco_connect/features/auth/models/user.dart';
+import 'package:eco_connect/features/driver/models/truck_crew_role.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -128,6 +129,49 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/splash'), '/driver');
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.driver, location: '/driver'), isNull);
+  });
+
+  test('a guide lands on the fleet list, never on a truck dashboard', () {
+    // The guide holds the device but owns no plate, so the list comes first.
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/splash',
+      crewRole: TruckCrewRole.guide,
+    ), '/driver-trucks');
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/login',
+      crewRole: TruckCrewRole.guide,
+    ), '/driver-trucks');
+    // Typing a forbidden URL still bounces him to the list, not the dashboard.
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/verification',
+      crewRole: TruckCrewRole.guide,
+    ), '/driver-trucks');
+    // Once he taps a plate the dashboard is a normal page he can open.
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/driver',
+      crewRole: TruckCrewRole.guide,
+    ), isNull);
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/driver-trucks',
+      crewRole: TruckCrewRole.guide,
+    ), isNull);
+    // A driver is unaffected: his plate is already assigned.
+    expect(authRedirect(
+      initialized: true,
+      role: UserRole.driver,
+      location: '/splash',
+      crewRole: TruckCrewRole.driver,
+    ), '/driver');
   });
 
   test('city hall keeps the fleet; Iswim runs the account desk', () {
