@@ -182,8 +182,7 @@ const _staffRoutes = {
 String _homeFor(UserRole role) => switch (role) {
   UserRole.admin => '/admin-dashboard',
   // A driver already owns a truck, so the dashboard opens straight away.
-  // A guide has no truck of his own and is bounced to the fleet list from
-  // inside the dashboard.
+  // A guide starts on the fleet list and taps the plate he is riding today.
   UserRole.driver => '/driver',
   UserRole.iswim => '/iswim',
   UserRole.cityHall => '/cityhall',

@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/constants/service_area.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
@@ -12,8 +13,10 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/services/session_actions.dart';
+import '../../auth/utils/phone.dart';
 import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
+import '../models/truck_crew_role.dart';
 import '../widgets/driver_nav_bar.dart';
 
 /// Driver profile: identity, account state, shortcuts and sign-out.
@@ -21,6 +24,18 @@ class DriverProfileScreen extends StatelessWidget {
   const DriverProfileScreen({super.key});
 
   Future<void> _logout(BuildContext context) => confirmAndLogout(context);
+
+  /// Phone and address belong to the crew member, so he maintains them here.
+  /// The barangay is not editable: the app serves one barangay only.
+  void _edit(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.cream,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => const _EditCrewProfileSheet(),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -76,10 +91,10 @@ class DriverProfileScreen extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const StatusBadge(
-                              label: 'Driver',
+                            StatusBadge(
+                              label: user.crewRole.label,
                               color: AppColors.primary,
-                              icon: Icons.local_shipping_outlined,
+                              icon: user.crewRole.icon,
                               compact: true,
                             ),
                             const SizedBox(width: 6),
@@ -107,17 +122,26 @@ class DriverProfileScreen extends StatelessWidget {
                         _InfoRow(
                           icon: Icons.phone_outlined,
                           label: 'Phone',
-                          value: user.phone ?? 'Not set',
+                          value: user.phone == null || user.phone!.isEmpty
+                              ? 'Tap to add your number'
+                              : user.phone!,
+                          onTap: () => _edit(context),
                         ),
-                        _InfoRow(
+                        const _InfoRow(
                           icon: Icons.location_city_outlined,
                           label: 'Barangay',
-                          value: user.barangay ?? 'Not set',
+                          // One barangay only: the value is fixed, never typed.
+                          value: ServiceArea.barangay,
+                          locked: true,
                         ),
                         _InfoRow(
                           icon: Icons.home_outlined,
                           label: 'Address',
-                          value: user.fullAddress,
+                          value: user.houseStreet == null ||
+                                  user.houseStreet!.trim().isEmpty
+                              ? 'Tap to add your address'
+                              : user.houseStreet!,
+                          onTap: () => _edit(context),
                         ),
                       ],
                     ),
@@ -271,15 +295,23 @@ class _InfoRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
+    this.locked = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
 
+  /// Opens the editor for this field. Null leaves the row read-only.
+  final VoidCallback? onTap;
+
+  /// A fixed value (the barangay): shown with a lock instead of an edit hint.
+  final bool locked;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,12 +328,303 @@ class _InfoRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10.5,
                 height: 1.4,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textDark,
+                color: onTap == null && !locked
+                    ? AppColors.textDark
+                    : (locked ? AppColors.textDark : AppColors.forest),
               ),
+            ),
+          ),
+          if (locked)
+            const Icon(
+              Icons.lock_outline_rounded,
+              size: 13,
+              color: AppColors.inkMuted,
+            )
+          else if (onTap != null)
+            const Icon(
+              Icons.edit_outlined,
+              size: 13,
+              color: AppColors.moss,
+            ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
+  }
+}
+
+/// Edits the crew member's own contact details. The barangay is shown but not
+/// editable, so a profile can never point outside Batasan Hills.
+class _EditCrewProfileSheet extends StatefulWidget {
+  const _EditCrewProfileSheet();
+
+  @override
+  State<_EditCrewProfileSheet> createState() => _EditCrewProfileSheetState();
+}
+
+class _EditCrewProfileSheetState extends State<_EditCrewProfileSheet> {
+  late final TextEditingController _phone;
+  late final TextEditingController _address;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = context.read<AuthProvider>().currentUser;
+    _phone = TextEditingController(text: Phone.localDigits(user?.phone));
+    _address = TextEditingController(text: user?.houseStreet ?? '');
+  }
+
+  @override
+  void dispose() {
+    _phone.dispose();
+    _address.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final digits = _phone.text.trim();
+    if (digits.isNotEmpty) {
+      final error = Phone.validate(digits);
+      if (error != null) {
+        _toast(error);
+        return;
+      }
+    }
+
+    setState(() => _saving = true);
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.updateProfile(
+      phone: digits.isEmpty ? '' : Phone.toE164(digits),
+      houseStreet: _address.text.trim(),
+      barangay: ServiceArea.barangay,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!ok) {
+      _toast(auth.error ?? 'Could not save your changes');
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Profile updated')));
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                height: 4,
+                width: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.sage,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'My details',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.forest,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Barangay staff use these details to reach you about a run.',
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _SheetField(
+              label: 'Mobile number',
+              hint: '09XX XXX XXXX',
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(11),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _SheetField(
+              label: 'Address',
+              hint: 'House number and street',
+              controller: _address,
+              maxLines: 2,
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: BoxDecoration(
+                color: AppColors.creamBright,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.location_city_outlined,
+                    size: 15,
+                    color: AppColors.primary,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Barangay',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    ServiceArea.barangay,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                  SizedBox(width: 5),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 13,
+                    color: AppColors.inkMuted,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 46,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.forest,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.creamBright,
+                        ),
+                      )
+                    : const Text(
+                        'Save changes',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetField extends StatelessWidget {
+  const _SheetField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    this.maxLines = 1,
+    this.keyboardType,
+    this.inputFormatters,
+    this.textCapitalization = TextCapitalization.none,
+  });
+
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final int maxLines;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextCapitalization textCapitalization;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.creamBright,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: controller,
+            maxLines: maxLines,
+            keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            textCapitalization: textCapitalization,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: AppColors.forest,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: hint,
+              hintStyle: const TextStyle(
+                fontSize: 12,
+                color: AppColors.inkMuted,
+              ),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
             ),
           ),
         ],
