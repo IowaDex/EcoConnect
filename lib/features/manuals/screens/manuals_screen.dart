@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/utils/paging.dart';
@@ -59,37 +60,19 @@ class _ManualsScreenState extends State<ManualsScreen> {
     final user = context.watch<AuthProvider>().currentUser;
     final isIswim = user?.role == UserRole.iswim;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop()
-              ? context.pop()
-              : context.go(isIswim ? '/iswim' : '/cityhall'),
+    return EcoPageScaffold(
+      eyebrow: isIswim ? 'ISWIM · MANUALS' : 'CITY HALL · MANUALS',
+      title: isIswim ? 'Manuals' : 'Manual library',
+      subtitle: 'The procedures both desks follow, versioned and signed off.',
+      onBack: () => ecoBack(context, isIswim ? '/iswim' : '/cityhall'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.inbox_outlined,
+          tooltip: 'Manual requests',
+          onTap: () => context.push('/manual-requests'),
         ),
-        title: Text(
-          isIswim ? 'Manuals' : 'Manual library',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () => context.push('/manual-requests'),
-            icon: const Icon(Icons.inbox_outlined, size: 16),
-            label: const Text(
-              'Requests',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: isIswim
+      ],
+      fab: isIswim
           ? FloatingActionButton.extended(
               onPressed: () => _openCreate(context),
               backgroundColor: AppColors.forest,

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -51,27 +52,12 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
     final user = context.watch<AuthProvider>().currentUser;
     final isIswim = user?.role == UserRole.iswim;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop()
-              ? context.pop()
-              : context.go(isIswim ? '/iswim' : '/cityhall'),
-        ),
-        title: const Text(
-          'Manual requests',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
-      floatingActionButton: isIswim
+    return EcoPageScaffold(
+      eyebrow: 'MANUALS · REQUESTS',
+      title: 'Manual requests',
+      subtitle: 'Asks for a procedure that is missing or out of date.',
+      onBack: () => ecoBack(context, isIswim ? '/iswim' : '/cityhall'),
+      fab: isIswim
           ? null
           : FloatingActionButton.extended(
               onPressed: () => _openRequest(context),

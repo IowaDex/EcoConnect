@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -7,6 +6,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
@@ -56,25 +56,13 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
     final user = context.watch<AuthProvider>().currentUser;
     final byName = user?.displayName ?? 'City Hall';
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/cityhall'),
-        ),
-        title: const Text(
-          'Resident requests',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'CITY HALL · RESIDENT REQUESTS',
+      title: 'Resident requests',
+      subtitle:
+          'Answer the barangay’s escalated requests. Your reply is visible to '
+          'the resident and the concerned staff.',
+      onBack: () => ecoBack(context, '/cityhall'),
       body: StreamBuilder<List<CollectionRequest>>(
         stream: CollectionRequestService().watchAll(),
         builder: (context, snapshot) {

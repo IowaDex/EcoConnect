@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../incident/models/incident.dart';
 import '../../incident/services/incident_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/paging.dart';
-import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/empty_state.dart';
 
 class IncidentDeskScreen extends StatefulWidget {
   const IncidentDeskScreen({super.key});
@@ -49,152 +50,99 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 16,
-                      color: AppColors.forest,
-                    ),
-                    onPressed: () => context.go('/admin-dashboard'),
-                  ),
-                  const SizedBox(width: 10),
-                  const BrandWordmark(fontSize: 10.5),
-                ],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 16, 22, 0),
-              child: Text(
-                'Incident desk',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
+    return EcoPageScaffold(
+      eyebrow: 'BARANGAY STAFF · INCIDENT DESK',
+      title: 'Incident desk',
+      subtitle: 'Reports submitted by residents, newest first.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      body: StreamBuilder<List<Incident>>(
+        stream: _stream,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Could not load reports: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11, color: AppColors.danger),
                 ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 6, 22, 14),
-              child: Text(
-                'Reports submitted by residents, newest first.',
-                style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const EcoLoadingView(label: 'Loading reports');
+          }
+          final all = snapshot.data!;
+          if (all.isEmpty) {
+            return const _EmptyState();
+          }
+          final incidents = _filter(all);
+          final page = clampPage(_page, incidents.length, _pageSize);
+          final visible = pageSlice(incidents, page, _pageSize);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search type, place or reporter',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
+                ),
               ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<Incident>>(
-                stream: _stream,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Could not load reports: ${snapshot.error}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.danger,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                child: EcoResultCount(
+                  shown: incidents.length,
+                  total: all.length,
+                  singular: 'report',
+                  plural: 'reports',
+                ),
+              ),
+              Expanded(
+                child: incidents.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'No report matches your search.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }
-                  if (!snapshot.hasData) {
-                    return const EcoLoadingView(label: 'Loading reports');
-                  }
-                  final all = snapshot.data!;
-                  if (all.isEmpty) {
-                    return const _EmptyState();
-                  }
-                  final incidents = _filter(all);
-                  final page = clampPage(_page, incidents.length, _pageSize);
-                  final visible = pageSlice(incidents, page, _pageSize);
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
-                        child: EcoSearchField(
-                          controller: _search,
-                          hint: 'Search type, place or reporter',
-                          onChanged: (value) => setState(() {
-                            _query = value;
-                            _page = 0;
-                          }),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) => _IncidentTile(
+                          incident: visible[i],
+                          onResolve: () => _resolve(visible[i]),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 4),
-                        child: EcoResultCount(
-                          shown: incidents.length,
-                          total: all.length,
-                          singular: 'report',
-                          plural: 'reports',
-                        ),
-                      ),
-                      Expanded(
-                        child: incidents.isEmpty
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(24),
-                                  child: Text(
-                                    'No report matches your search.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.inkMuted,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  22,
-                                  6,
-                                  22,
-                                  10,
-                                ),
-                                itemCount: visible.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (context, i) => _IncidentTile(
-                                  incident: visible[i],
-                                  onResolve: () => _resolve(visible[i]),
-                                ),
-                              ),
-                      ),
-                      if (incidents.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
-                          child: EcoPaginationBar(
-                            page: page,
-                            pageSize: _pageSize,
-                            total: incidents.length,
-                            onPageChanged: (next) =>
-                                setState(() => _page = next),
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                    ],
-                  );
-                },
               ),
-            ),
-          ],
-        ),
+              if (incidents.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: incidents.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -218,13 +166,8 @@ class _IncidentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return EcoCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cream,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -359,31 +302,10 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.inbox_rounded, size: 44, color: AppColors.sage),
-            SizedBox(height: 12),
-            Text(
-              'No reports yet',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.forest,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              'Resident reports will appear here in real time.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
-            ),
-          ],
-        ),
-      ),
+    return const EmptyState(
+      icon: Icons.inbox_rounded,
+      title: 'No reports yet',
+      message: 'Resident reports will appear here in real time.',
     );
   }
 }

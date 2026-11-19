@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/paging.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
 import '../widgets/ticket_card.dart';
@@ -56,30 +58,11 @@ class _TicketQueueScreenState extends State<TicketQueueScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/driver');
-            }
-          },
-        ),
-        title: Text(
-          widget.title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'SIGNATURE QUEUE',
+      title: widget.title,
+      subtitle: widget.subtitle,
+      onBack: () => ecoBack(context, '/driver'),
       body: StreamBuilder<List<TripTicket>>(
         stream: TicketService().watchSignerQueue(widget.signer),
         builder: (context, snapshot) {
@@ -182,37 +165,13 @@ class _EmptyQueue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.draw_outlined, size: 42, color: AppColors.sage),
-            const SizedBox(height: 12),
-            const Text(
-              'Nothing to sign yet',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle ??
-                  'Tickets arrive here automatically once the previous '
-                      'signature is done.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                height: 1.5,
-                color: AppColors.inkMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.draw_outlined,
+      title: 'Nothing to sign yet',
+      message:
+          subtitle ??
+          'Tickets arrive here automatically once the previous signature is '
+              'done.',
     );
   }
 }

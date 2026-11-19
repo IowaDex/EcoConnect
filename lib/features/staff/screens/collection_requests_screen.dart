@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/models/waste_category.dart';
@@ -11,9 +10,9 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../requests/models/collection_request.dart';
@@ -50,140 +49,130 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'Collection requests',
-              subtitle: 'Review, schedule and dispatch resident requests.',
-              onBack: () => context.go('/admin-dashboard'),
-              actions: const [NotificationBell()],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() => _page = 0),
-                decoration: InputDecoration(
-                  hintText: 'Search by requester or title',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                  suffixIcon: _search.text.isEmpty
-                      ? null
-                      : IconButton(
-                          onPressed: () {
-                            _search.clear();
-                            setState(() {});
-                          },
-                          icon: const Icon(Icons.close_rounded, size: 17),
-                        ),
-                ),
+    return EcoPageScaffold(
+      eyebrow: 'BARANGAY STAFF · COLLECTION DESK',
+      title: 'Collection requests',
+      subtitle: 'Review, schedule and dispatch resident requests.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      actions: const [NotificationBell()],
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: TextField(
+              controller: _search,
+              onChanged: (_) => setState(() => _page = 0),
+              decoration: InputDecoration(
+                hintText: 'Search by requester or title',
+                prefixIcon: const Icon(Icons.search_rounded, size: 19),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.close_rounded, size: 17),
+                      ),
               ),
             ),
-            const SizedBox(height: 10),
-            _StatusFilterBar(
-              selected: _status,
-              onChanged: (value) => setState(() {
-                _status = value;
-                _page = 0;
-              }),
-              specialOnly: _specialOnly,
-              onSpecialChanged: (value) => setState(() {
-                _specialOnly = value;
-                _page = 0;
-              }),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: StreamBuilder<List<CollectionRequest>>(
-                stream: _service.watchAll(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading requests');
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  final all = snapshot.data ?? const <CollectionRequest>[];
-                  final barangays =
-                      all
-                          .map((r) => r.requesterBarangay?.trim() ?? '')
-                          .where((b) => b.isNotEmpty)
-                          .toSet()
-                          .toList()
-                        ..sort();
-                  final items = _applyFilters(all);
-                  final page = clampPage(_page, items.length, _pageSize);
-                  final visible = pageSlice(items, page, _pageSize);
-                  return Column(
-                    children: [
-                      _FilterSummary(
-                        total: all.length,
-                        shown: items.length,
-                        barangays: barangays,
-                        selectedBarangay: _barangay,
-                        days: _days,
-                        onBarangay: (value) => setState(() {
-                          _barangay = value;
-                          _page = 0;
-                        }),
-                        onDays: (value) => setState(() {
-                          _days = value;
-                          _page = 0;
-                        }),
-                      ),
-                      Expanded(
-                        child: items.isEmpty
-                            ? const EmptyState(
-                                icon: Icons.inbox_outlined,
-                                title: 'No requests match',
-                                message:
-                                    'Try clearing the status, barangay or date filter.',
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  18,
-                                  4,
-                                  18,
-                                  10,
-                                ),
-                                itemCount: visible.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (context, i) {
-                                  final request = visible[i];
-                                  return _RequestCard(
-                                    request: request,
-                                    onTap: () => _openDetail(context, request),
-                                  );
-                                },
-                              ),
-                      ),
-                      if (items.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                          child: EcoPaginationBar(
-                            page: page,
-                            pageSize: _pageSize,
-                            total: items.length,
-                            onPageChanged: (next) =>
-                                setState(() => _page = next),
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                    ],
+          ),
+          const SizedBox(height: 10),
+          _StatusFilterBar(
+            selected: _status,
+            onChanged: (value) => setState(() {
+              _status = value;
+              _page = 0;
+            }),
+            specialOnly: _specialOnly,
+            onSpecialChanged: (value) => setState(() {
+              _specialOnly = value;
+              _page = 0;
+            }),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: StreamBuilder<List<CollectionRequest>>(
+              stream: _service.watchAll(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const LoadingView(label: 'Loading requests');
+                }
+                if (snapshot.hasError) {
+                  return ErrorView(
+                    message: AppFeedback.describe(snapshot.error!),
                   );
-                },
-              ),
+                }
+                final all = snapshot.data ?? const <CollectionRequest>[];
+                final barangays =
+                    all
+                        .map((r) => r.requesterBarangay?.trim() ?? '')
+                        .where((b) => b.isNotEmpty)
+                        .toSet()
+                        .toList()
+                      ..sort();
+                final items = _applyFilters(all);
+                final page = clampPage(_page, items.length, _pageSize);
+                final visible = pageSlice(items, page, _pageSize);
+                return Column(
+                  children: [
+                    _FilterSummary(
+                      total: all.length,
+                      shown: items.length,
+                      barangays: barangays,
+                      selectedBarangay: _barangay,
+                      days: _days,
+                      onBarangay: (value) => setState(() {
+                        _barangay = value;
+                        _page = 0;
+                      }),
+                      onDays: (value) => setState(() {
+                        _days = value;
+                        _page = 0;
+                      }),
+                    ),
+                    Expanded(
+                      child: items.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.inbox_outlined,
+                              title: 'No requests match',
+                              message:
+                                  'Try clearing the status, barangay or date filter.',
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+                              itemCount: visible.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, i) {
+                                final request = visible[i];
+                                return _RequestCard(
+                                  request: request,
+                                  onTap: () => _openDetail(context, request),
+                                );
+                              },
+                            ),
+                    ),
+                    if (items.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                        child: EcoPaginationBar(
+                          page: page,
+                          pageSize: _pageSize,
+                          total: items.length,
+                          onPageChanged: (next) => setState(() => _page = next),
+                          onPageSizeChanged: (size) => setState(() {
+                            _pageSize = size;
+                            _page = 0;
+                          }),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
