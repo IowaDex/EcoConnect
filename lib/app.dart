@@ -158,11 +158,13 @@ const _cityHallRoutes = {
 
 const _auditorRoutes = {'/audit-log'};
 
-/// The barangay desk. Dispatch (routes), incidents and account provisioning
-/// belong to Iswim and City Hall, so those routes are deliberately absent.
+/// The barangay desk. Dispatch (routes) and account provisioning belong to
+/// Iswim and City Hall, so those routes are deliberately absent. The incident
+/// desk stays: the dashboard reports what is still pending there.
 const _staffRoutes = {
   '/admin-dashboard',
   '/tracking',
+  '/incidents',
   '/verification',
   '/staff-requests',
   '/waste-validation',

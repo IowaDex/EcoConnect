@@ -239,7 +239,7 @@ class _IncidentTile extends StatelessWidget {
               color: AppColors.forest,
             ),
           ),
-          if (incident.latitude != null) ...[
+          if (incident.latitude != null && incident.longitude != null) ...[
             const SizedBox(height: 8),
             Row(
               children: [
