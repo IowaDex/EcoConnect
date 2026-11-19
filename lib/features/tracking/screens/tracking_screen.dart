@@ -190,7 +190,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       children: [
                         _CircleIcon(
                           icon: Icons.arrow_back_ios_new_rounded,
-                          onTap: () => context.go('/user'),
+                          // Back to the dashboard the map was opened from. A
+                          // deep link has nothing to pop, so it lands home.
+                          onTap: () => context.canPop()
+                              ? context.pop()
+                              : context.go('/user'),
                         ),
                         const SizedBox(width: 10),
                         Container(
@@ -615,7 +619,11 @@ class _DriverSheet extends StatelessWidget {
             onTap: (i) {
               switch (i) {
                 case 0:
-                  context.go('/user');
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/user');
+                  }
                 case 1:
                   break;
                 case 2:

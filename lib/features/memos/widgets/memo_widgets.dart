@@ -3,14 +3,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
-import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -117,7 +115,7 @@ class MemoAttachmentCard extends StatelessWidget {
                 child: SizedBox(
                   height: 36,
                   child: OutlinedButton.icon(
-                    onPressed: () => _open(context),
+                    onPressed: () => _showViewer(context),
                     icon: const Icon(Icons.open_in_new_rounded, size: 14),
                     label: const Text('Open', style: TextStyle(fontSize: 10.5)),
                   ),
@@ -151,23 +149,133 @@ class MemoAttachmentCard extends StatelessWidget {
   /// download (mobile), so the action always does something real.
   Future<void> _download(BuildContext context) async {
     final saved = await saveDataUrl(attachment.dataUrl, attachment.fileName);
-    if (!saved && context.mounted) await _open(context);
+    if (!saved && context.mounted) _showViewer(context);
   }
 
-  Future<void> _open(BuildContext context) async {
-    try {
-      final opened = await launchUrl(
-        Uri.parse(attachment.dataUrl),
-        mode: LaunchMode.platformDefault,
-      );
-      if (!opened && context.mounted) {
-        AppFeedback.error(context, 'No app can open this file on this device.');
-      }
-    } catch (_) {
-      if (context.mounted) {
-        AppFeedback.error(context, 'Could not open this file.');
-      }
-    }
+  /// Shows the file over the memo instead of sending the reader to another
+  /// tab: the page behind is dimmed and the attachment sits in a modal.
+  void _showViewer(BuildContext context) {
+    final bytes = attachment.isPdf ? null : _decode(attachment);
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              decoration: const BoxDecoration(
+                color: AppColors.creamBright,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    attachment.isPdf
+                        ? Icons.picture_as_pdf_rounded
+                        : Icons.image_outlined,
+                    size: 18,
+                    color: attachment.isPdf
+                        ? AppColors.error
+                        : AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      attachment.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.darkGreen,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: AppColors.inkMuted,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 380),
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(
+                color: AppColors.creamBright,
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(18),
+                ),
+              ),
+              child: bytes != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: InteractiveViewer(
+                        maxScale: 4,
+                        child: Image.memory(bytes, fit: BoxFit.contain),
+                      ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          size: 46,
+                          color: AppColors.error,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '${attachment.fileName} · '
+                          '${attachment.sizeKb.toStringAsFixed(0)} KB',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'A PDF cannot be shown inside the app. Download it '
+                          'to read the full document.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10,
+                            height: 1.45,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          height: 38,
+                          child: FilledButton.icon(
+                            onPressed: () => saveDataUrl(
+                              attachment.dataUrl,
+                              attachment.fileName,
+                            ),
+                            icon: const Icon(Icons.download_rounded, size: 15),
+                            label: const Text(
+                              'Download',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.forest,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   static Uint8List? _decode(UploadPayload payload) {

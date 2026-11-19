@@ -146,7 +146,9 @@ class _DriverScreenState extends State<DriverScreen> {
         await trucks.select(designated);
       }
       if (!mounted) return;
-    } else if (!trucks.hasTruck) {
+    } else if (!trucks.pickedThisRun) {
+      // A guide starts on the fleet list and taps the plate he is riding
+      // today; the dashboard is that truck's trip, not a landing page.
       context.go('/driver-trucks');
       return;
     }
@@ -1101,11 +1103,6 @@ class _DriverScreenState extends State<DriverScreen> {
                       ),
                       const SizedBox(height: 14),
                     ],
-                    _AssignmentCard(
-                      plan: _plan,
-                      status: _status,
-                      startedAt: _startedAt,
-                    ),
                     if (_plan != null) ...[
                       const SizedBox(height: 14),
                       _RouteStopsCard(
@@ -1335,165 +1332,6 @@ class _ServiceWarning extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _AssignmentCard extends StatelessWidget {
-  const _AssignmentCard({
-    required this.plan,
-    required this.status,
-    required this.startedAt,
-  });
-
-  final RoutePlan? plan;
-  final RouteStatus status;
-  final DateTime? startedAt;
-
-  bool get _isLive =>
-      status == RouteStatus.inTransit || status == RouteStatus.delayed;
-
-  bool get _isPaused => status == RouteStatus.paused;
-
-  bool get _isRunning => _isLive || _isPaused;
-
-  @override
-  Widget build(BuildContext context) {
-    final badgeLabel = _isRunning
-        ? status.label
-        : plan?.status.label ?? 'Not scheduled';
-    final badgeColor = _isRunning
-        ? status.color
-        : plan?.status.color ?? Colors.white70;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: AppColors.forestGradient,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: badgeColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: badgeColor.withValues(alpha: 0.7)),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w700,
-                    color: badgeColor,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Icon(
-                Icons.local_shipping_rounded,
-                size: 22,
-                color: Colors.white.withValues(alpha: 0.85),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            _isRunning ? 'Assigned zone' : 'Today’s assignment',
-            style: const TextStyle(fontSize: 9, color: Color(0xB3FFFFFF)),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            plan?.zone ?? 'No zone assigned',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (plan != null)
-            Row(
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 13,
-                  color: Color(0xB3FFFFFF),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  plan!.windowLabel,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Color(0xCCFFFFFF),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Icon(
-                  Icons.place_outlined,
-                  size: 13,
-                  color: Color(0xB3FFFFFF),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  plan!.stopsLabel,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Color(0xCCFFFFFF),
-                  ),
-                ),
-              ],
-            )
-          else
-            Text(
-              'Barangay staff has not scheduled a run for you today.',
-              style: TextStyle(
-                fontSize: 10,
-                height: 1.45,
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
-            ),
-          if (_isRunning && startedAt != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _isPaused
-                  ? 'Paused · started ${_runningFor(startedAt!)} ago'
-                  : 'Running for ${_runningFor(startedAt!)}',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: _isPaused ? AppColors.warning : AppColors.lime,
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Text(
-            _isRunning
-                ? 'Start, pause and end the trip from the truck card above.'
-                : 'Start the trip from the truck card above.',
-            style: TextStyle(
-              fontSize: 9,
-              height: 1.4,
-              color: Colors.white.withValues(alpha: 0.62),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _runningFor(DateTime startedAt) {
-    final duration = DateTime.now().difference(startedAt);
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours == 0) return '$minutes min';
-    return '${hours}h ${minutes}m';
   }
 }
 

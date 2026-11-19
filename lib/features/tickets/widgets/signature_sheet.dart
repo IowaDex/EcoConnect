@@ -211,7 +211,7 @@ class _SignatureSheetState extends State<_SignatureSheet> {
                 child: OutlinedButton.icon(
                   onPressed: _busy ? null : _clear,
                   icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text('Burahin'),
+                  label: const Text('Clear'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.inkMuted,
                     side: const BorderSide(color: AppColors.sage),

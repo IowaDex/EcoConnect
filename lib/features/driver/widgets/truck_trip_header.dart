@@ -162,7 +162,7 @@ class TruckTripHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${truck.description} · ${truck.zone}',
+                      truck.description,
                       style: const TextStyle(
                         fontSize: 11.5,
                         color: AppColors.inkMuted,
@@ -207,14 +207,19 @@ class TruckTripHeader extends StatelessWidget {
             trailing: _isRunning ? status.label : 'Trip not started',
             muted: true,
           ),
-          const SizedBox(height: 11),
-          _CrewRow(
-            name: 'You',
-            role: role.shortLabel,
-            icon: role.icon,
-            trailing: _isRunning ? 'On board' : 'Waiting',
-            muted: true,
-          ),
+          // A guide rides with someone else's truck, so his own line belongs
+          // here. A driver is already named in the row above; repeating "You"
+          // under his own name only adds noise.
+          if (role == TruckCrewRole.guide) ...[
+            const SizedBox(height: 11),
+            _CrewRow(
+              name: 'You',
+              role: role.shortLabel,
+              icon: role.icon,
+              trailing: _isRunning ? 'On board' : 'Waiting',
+              muted: true,
+            ),
+          ],
           if (_isRunning) ...[
             const SizedBox(height: 12),
             Row(

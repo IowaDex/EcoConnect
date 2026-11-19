@@ -17,10 +17,18 @@ class TruckProvider extends ChangeNotifier {
 
   GarbageTruck? _selectedTruck;
   bool _restored = false;
+  bool _pickedThisRun = false;
 
   GarbageTruck? get selectedTruck => _selectedTruck;
   bool get hasTruck => _selectedTruck != null;
   bool get isRestored => _restored;
+
+  /// True once a plate was tapped in this run of the app.
+  ///
+  /// A guide starts every session on the fleet list, so a plate remembered
+  /// from yesterday must not open its dashboard by itself. The dashboard is
+  /// only shown right after the guide picks the truck he is riding today.
+  bool get pickedThisRun => _pickedThisRun;
 
   /// Loads the saved selection. Safe to call more than once.
   Future<void> restore() async {
@@ -43,6 +51,7 @@ class TruckProvider extends ChangeNotifier {
 
   Future<void> select(GarbageTruck truck) async {
     _selectedTruck = truck;
+    _pickedThisRun = true;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -55,6 +64,7 @@ class TruckProvider extends ChangeNotifier {
   /// Used when the crew switches trucks or signs out.
   Future<void> clear() async {
     _selectedTruck = null;
+    _pickedThisRun = false;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();

@@ -321,6 +321,7 @@ class AuthProvider extends ChangeNotifier {
     String? phone,
     String? houseStreet,
     String? photoUrl,
+    String? barangay,
   }) async {
     final user = _currentUser;
     if (user == null) return false;
@@ -329,6 +330,7 @@ class AuthProvider extends ChangeNotifier {
       if (phone != null) 'phone': phone,
       if (houseStreet != null) 'houseStreet': houseStreet,
       if (photoUrl != null) 'photoUrl': photoUrl,
+      if (barangay != null) 'barangay': barangay,
     };
     if (data.isEmpty) return true;
 
@@ -339,6 +341,7 @@ class AuthProvider extends ChangeNotifier {
         phone: phone,
         houseStreet: houseStreet,
         photoUrl: photoUrl,
+        barangay: barangay,
       );
       return true;
     } catch (e) {

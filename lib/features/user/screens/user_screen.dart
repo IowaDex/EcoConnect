@@ -425,17 +425,26 @@ class _TrackTruckCardState extends State<_TrackTruckCard> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Container(
-                height: 46,
-                width: 46,
-                decoration: BoxDecoration(
-                  gradient: AppColors.forestGradient,
+              // The truck itself is a tap target too: residents reach for the
+              // icon first, so it opens the map without hunting for the pill.
+              Tooltip(
+                message: 'Track the collection truck',
+                child: InkWell(
+                  onTap: () => context.push('/tracking'),
                   borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.local_shipping_rounded,
-                  size: 23,
-                  color: Colors.white,
+                  child: Container(
+                    height: 46,
+                    width: 46,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.forestGradient,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.local_shipping_rounded,
+                      size: 23,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -493,10 +502,40 @@ class _TrackTruckCardState extends State<_TrackTruckCard> {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 12,
-                color: AppColors.sage,
+              // A control of its own, so the way into the map is obvious even
+              // while every other shortcut on the dashboard is locked.
+              Material(
+                color: AppColors.forest,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: () => context.push('/tracking'),
+                  borderRadius: BorderRadius.circular(20),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Track',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(width: 3),
+                        Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
