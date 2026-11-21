@@ -89,11 +89,26 @@ class _DriverScreenState extends State<DriverScreen> {
 
   bool get _isRunning => _isLive || _isPaused;
 
+  /// Created once per sign-in. Building them inside `build` would open a new
+  /// Firestore listener on every rebuild — and this page rebuilds on every
+  /// position update, which is exactly how a dashboard ends up choking.
+  Stream<List<RoutePlan>>? _upcomingPlans;
+  Stream<List<CollectionRequest>>? _pickups;
+
+  /// True while the device diagnosis is running, so a route snapshot cannot
+  /// start a second one on top of the timer's.
+  bool _checkingHealth = false;
+
   String? get _uid => context.read<AuthProvider>().currentUser?.uid;
 
   @override
   void initState() {
     super.initState();
+    final uid = _uid;
+    if (uid != null) {
+      _upcomingPlans = _routeService.watchUpcomingPlans(uid);
+      _pickups = CollectionRequestService().watchForDriver(uid);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
@@ -107,6 +122,11 @@ class _DriverScreenState extends State<DriverScreen> {
 
     final account = context.read<AuthProvider>().currentUser;
     final role = account?.crewRole ?? TruckCrewRole.driver;
+
+    // Wire the page first. Everything it draws arrives through these
+    // listeners, and nothing below — a fleet lookup or the browser's location
+    // prompt — may hold them back.
+    _connectStreams();
 
     if (role == TruckCrewRole.driver) {
       // The registry first: Iswim may have added or re-plated the truck since
@@ -133,20 +153,29 @@ class _DriverScreenState extends State<DriverScreen> {
       return;
     }
 
-    final location = context.read<LocationProvider>();
-    if (!location.hasLocation) await location.getCurrentLocation();
-    // Record why a fix is missing so the card can explain it accurately
-    // instead of leaving a stale error from a previous attempt.
-    await location.refreshLocationHealth();
+    // The fix is only needed for the guard and the map marker, so it is
+    // fetched in the background while the page is already usable.
+    unawaited(_warmUpLocation());
+  }
 
+  /// Subscribes the page to the server state: the live route, the trip ticket,
+  /// today's assignment, the stops pinned for this crew and the link state.
+  void _connectStreams() {
     final uid = _uid;
-    if (uid == null || !mounted) return;
+    if (uid == null) return;
 
     // Offline during a run is an alert, not a blocked screen: the guard needs
     // the link state to tell staff the moment the phone drops off the map.
-    _network = context.read<NetworkStatus?>();
+    try {
+      _network = context.read<NetworkStatus>();
+    } on ProviderNotFoundException {
+      // Widget tests build this page without the provider.
+      _network = null;
+    }
     _network?.addListener(_onConnectionChanged);
     _connectionLost = _network?.isOffline ?? false;
+
+    final location = context.read<LocationProvider>();
     _locationRef = location;
     location.addListener(_onPositionChanged);
 
@@ -157,6 +186,7 @@ class _DriverScreenState extends State<DriverScreen> {
         .listen(
           (route) {
             if (!mounted) return;
+            final wasLive = _isLive;
             final status = route?.status ?? RouteStatus.idle;
             setState(() {
               _status = status;
@@ -170,8 +200,10 @@ class _DriverScreenState extends State<DriverScreen> {
                 );
               }
             });
-            if (status == RouteStatus.inTransit ||
-                status == RouteStatus.delayed) {
+            // Only on the transition into a run. This listener also fires for
+            // every heartbeat and guard write, and re-diagnosing the device on
+            // each one is what made the page spin.
+            if (_isLive && !wasLive) {
               _checkLocationHealth();
               _evaluateGeofence();
             }
@@ -227,6 +259,22 @@ class _DriverScreenState extends State<DriverScreen> {
 
     // Watch for GPS/permission/connectivity loss while a route is running.
     _ensureHealthTimer();
+  }
+
+  /// Takes the first fix in the background. The dashboard never waits on it:
+  /// a browser prompt can sit unanswered for minutes, and a refused fix is
+  /// still a usable dashboard.
+  Future<void> _warmUpLocation() async {
+    try {
+      final location = context.read<LocationProvider>();
+      if (!location.hasLocation) await location.getCurrentLocation();
+      if (!mounted) return;
+      // Record why a fix is missing so the card can explain it accurately
+      // instead of leaving a stale error from a previous attempt.
+      await location.refreshLocationHealth();
+    } catch (_) {
+      // The location card reports the state; nothing here may break the page.
+    }
   }
 
   void _ensureHealthTimer() {
@@ -290,7 +338,11 @@ class _DriverScreenState extends State<DriverScreen> {
         ? !TripGuardService.isBackInside(metres)
         : TripGuardService.isOutsideRadius(metres);
 
-    if (mounted) setState(() => _metresFromCenter = metres);
+    // Only a real change may rebuild the page: this runs on every position
+    // update, and a setState per tick rebuilds the map and every card.
+    if (mounted && _metresFromCenter?.round() != metres.round()) {
+      setState(() => _metresFromCenter = metres);
+    }
     if (outside == _outsideRadius) return;
 
     setState(() => _outsideRadius = outside);
@@ -336,6 +388,18 @@ class _DriverScreenState extends State<DriverScreen> {
   /// Only transitions are written, and staff are notified once per problem
   /// rather than on every heartbeat.
   Future<void> _checkLocationHealth() async {
+    // The route snapshot and the 20 s timer can both land here; overlapping
+    // platform calls made the page queue work it never finished.
+    if (_checkingHealth) return;
+    _checkingHealth = true;
+    try {
+      await _runLocationHealthCheck();
+    } finally {
+      _checkingHealth = false;
+    }
+  }
+
+  Future<void> _runLocationHealthCheck() async {
     final uid = _uid;
     if (uid == null) return;
     final location = context.read<LocationProvider>();
@@ -351,7 +415,9 @@ class _DriverScreenState extends State<DriverScreen> {
       LocationIssue.unavailable => DriverLocationState.unknown,
     };
 
-    setState(() => _locationState = state);
+    if (_locationState != state) {
+      setState(() => _locationState = state);
+    }
     if (state == _lastReportedState) return;
 
     final previousState = _lastReportedState;
@@ -851,7 +917,13 @@ class _DriverScreenState extends State<DriverScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final location = context.watch<LocationProvider>();
+    // Only the fix itself may rebuild the page. Watching the whole provider
+    // also fires for "loading", "syncing" and "pending" notices several times
+    // per position, and every rebuild re-lays out the map and each card.
+    final fix = context
+        .select<LocationProvider, ({bool has, double? lat, double? lng})>(
+          (l) => (has: l.hasLocation, lat: l.latitude, lng: l.longitude),
+        );
     final trucks = context.watch<TruckProvider>();
     final truck = trucks.selectedTruck;
     final user = auth.currentUser;
@@ -967,7 +1039,7 @@ class _DriverScreenState extends State<DriverScreen> {
                       ),
                       const SizedBox(height: 12),
                     ],
-                    _NextDutyReminder(driverId: user?.uid ?? ''),
+                    _NextDutyReminder(plans: _upcomingPlans),
                     if (truck != null)
                       TruckTripHeader(
                         truck: truck,
@@ -1035,16 +1107,14 @@ class _DriverScreenState extends State<DriverScreen> {
                       const SizedBox(height: 14),
                       _RouteStopsCard(
                         plan: _plan!,
-                        truck: location.hasLocation
-                            ? LatLng(location.latitude!, location.longitude!)
-                            : null,
+                        truck: fix.has ? LatLng(fix.lat!, fix.lng!) : null,
                       ),
                     ] else if (_assignedPoints.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       _AssignedStopsCard(points: _assignedPoints),
                     ],
                     const SizedBox(height: 14),
-                    const _DriverPickupsCard(),
+                    _DriverPickupsCard(requests: _pickups),
                     if (_isLive) ...[
                       const SizedBox(height: 16),
                       const Text(
@@ -1073,7 +1143,7 @@ class _DriverScreenState extends State<DriverScreen> {
                       ),
                     ],
                     const SizedBox(height: 20),
-                    _LocationCard(location: location, onFix: _fixLocation),
+                    _LocationCard(onFix: _fixLocation),
                     const SizedBox(height: 16),
                     const _TipCard(),
                   ],
@@ -1093,9 +1163,11 @@ class _DriverScreenState extends State<DriverScreen> {
 /// A quiet reminder for the next duty that is not today, so a crew that opens
 /// the app the evening before already knows where to report.
 class _NextDutyReminder extends StatelessWidget {
-  const _NextDutyReminder({required this.driverId});
+  const _NextDutyReminder({required this.plans});
 
-  final String driverId;
+  /// Built once by the page. A stream created here would open a new Firestore
+  /// listener every time the dashboard rebuilds.
+  final Stream<List<RoutePlan>>? plans;
 
   String _dayLabel(String key) {
     final parsed = DateTime.tryParse(key);
@@ -1109,9 +1181,10 @@ class _NextDutyReminder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (driverId.isEmpty) return const SizedBox.shrink();
+    final stream = plans;
+    if (stream == null) return const SizedBox.shrink();
     return StreamBuilder<List<RoutePlan>>(
-      stream: RouteService().watchUpcomingPlans(driverId),
+      stream: stream,
       builder: (context, snapshot) {
         final plans = snapshot.data ?? const <RoutePlan>[];
         final todayKey = routeDateKey(DateTime.now());
@@ -1779,13 +1852,15 @@ class _CheckRow extends StatelessWidget {
 }
 
 class _LocationCard extends StatelessWidget {
-  const _LocationCard({required this.location, required this.onFix});
+  const _LocationCard({required this.onFix});
 
-  final LocationProvider location;
   final VoidCallback onFix;
 
   @override
   Widget build(BuildContext context) {
+    // This one card follows the provider; the page around it only rebuilds
+    // when the fix itself moves.
+    final location = context.watch<LocationProvider>();
     final issue = location.issue;
     final blocked =
         issue == LocationIssue.permissionDenied ||
@@ -1840,7 +1915,7 @@ class _LocationCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             denied
-                ? _blockedMessage()
+                ? _blockedMessage(location)
                 : location.hasLocation
                 ? location.locationString
                 : 'Waiting for a GPS fix…',
@@ -1887,7 +1962,7 @@ class _LocationCard extends StatelessWidget {
     );
   }
 
-  String _blockedMessage() {
+  String _blockedMessage(LocationProvider location) {
     if (kIsWeb) {
       return location.issue == LocationIssue.permissionDeniedForever
           ? 'Your browser is blocking location for this site. Open the lock '
@@ -1987,15 +2062,20 @@ class _TipCard extends StatelessWidget {
 /// request forward to "on the way" and then "collected"; verification and
 /// scheduling stay with staff.
 class _DriverPickupsCard extends StatelessWidget {
-  const _DriverPickupsCard();
+  const _DriverPickupsCard({required this.requests});
+
+  /// Built once by the page, so a rebuild never re-opens the Firestore query.
+  final Stream<List<CollectionRequest>>? requests;
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     if (user == null) return const SizedBox.shrink();
+    final stream = requests;
+    if (stream == null) return const SizedBox.shrink();
 
     return StreamBuilder<List<CollectionRequest>>(
-      stream: CollectionRequestService().watchForDriver(user.uid),
+      stream: stream,
       builder: (context, snapshot) {
         final items = (snapshot.data ?? const <CollectionRequest>[])
             .where((r) => r.status.isOpen)
@@ -2270,11 +2350,19 @@ class _PickupTileState extends State<_PickupTile> {
                   ),
                 ),
               const SizedBox(width: 8),
-              SizedBox(
-                height: 34,
-                child: OutlinedButton(
-                  onPressed: () => _showDetails(context, request),
-                  child: const Text('Details', style: TextStyle(fontSize: 10)),
+              // The theme gives every OutlinedButton an infinite minimum
+              // width, so inside a Row it must be bounded by a flex child —
+              // otherwise layout asserts and the whole page goes blank.
+              Expanded(
+                child: SizedBox(
+                  height: 34,
+                  child: OutlinedButton(
+                    onPressed: () => _showDetails(context, request),
+                    child: const Text(
+                      'Details',
+                      style: TextStyle(fontSize: 10),
+                    ),
+                  ),
                 ),
               ),
             ],

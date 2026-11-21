@@ -2,6 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
+  /// No device call may hang the app. A browser prompt the crew never answers
+  /// leaves the platform future pending forever, which used to keep the driver
+  /// dashboard waiting before it drew anything.
+  static const _platformTimeout = Duration(seconds: 6);
+
   // Location stream for real-time updates; skips fixes under 20 m apart.
   // With [background] the stream keeps running while the app is minimised or
   // the screen is off: an Android foreground service (with its ongoing
@@ -44,21 +49,34 @@ class LocationService {
 
   /// Check if location services are enabled
   Future<bool> isLocationServiceEnabled() async {
-    return await Geolocator.isLocationServiceEnabled();
+    // A platform that cannot answer is treated as enabled: the permission and
+    // fix checks below still catch a genuinely disabled GPS.
+    return await Geolocator.isLocationServiceEnabled().timeout(
+      _platformTimeout,
+      onTimeout: () => true,
+    );
   }
 
   /// Check current location permission status
   Future<LocationPermission> checkPermissions() async {
-    return await Geolocator.checkPermission();
+    return await Geolocator.checkPermission().timeout(
+      _platformTimeout,
+      onTimeout: () => LocationPermission.denied,
+    );
   }
 
   /// Request location permissions
   Future<LocationPermission> requestPermissions() async {
     // First check if location permission is granted
-    LocationPermission permission = await Geolocator.checkPermission();
+    LocationPermission permission = await checkPermissions();
 
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      // An unanswered browser prompt resolves as "denied" after the timeout
+      // instead of holding the caller for the rest of the session.
+      permission = await Geolocator.requestPermission().timeout(
+        _platformTimeout,
+        onTimeout: () => LocationPermission.denied,
+      );
     }
 
     return permission;
@@ -126,16 +144,25 @@ class LocationService {
 
   /// Get the last known location (faster but may be stale)
   Future<Position?> getLastKnownPosition() async {
-    return await Geolocator.getLastKnownPosition();
+    return await Geolocator.getLastKnownPosition().timeout(
+      _platformTimeout,
+      onTimeout: () => null,
+    );
   }
 
   /// Open device location settings
   Future<bool> openLocationSettings() async {
-    return await Geolocator.openLocationSettings();
+    return await Geolocator.openLocationSettings().timeout(
+      _platformTimeout,
+      onTimeout: () => false,
+    );
   }
 
   /// Open app settings for permission management
   Future<bool> openAppSettings() async {
-    return await Geolocator.openAppSettings();
+    return await Geolocator.openAppSettings().timeout(
+      _platformTimeout,
+      onTimeout: () => false,
+    );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:eco_connect/core/widgets/eco_card.dart';
 import 'package:eco_connect/core/widgets/section_header.dart';
 import 'package:eco_connect/features/dashboard/widgets/quick_action_grid.dart';
 import 'package:eco_connect/features/dashboard/widgets/role_hero.dart';
@@ -86,9 +87,12 @@ void main() {
 
       await tester.pumpWidget(_wrap(const QuickActionGrid(actions: _actions)));
 
+      // Measure the tiles, not the labels: a centred label starts at a
+      // different x in every column.
+      final tiles = find.byType(EcoCard);
       final lefts = <double>{
         for (var i = 0; i < _actions.length; i++)
-          tester.getTopLeft(find.text(_actions[i].label)).dx,
+          tester.getTopLeft(tiles.at(i)).dx,
       };
       expect(lefts.length, 2);
       expect(tester.takeException(), isNull);

@@ -6,8 +6,10 @@ import '../utils/paging.dart';
 /// Search box shared by the record lists.
 ///
 /// The caller owns the controller so it can reset the text when a filter
-/// changes. The clear button appears only when there is something to clear.
-class EcoSearchField extends StatelessWidget {
+/// changes. The clear button appears only when there is something to clear,
+/// and the outline warms to the brand green while the pointer is over the
+/// field so it reads as an input before it is focused.
+class EcoSearchField extends StatefulWidget {
   const EcoSearchField({
     super.key,
     required this.controller,
@@ -20,59 +22,75 @@ class EcoSearchField extends StatelessWidget {
   final String hint;
 
   @override
+  State<EcoSearchField> createState() => _EcoSearchFieldState();
+}
+
+class _EcoSearchFieldState extends State<EcoSearchField> {
+  bool _hovered = false;
+
+  BorderSide get _side => BorderSide(
+    color: _hovered
+        ? AppColors.primary.withValues(alpha: 0.5)
+        : AppColors.sage.withValues(alpha: 0.8),
+  );
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
-      builder: (context, value, _) {
-        return TextField(
-          controller: controller,
-          onChanged: onChanged,
-          textInputAction: TextInputAction.search,
-          style: const TextStyle(fontSize: 12, color: AppColors.forest),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 19,
-              color: AppColors.inkMuted,
-            ),
-            suffixIcon: value.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'Clear search',
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      size: 17,
-                      color: AppColors.inkMuted,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: widget.controller,
+        builder: (context, value, _) {
+          return TextField(
+            controller: widget.controller,
+            onChanged: widget.onChanged,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontSize: 12, color: AppColors.forest),
+            decoration: InputDecoration(
+              hintText: widget.hint,
+              hintStyle: const TextStyle(
+                fontSize: 11,
+                color: AppColors.inkMuted,
+              ),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 19,
+                color: _hovered ? AppColors.primary : AppColors.inkMuted,
+              ),
+              suffixIcon: value.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 17,
+                        color: AppColors.inkMuted,
+                      ),
+                      onPressed: () {
+                        widget.controller.clear();
+                        widget.onChanged('');
+                      },
                     ),
-                    onPressed: () {
-                      controller.clear();
-                      onChanged('');
-                    },
-                  ),
-            isDense: true,
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.sage.withValues(alpha: 0.8),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: _side,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: _side,
               ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.sage.withValues(alpha: 0.8),
-              ),
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

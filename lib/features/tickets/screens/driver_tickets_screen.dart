@@ -3,11 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/widgets/driver_nav_bar.dart';
-import '../../notifications/widgets/notification_bell.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
 import '../widgets/ticket_card.dart';
@@ -52,65 +51,32 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
     final user = context.watch<AuthProvider>().currentUser;
     final uid = user?.uid;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Row(
-                children: [
-                  BrandWordmark(fontSize: 10.5),
-                  Spacer(),
-                  NotificationBell(iconSize: 19, color: AppColors.inkMuted),
-                ],
-              ),
+    return EcoPageScaffold(
+      eyebrow: 'DRIVER · INBOX',
+      title: 'Trip tickets',
+      subtitle: 'Every ticket issued to you, newest first.',
+      onBack: () => ecoBack(context, '/driver'),
+      bottomBar: const DriverNavBar(currentIndex: 1),
+      body: uid == null
+          ? const SizedBox.shrink()
+          : StreamBuilder<List<TripTicket>>(
+              stream: TicketService().watchForDriver(uid),
+              builder: (context, snapshot) {
+                final tickets = snapshot.data ?? const <TripTicket>[];
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    tickets.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (tickets.isEmpty) {
+                  return const _EmptyInbox();
+                }
+                return _Inbox(
+                  search: _search,
+                  visible: _visible(tickets),
+                  onSearchChanged: () => setState(() {}),
+                );
+              },
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 0, 22, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Trip tickets',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: uid == null
-                  ? const SizedBox.shrink()
-                  : StreamBuilder<List<TripTicket>>(
-                      stream: TicketService().watchForDriver(uid),
-                      builder: (context, snapshot) {
-                        final tickets = snapshot.data ?? const <TripTicket>[];
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting &&
-                            tickets.isEmpty) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-                        if (tickets.isEmpty) {
-                          return const _EmptyInbox();
-                        }
-                        return _Inbox(
-                          search: _search,
-                          visible: _visible(tickets),
-                          onSearchChanged: () => setState(() {}),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: const DriverNavBar(currentIndex: 1),
     );
   }
 }

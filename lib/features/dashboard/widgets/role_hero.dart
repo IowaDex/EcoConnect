@@ -90,12 +90,12 @@ class RoleHero extends StatelessWidget {
           const Positioned(
             right: -46,
             top: -62,
-            child: _HeroRing(size: 186, opacity: 0.08),
+            child: RoleHeroRing(size: 186, opacity: 0.08),
           ),
           const Positioned(
             right: 34,
             bottom: -84,
-            child: _HeroRing(size: 148, opacity: 0.06),
+            child: RoleHeroRing(size: 148, opacity: 0.06),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
@@ -194,7 +194,7 @@ class RoleHero extends StatelessWidget {
                     children: [
                       for (var i = 0; i < stats.length; i++) ...[
                         if (i > 0) const _StatDivider(),
-                        Expanded(child: _StatFigure(stat: stats[i])),
+                        Expanded(child: RoleStatFigure(stat: stats[i])),
                       ],
                     ],
                   ),
@@ -310,8 +310,16 @@ class RoleActionPill extends StatelessWidget {
   }
 }
 
-class _HeroRing extends StatelessWidget {
-  const _HeroRing({required this.size, required this.opacity});
+/// The faint letterhead ring behind a gradient header.
+///
+/// Exposed so sub-screens that reuse the forest gradient (the validation
+/// desk summary) carry the same motif instead of drawing their own.
+class RoleHeroRing extends StatelessWidget {
+  const RoleHeroRing({
+    super.key,
+    required this.size,
+    required this.opacity,
+  });
 
   final double size;
   final double opacity;
@@ -334,8 +342,10 @@ class _HeroRing extends StatelessWidget {
   }
 }
 
-class _StatFigure extends StatelessWidget {
-  const _StatFigure({required this.stat});
+/// One animated figure on a gradient header: label, icon and a number that
+/// counts up. Shared by [RoleHero] and the validation desk summary.
+class RoleStatFigure extends StatelessWidget {
+  const RoleStatFigure({super.key, required this.stat});
 
   final RoleStat stat;
 

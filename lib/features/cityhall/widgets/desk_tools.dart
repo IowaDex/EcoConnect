@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../dashboard/widgets/quick_action_grid.dart';
 
 /// The twelve City Hall shortcuts, laid out as a responsive grid.
@@ -86,32 +87,12 @@ class DeskTools extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Text(
-              'Desk tools',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.1,
-                color: AppColors.forest,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              '${shortcuts.length} shortcuts',
-              style: const TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.inkMuted,
-              ),
-            ),
-          ],
-        ),
+        const SectionLabel('DESK TOOLS'),
         const SizedBox(height: 2),
-        const Text(
-          'Every record the DSQC can open, one tap away.',
-          style: TextStyle(
+        Text(
+          '${shortcuts.length} shortcuts — every record the DSQC can open, '
+          'one tap away.',
+          style: const TextStyle(
             fontSize: 10,
             height: 1.4,
             color: AppColors.inkMuted,

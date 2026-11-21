@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
@@ -228,30 +229,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/driver-tickets');
-            }
-          },
-        ),
-        title: const Text(
-          'Trip ticket',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'TRIP TICKET',
+      title: 'Trip ticket',
+      subtitle: 'The paper trail for one collection run.',
+      onBack: () => ecoBack(context, '/driver-tickets'),
       body: StreamBuilder<TripTicket?>(
         stream: _service.watchOne(widget.ticketId),
         builder: (context, snapshot) {

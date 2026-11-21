@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
+import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
+import '../../../core/widgets/desk_ui.dart';
 
 /// City Hall's resident-request desk.
 ///
@@ -51,35 +53,37 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
     }).toList();
   }
 
+  /// A request still needs an answer when no City Hall reply exists yet —
+  /// a barangay note in the same thread does not count.
+  static bool _needsReply(CollectionRequest request) =>
+      request.responses.every((response) => response.byRole != 'cityHall');
+
+  void _clearFilters() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      _openOnly = true;
+      _page = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final byName = user?.displayName ?? 'City Hall';
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/cityhall'),
-        ),
-        title: const Text(
-          'Resident requests',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'CITY HALL · RESIDENT REQUESTS',
+      title: 'Resident requests',
+      subtitle:
+          'Answer the barangay’s escalated requests. Your reply is visible to '
+          'the resident and the concerned staff.',
+      onBack: () => ecoBack(context, '/cityhall'),
       body: StreamBuilder<List<CollectionRequest>>(
         stream: CollectionRequestService().watchAll(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const EcoLoadingView(label: 'Loading resident requests');
           }
           if (snapshot.hasError) {
             return EmptyState(
@@ -88,6 +92,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
               message: AppFeedback.describe(snapshot.error!),
             );
           }
+
           final all = snapshot.data ?? const <CollectionRequest>[];
           final open = _openOnly
               ? all.where((r) => r.status.isOpen).toList(growable: false)
@@ -95,72 +100,115 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
           final items = _filter(open);
           final page = clampPage(_page, items.length, _pageSize);
           final visible = pageSlice(items, page, _pageSize);
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                child: EcoSearchField(
-                  controller: _search,
-                  hint: 'Search requester, title or place',
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
+          final needsReply = all.where(_needsReply).length;
+          final answered = all
+              .where((r) => r.responses.any((x) => x.byRole == 'cityHall'))
+              .length;
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: Icons.mark_email_unread_outlined,
+                label: 'Need a reply',
+                value: '$needsReply',
+                accent: AppColors.warning,
+                highlight: needsReply > 0,
+              ),
+              DeskMetric(
+                icon: Icons.forum_outlined,
+                label: 'Answered',
+                value: '$answered',
+              ),
+              DeskMetric(
+                icon: Icons.inbox_outlined,
+                label: 'Total',
+                value: '${all.length}',
+              ),
+            ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search requester, title or place',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+            ),
+            filters: DeskSegmented<bool>(
+              value: _openOnly,
+              onChanged: (value) => setState(() {
+                _openOnly = value;
+                _page = 0;
+              }),
+              segments: [
+                DeskSegment(
+                  value: true,
+                  label: 'Open only',
+                  count: all.where((r) => r.status.isOpen).length,
+                  icon: Icons.pending_actions_rounded,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                child: Row(
-                  children: [
-                    FilterChip(
-                      label: const Text('Open only'),
-                      selected: _openOnly,
-                      onSelected: (value) => setState(() {
-                        _openOnly = value;
-                        _page = 0;
-                      }),
-                      selectedColor: AppColors.lightGreen,
-                      checkmarkColor: AppColors.primary,
-                      labelStyle: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.darkGreen,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${items.length} of ${all.length}',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
+                DeskSegment(
+                  value: false,
+                  label: 'All requests',
+                  count: all.length,
+                  icon: Icons.all_inbox_rounded,
                 ),
-              ),
-              Expanded(
-                child: items.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.inbox_outlined,
-                        title: 'No requests',
-                        message:
-                            'Resident requests appear here. Reply here and the '
-                            'resident and barangay both see the response.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) => _RequestTile(
-                          request: visible[i],
-                          onTap: () => _open(context, visible[i], byName),
-                        ),
-                      ),
-              ),
-              if (items.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                  child: EcoPaginationBar(
+              ],
+            ),
+            resultLine: DeskResultLine(
+              label: _query.trim().isEmpty
+                  ? '${items.length} '
+                        '${items.length == 1 ? 'request' : 'requests'}'
+                  : 'Showing ${items.length} of ${open.length}',
+              onClear: _query.trim().isNotEmpty ? _clearFilters : null,
+            ),
+            empty: all.isEmpty
+                ? const DeskEmptyQueue(
+                    icon: Icons.forum_outlined,
+                    title: 'No resident requests yet',
+                    message:
+                        'Requests the barangay escalates to City Hall '
+                        'appear here. Answer one and both the resident and the '
+                        'barangay see it.',
+                    steps: [
+                      'Barangay escalates a request',
+                      'City Hall writes the reply',
+                      'Resident and staff see the same thread',
+                    ],
+                  )
+                : _query.trim().isNotEmpty
+                ? DeskEmptyQueue(
+                    icon: Icons.search_off_rounded,
+                    title: 'No request matches',
+                    message:
+                        'Try another word, or clear the search to see '
+                        'every open request.',
+                    actionLabel: 'Clear search',
+                    actionIcon: Icons.search_off_rounded,
+                    onAction: _clearFilters,
+                  )
+                // The queue is empty because every open request already has
+                // its City Hall reply — offer the record, not a filter reset.
+                : DeskEmptyQueue(
+                    icon: Icons.task_alt_rounded,
+                    title: 'Every request is answered',
+                    message:
+                        'Nothing is waiting for a City Hall reply. '
+                        'Answered requests stay on record.',
+                    actionLabel: 'Show all requests',
+                    actionIcon: Icons.all_inbox_rounded,
+                    onAction: () => setState(() {
+                      _openOnly = false;
+                      _page = 0;
+                    }),
+                  ),
+            itemCount: visible.length,
+            itemBuilder: (context, i) => _RequestTile(
+              request: visible[i],
+              onTap: () => _open(context, visible[i], byName),
+            ),
+            pagination: items.isEmpty
+                ? null
+                : EcoPaginationBar(
                     page: page,
                     pageSize: _pageSize,
                     total: items.length,
@@ -170,8 +218,6 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                       _page = 0;
                     }),
                   ),
-                ),
-            ],
           );
         },
       ),
@@ -199,7 +245,11 @@ class _RequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EcoCard(
+    final needsReply = _CityHallRequestsScreenState._needsReply(request);
+    final barangay = request.requesterBarangay;
+
+    return DeskRailCard(
+      railColor: request.status.color,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,6 +259,7 @@ class _RequestTile extends StatelessWidget {
               StatusBadge(
                 label: request.status.label,
                 color: request.status.color,
+                icon: request.status.icon,
                 compact: true,
               ),
               const SizedBox(width: 6),
@@ -221,46 +272,119 @@ class _RequestTile extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.inkMuted,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 9),
           Text(
             request.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.darkGreen,
-            ),
+            style: EcoType.cardTitle(context, color: AppColors.darkGreen),
           ),
-          const SizedBox(height: 3),
-          Text(
-            '${request.requesterName}'
-            '${request.requesterBarangay == null ? '' : ' · ${request.requesterBarangay}'}'
-            ' · ${request.location}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
-                Icons.forum_outlined,
-                size: 12,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                request.responses.isEmpty
-                    ? 'No City Hall reply yet'
-                    : '${request.responses.length} replies',
-                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
+              DeskInitialAvatar(name: request.requesterName, size: 24),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.requesterName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.bodySmall(
+                        context,
+                        color: AppColors.textDark,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      [
+                        if (barangay != null && barangay.isNotEmpty) barangay,
+                        request.location,
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
+                    ),
+                  ],
+                ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _ReplyChip(awaiting: needsReply, count: request.responses.length),
+              const Spacer(),
+              const Text(
+                'Open',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 16,
+                color: AppColors.primary,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReplyChip extends StatelessWidget {
+  const _ReplyChip({required this.awaiting, required this.count});
+
+  final bool awaiting;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = awaiting ? AppColors.warning : AppColors.primary;
+    final label = awaiting
+        ? 'Awaiting City Hall reply'
+        : count == 1
+        ? '1 reply in the thread'
+        : '$count replies in the thread';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            awaiting ? Icons.mark_chat_unread_outlined : Icons.forum_outlined,
+            size: 11,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 8.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
           ),
         ],
       ),
@@ -317,120 +441,227 @@ class _ReplySheetState extends State<_ReplySheet> {
   @override
   Widget build(BuildContext context) {
     final request = widget.request;
+
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.86,
+      initialChildSize: 0.88,
       minChildSize: 0.45,
       maxChildSize: 0.96,
       builder: (context, controller) => ListView(
         controller: controller,
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
+        padding: const EdgeInsets.fromLTRB(20, 2, 20, 30),
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              StatusBadge(
-                label: request.status.label,
-                color: request.status.color,
-              ),
-              const Spacer(),
-              Text(
-                timeAgo(request.createdAt),
-                style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            request.title,
-            style: const TextStyle(
-              fontSize: 20,
-              height: 1.25,
-              fontWeight: FontWeight.w700,
-              color: AppColors.darkGreen,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${request.requesterName}'
-            '${request.requesterBarangay == null ? '' : ' · ${request.requesterBarangay}'}',
-            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            request.description,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.65,
-              color: AppColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _row(Icons.place_outlined, request.location),
-          _row(
-            Icons.event_outlined,
-            'Preferred: ${dateLabel(request.preferredDate)}',
-          ),
-          if (request.isWave2)
-            _row(Icons.layers_outlined, 'Wave 2 · ${request.wave2StageLabel}'),
-          const SizedBox(height: 16),
-          const SectionHeader(title: 'Shared conversation'),
-          const SizedBox(height: 8),
-          if (request.responses.isEmpty)
-            const Text(
-              'No replies yet. The first reply is visible to the resident and '
-              'the barangay.',
-              style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
-            )
-          else
-            for (final response in request.responses) ...[
               Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(11),
+                height: 40,
+                width: 40,
                 decoration: BoxDecoration(
-                  color: response.byRole == 'cityHall'
-                      ? Colors.white
-                      : AppColors.lightGreen,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.sage),
+                  color: request.category.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
                 ),
+                child: Icon(
+                  request.category.icon,
+                  size: 19,
+                  color: request.category.color,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      response.message,
+                      request.title,
                       style: const TextStyle(
-                        fontSize: 10.5,
-                        height: 1.55,
-                        color: AppColors.textDark,
+                        fontSize: 19,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                        color: AppColors.darkGreen,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${response.byName} · ${timeAgo(response.at)}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.inkMuted,
-                      ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        StatusBadge(
+                          label: request.status.label,
+                          color: request.status.color,
+                          compact: true,
+                        ),
+                        if (request.isWave2) ...[
+                          const SizedBox(width: 5),
+                          const StatusBadge(
+                            label: 'Wave 2',
+                            color: Color(0xFF6A1B9A),
+                            compact: true,
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.mintSoft,
+              borderRadius: BorderRadius.circular(EcoRadius.md),
+              border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    DeskInitialAvatar(name: request.requesterName, size: 30),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            request.requesterName,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          Text(
+                            '${request.requesterBarangay ?? 'Batasan Hills'} · '
+                            'submitted ${timeAgo(request.createdAt)}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  request.description,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.6,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _Fact(icon: Icons.place_outlined, text: request.location),
+                _Fact(
+                  icon: Icons.event_outlined,
+                  text: 'Preferred: ${dateLabel(request.preferredDate)}',
+                ),
+                _Fact(
+                  icon: Icons.scale_outlined,
+                  text:
+                      '${request.category.label} · ${request.estimatedQuantity}',
+                ),
+                if (request.isWave2)
+                  _Fact(
+                    icon: Icons.layers_outlined,
+                    text: 'Wave 2 · ${request.wave2StageLabel}',
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const Text(
+                'SHARED CONVERSATION',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.9,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  height: 1,
+                  color: AppColors.sage.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${request.responses.length}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.forest,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (request.responses.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(EcoRadius.md),
+                border: Border.all(
+                  color: AppColors.sage.withValues(alpha: 0.7),
+                ),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 15,
+                    color: AppColors.inkMuted,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No replies yet. The first reply is visible to the '
+                      'resident and the barangay.',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.5,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            for (final response in request.responses)
+              _ResponseBubble(response: response),
           const SizedBox(height: 16),
+          const Text(
+            'Your reply',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.forest,
+            ),
+          ),
+          const SizedBox(height: 7),
           TextField(
             controller: _reply,
             minLines: 3,
-            maxLines: 5,
+            maxLines: 6,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              labelText: 'Reply to the resident',
-              hintText: 'This is also visible to the barangay staff',
+              hintText:
+                  'Answer the resident. The barangay staff sees this too.',
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 44,
+            height: 46,
             child: FilledButton.icon(
               onPressed: _busy ? null : _send,
               icon: _busy
@@ -442,10 +673,10 @@ class _ReplySheetState extends State<_ReplySheet> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.send_rounded, size: 16),
+                  : const Icon(Icons.send_rounded, size: 17),
               label: const Text(
                 'Send reply',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
               ),
               style: FilledButton.styleFrom(backgroundColor: AppColors.forest),
             ),
@@ -454,21 +685,100 @@ class _ReplySheetState extends State<_ReplySheet> {
       ),
     );
   }
+}
 
-  Widget _row(IconData icon, String text) {
+class _ResponseBubble extends StatelessWidget {
+  const _ResponseBubble({required this.response});
+
+  final RequestResponse response;
+
+  @override
+  Widget build(BuildContext context) {
+    final fromCityHall = response.byRole == 'cityHall';
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        mainAxisAlignment: fromCityHall
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!fromCityHall) ...[
+            DeskInitialAvatar(name: response.byName, size: 24),
+            const SizedBox(width: 7),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+              decoration: BoxDecoration(
+                color: fromCityHall ? AppColors.forest : Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(14),
+                  topRight: const Radius.circular(14),
+                  bottomLeft: Radius.circular(fromCityHall ? 14 : 4),
+                  bottomRight: Radius.circular(fromCityHall ? 4 : 14),
+                ),
+                border: Border.all(
+                  color: fromCityHall
+                      ? AppColors.forest
+                      : AppColors.sage.withValues(alpha: 0.8),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    response.message,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.55,
+                      color: fromCityHall ? Colors.white : AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${fromCityHall ? 'City Hall' : response.byName} · '
+                    '${timeAgo(response.at)}',
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w600,
+                      color: fromCityHall
+                          ? Colors.white.withValues(alpha: 0.72)
+                          : AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Fact extends StatelessWidget {
+  const _Fact({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 14, color: AppColors.primary),
-          const SizedBox(width: 8),
+          Icon(icon, size: 13, color: AppColors.primary),
+          const SizedBox(width: 7),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
                 fontSize: 10,
-                height: 1.5,
+                height: 1.45,
                 color: AppColors.inkMuted,
               ),
             ),

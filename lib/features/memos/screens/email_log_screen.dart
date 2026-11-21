@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../services/memo_service.dart';
 
 /// Announcements Iswim posted that go to the District Officer.
@@ -112,33 +112,11 @@ class EmailLogScreen extends StatelessWidget {
       stream: service.watchDistrictOfficerEmail(),
       builder: (context, officerSnap) {
         final officerEmail = officerSnap.data;
-        return Scaffold(
-          backgroundColor: AppColors.creamBright,
-          appBar: AppBar(
-            backgroundColor: AppColors.creamBright,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_rounded,
-                color: AppColors.forest,
-              ),
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/cityhall');
-                }
-              },
-            ),
-            title: const Text(
-              'Email log',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
-              ),
-            ),
-          ),
+        return EcoPageScaffold(
+          eyebrow: 'CITY HALL · OUTBOX',
+          title: 'Email log',
+          subtitle: 'Every message this desk sent to the district officer.',
+          onBack: () => ecoBack(context, '/cityhall'),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

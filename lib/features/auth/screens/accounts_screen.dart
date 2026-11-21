@@ -2,10 +2,10 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../driver/models/garbage_truck.dart';
@@ -48,26 +48,14 @@ class _AccountsScreenState extends State<AccountsScreen> {
     // Iswim is the only role that may create a login.
     final canManage = me?.role == UserRole.iswim;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/iswim'),
-        ),
-        title: const Text(
-          'Accounts',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
-      floatingActionButton: canManage
+    return EcoPageScaffold(
+      eyebrow: 'ISWIM · ACCOUNTS',
+      title: 'Accounts',
+      subtitle:
+          'Driver and guide logins are created here; nobody else can provision '
+          'them.',
+      onBack: () => ecoBack(context, '/iswim'),
+      fab: canManage
           ? FloatingActionButton.extended(
               onPressed: () => _openForm(context, true),
               backgroundColor: AppColors.forest,

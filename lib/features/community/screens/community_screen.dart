@@ -13,6 +13,7 @@ import '../../../core/widgets/app_bottom_nav.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
@@ -73,29 +74,11 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 _HeaderAction(icon: Icons.edit_outlined, onTap: _openComposer),
               ],
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 0, 22, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Community',
-                    style: TextStyle(
-                      fontSize: 28,
-                      height: 1.1,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Announcements, events and updates from your barangay.',
-                    style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-                  ),
-                ],
-              ),
+            const EcoPageHeader(
+              eyebrow: 'RESIDENT · COMMUNITY',
+              title: 'Community',
+              subtitle: 'Announcements, events and updates from your barangay.',
             ),
-            const SizedBox(height: 14),
             _SectionTabs(
               selected: _section,
               onSelect: (section) => setState(() => _section = section),

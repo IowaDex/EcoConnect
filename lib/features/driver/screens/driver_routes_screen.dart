@@ -3,8 +3,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -15,7 +15,6 @@ import '../../route/models/route_plan.dart';
 import '../../route/screens/route_map_screen.dart';
 import '../../route/services/route_service.dart';
 import '../widgets/driver_nav_bar.dart';
-import '../../notifications/widgets/notification_bell.dart';
 
 /// Everything the driver is scheduled to do today: the assignment, its stops
 /// and any collection points staff pinned to them.
@@ -30,76 +29,46 @@ class DriverRoutesScreen extends StatelessWidget {
       return const Scaffold(body: LoadingView(label: 'Loading your route'));
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Row(
-                children: [
-                  BrandWordmark(fontSize: 10.5),
-                  Spacer(),
-                  NotificationBell(iconSize: 19, color: AppColors.inkMuted),
-                ],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 0, 22, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'My routes',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
+    return EcoPageScaffold(
+      eyebrow: 'DRIVER · TODAY',
+      title: 'My routes',
+      subtitle: 'The run scheduled for you today, and the duties ahead.',
+      onBack: () => ecoBack(context, '/driver'),
+      bottomBar: const DriverNavBar(currentIndex: 1),
+      body: StreamBuilder<RoutePlan?>(
+        stream: RouteService().watchTodayPlan(user.uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingView(label: 'Loading your route');
+          }
+          final plan = snapshot.data;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+            children: [
+              if (plan == null)
+                const EmptyState(
+                  icon: Icons.route_outlined,
+                  title: 'No route assigned today',
+                  message:
+                      'Start an ad-hoc route from the Home tab, or wait for '
+                      'Iswim to assign one.',
+                  compact: true,
+                )
+              else
+                _PlanCard(
+                  plan: plan,
+                  truck: location.hasLocation
+                      ? LatLng(location.latitude!, location.longitude!)
+                      : null,
                 ),
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<RoutePlan?>(
-                stream: RouteService().watchTodayPlan(user.uid),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading your route');
-                  }
-                  final plan = snapshot.data;
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                    children: [
-                      if (plan == null)
-                        const EmptyState(
-                          icon: Icons.route_outlined,
-                          title: 'No route assigned today',
-                          message:
-                              'Start an ad-hoc route from the Home tab, or wait for '
-                              'Iswim to assign one.',
-                          compact: true,
-                        )
-                      else
-                        _PlanCard(
-                          plan: plan,
-                          truck: location.hasLocation
-                              ? LatLng(location.latitude!, location.longitude!)
-                              : null,
-                        ),
-                      const SizedBox(height: 18),
-                      const _PinnedStops(),
-                      const SizedBox(height: 22),
-                      _UpcomingDuties(driverId: user.uid),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 18),
+              const _PinnedStops(),
+              const SizedBox(height: 22),
+              _UpcomingDuties(driverId: user.uid),
+            ],
+          );
+        },
       ),
-      bottomNavigationBar: const DriverNavBar(currentIndex: 1),
     );
   }
 }

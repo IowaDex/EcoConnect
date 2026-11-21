@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -104,13 +105,41 @@ class _FleetScreenState extends State<FleetScreen> {
                     ),
                     FadeSlideIn(
                       index: 1,
-                      child: _FleetSummary(
-                        trucks: trucks.length,
-                        paired: paired,
-                        loading: loading,
+                      child: DeskMetricRow(
+                        metrics: [
+                          DeskMetric(
+                            icon: Icons.local_shipping_rounded,
+                            label: 'Trucks',
+                            value: loading ? '—' : '${trucks.length}',
+                          ),
+                          DeskMetric(
+                            icon: Icons.person_outline_rounded,
+                            label: 'Paired',
+                            value: loading ? '—' : '$paired',
+                          ),
+                          DeskMetric(
+                            icon: Icons.key_off_outlined,
+                            label: 'No login',
+                            value: loading ? '—' : '${trucks.length - paired}',
+                            accent: AppColors.warning,
+                            highlight: !loading && trucks.length > paired,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: EcoSpace.md),
+                    if (!loading && trucks.length > paired)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: EcoSpace.sm),
+                        child: EcoBanner(
+                          message:
+                              '${trucks.length - paired} '
+                              '${trucks.length - paired == 1 ? 'truck has' : 'trucks have'} '
+                              'no driver login yet. Pair the account from the '
+                              'accounts desk so the crew can start a trip.',
+                          icon: Icons.key_off_outlined,
+                        ),
+                      ),
                     EcoSearchField(
                       controller: _search,
                       hint: 'Search plate, driver or zone',
@@ -135,10 +164,12 @@ class _FleetScreenState extends State<FleetScreen> {
                           : const SizedBox(width: double.infinity),
                     ),
                     const SizedBox(height: EcoSpace.lg),
+                    // The add action lives in the FAB only — a second "Add
+                    // truck" link beside the list heading duplicated it.
                     SectionLabel(
-                      'TRUCKS',
-                      action: 'Add truck',
-                      onAction: () => _openForm(context),
+                      searching
+                          ? 'TRUCKS · ${visible.length} OF ${trucks.length}'
+                          : 'TRUCKS · ${trucks.length}',
                     ),
                     const SizedBox(height: EcoSpace.sm),
                     if (snapshot.hasError)
@@ -289,104 +320,6 @@ class _SeedPrompt extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-/// The three figures the desk checks before touching the list.
-class _FleetSummary extends StatelessWidget {
-  const _FleetSummary({
-    required this.trucks,
-    required this.paired,
-    required this.loading,
-  });
-
-  final int trucks;
-  final int paired;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _SummaryFigure(
-          icon: Icons.local_shipping_rounded,
-          label: 'Trucks',
-          value: loading ? '—' : '$trucks',
-        ),
-        const SizedBox(width: EcoSpace.sm),
-        _SummaryFigure(
-          icon: Icons.person_outline_rounded,
-          label: 'Paired',
-          value: loading ? '—' : '$paired',
-        ),
-        const SizedBox(width: EcoSpace.sm),
-        _SummaryFigure(
-          icon: Icons.key_off_outlined,
-          label: 'No login',
-          value: loading ? '—' : '${trucks - paired}',
-          accent: AppColors.warning,
-        ),
-      ],
-    );
-  }
-}
-
-class _SummaryFigure extends StatelessWidget {
-  const _SummaryFigure({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.accent = AppColors.forest,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: EcoSpace.sm,
-          vertical: EcoSpace.sm + 2,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(EcoRadius.md),
-          border: Border.all(color: AppColors.sage),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 15, color: accent),
-            const SizedBox(height: EcoSpace.xs),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 18,
-                height: 1.05,
-                fontWeight: FontWeight.w800,
-                color: AppColors.forest,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-                color: AppColors.inkMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

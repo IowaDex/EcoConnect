@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/service_area.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -44,143 +44,130 @@ class DriverProfileScreen extends StatelessWidget {
       return const Scaffold(body: LoadingView(label: 'Loading your profile'));
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: BrandWordmark(fontSize: 10.5),
-              ),
+    return EcoPageScaffold(
+      eyebrow: 'DRIVER · ACCOUNT',
+      title: 'My profile',
+      subtitle: 'Your collector details and shortcuts.',
+      onBack: () => ecoBack(context, '/driver'),
+      bottomBar: const DriverNavBar(currentIndex: 3),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        children: [
+          Center(
+            child: Column(
+              children: [
+                _Avatar(
+                  photoUrl: user.photoUrl,
+                  initial: user.firstName.isEmpty
+                      ? 'D'
+                      : user.firstName[0].toUpperCase(),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  user.displayName ?? 'Collector',
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkGreen,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  user.email ?? 'No email on file',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    StatusBadge(
+                      label: user.crewRole.label,
+                      color: AppColors.primary,
+                      icon: user.crewRole.icon,
+                      compact: true,
+                    ),
+                    const SizedBox(width: 6),
+                    StatusBadge(
+                      label: user.accountStatus == 'active'
+                          ? 'Approved'
+                          : 'Pending approval',
+                      color: user.accountStatus == 'active'
+                          ? AppColors.primary
+                          : AppColors.warning,
+                      compact: true,
+                    ),
+                  ],
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-                children: [
-                  Center(
-                    child: Column(
-                      children: [
-                        _Avatar(
-                          photoUrl: user.photoUrl,
-                          initial: user.firstName.isEmpty
-                              ? 'D'
-                              : user.firstName[0].toUpperCase(),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          user.displayName ?? 'Collector',
-                          style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.darkGreen,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          user.email ?? 'No email on file',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            StatusBadge(
-                              label: user.crewRole.label,
-                              color: AppColors.primary,
-                              icon: user.crewRole.icon,
-                              compact: true,
-                            ),
-                            const SizedBox(width: 6),
-                            StatusBadge(
-                              label: user.accountStatus == 'active'
-                                  ? 'Approved'
-                                  : 'Pending approval',
-                              color: user.accountStatus == 'active'
-                                  ? AppColors.primary
-                                  : AppColors.warning,
-                              compact: true,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _StatsCard(driverId: user.uid),
-                  const SizedBox(height: 14),
-                  EcoCard(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Column(
-                      children: [
-                        _InfoRow(
-                          icon: Icons.phone_outlined,
-                          label: 'Phone',
-                          value: user.phone == null || user.phone!.isEmpty
-                              ? 'Tap to add your number'
-                              : user.phone!,
-                          onTap: () => _edit(context),
-                        ),
-                        const _InfoRow(
-                          icon: Icons.location_city_outlined,
-                          label: 'Barangay',
-                          // One barangay only: the value is fixed, never typed.
-                          value: ServiceArea.barangay,
-                          locked: true,
-                        ),
-                        _InfoRow(
-                          icon: Icons.home_outlined,
-                          label: 'Address',
-                          value: user.houseStreet == null ||
-                                  user.houseStreet!.trim().isEmpty
-                              ? 'Tap to add your address'
-                              : user.houseStreet!,
-                          onTap: () => _edit(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  EcoCard(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Column(
-                      children: [
-                        _LinkRow(
-                          icon: Icons.notifications_none_rounded,
-                          label: 'Notifications',
-                          onTap: () => context.push('/notifications'),
-                        ),
-                        _LinkRow(
-                          icon: Icons.event_outlined,
-                          label: 'Community events',
-                          onTap: () => context.push('/events'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  EcoCard(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: _LinkRow(
-                      icon: Icons.logout_rounded,
-                      label: 'Log out',
-                      color: AppColors.error,
-                      onTap: () => _logout(context),
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(height: 20),
+          _StatsCard(driverId: user.uid),
+          const SizedBox(height: 14),
+          EcoCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                _InfoRow(
+                  icon: Icons.phone_outlined,
+                  label: 'Phone',
+                  value: user.phone == null || user.phone!.isEmpty
+                      ? 'Tap to add your number'
+                      : user.phone!,
+                  onTap: () => _edit(context),
+                ),
+                const _InfoRow(
+                  icon: Icons.location_city_outlined,
+                  label: 'Barangay',
+                  // One barangay only: the value is fixed, never typed.
+                  value: ServiceArea.barangay,
+                  locked: true,
+                ),
+                _InfoRow(
+                  icon: Icons.home_outlined,
+                  label: 'Address',
+                  value: user.houseStreet == null ||
+                          user.houseStreet!.trim().isEmpty
+                      ? 'Tap to add your address'
+                      : user.houseStreet!,
+                  onTap: () => _edit(context),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 14),
+          EcoCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                _LinkRow(
+                  icon: Icons.notifications_none_rounded,
+                  label: 'Notifications',
+                  onTap: () => context.push('/notifications'),
+                ),
+                _LinkRow(
+                  icon: Icons.event_outlined,
+                  label: 'Community events',
+                  onTap: () => context.push('/events'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          EcoCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: _LinkRow(
+              icon: Icons.logout_rounded,
+              label: 'Log out',
+              color: AppColors.error,
+              onTap: () => _logout(context),
+            ),
+          ),
+        ],
       ),
-      bottomNavigationBar: const DriverNavBar(currentIndex: 3),
     );
   }
 }

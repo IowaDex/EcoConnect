@@ -30,15 +30,19 @@ class RoleTopBar extends StatelessWidget {
           const NotificationBell(iconSize: 19, color: AppColors.inkMuted),
           if (onLogout != null) ...[
             const SizedBox(width: 2),
-            InkWell(
-              onTap: onLogout,
-              borderRadius: BorderRadius.circular(20),
-              child: const Padding(
-                padding: EdgeInsets.all(6),
-                child: Icon(
-                  Icons.logout_rounded,
-                  size: 18,
-                  color: AppColors.inkMuted,
+            Tooltip(
+              message: 'Sign out',
+              child: InkWell(
+                onTap: onLogout,
+                borderRadius: BorderRadius.circular(20),
+                hoverColor: AppColors.lightGreen,
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.logout_rounded,
+                    size: 18,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
               ),
             ),

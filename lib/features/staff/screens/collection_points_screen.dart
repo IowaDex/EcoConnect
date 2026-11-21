@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -10,9 +9,9 @@ import '../../../core/utils/map_config.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../collection_points/models/collection_point.dart';
@@ -77,216 +76,208 @@ class _CollectionPointsScreenState extends State<CollectionPointsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      floatingActionButton: FloatingActionButton.extended(
+    return EcoPageScaffold(
+      eyebrow: 'BARANGAY STAFF · COLLECTION POINTS',
+      title: 'Collection points',
+      subtitle: 'Pin designated pickup locations and assign them to drivers.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      actions: const [NotificationBell()],
+      fab: FloatingActionButton.extended(
         onPressed: () => _openEditor(context),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_location_alt_outlined),
         label: const Text('Add point'),
       ),
-      body: SafeArea(
-        child: StreamBuilder<List<CollectionPoint>>(
-          stream: _service.watchAll(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const LoadingView(label: 'Loading collection points');
-            }
-            if (snapshot.hasError) {
-              return ErrorView(message: AppFeedback.describe(snapshot.error!));
-            }
-            final points = snapshot.data ?? const <CollectionPoint>[];
-            _frame(points);
-            return Column(
-              children: [
-                AppPageHeader(
-                  title: 'Collection points',
-                  subtitle:
-                      'Pin designated pickup locations and assign them to drivers.',
-                  onBack: () => context.go('/admin-dashboard'),
-                  actions: const [NotificationBell()],
-                ),
-                SizedBox(
-                  height: 250,
-                  child: Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: FlutterMap(
-                          mapController: _map,
-                          options: BatasanHills.options(
-                            center: points.isEmpty
-                                ? _fallbackCentre
-                                : points.first.latLng,
-                            zoom: BatasanHills.minZoom,
-                          ),
-                          children: [
-                            BatasanHills.tiles(),
-                            BatasanHills.boundaryLayer(),
-                            PolylineLayer(polylines: _routes(points)),
-                            MarkerLayer(
-                              markers: [
-                                for (final point in points)
-                                  Marker(
-                                    point: point.latLng,
-                                    width: 42,
-                                    height: 42,
-                                    child: GestureDetector(
-                                      onTap: () => _openDetail(context, point),
-                                      child: _MapPin(point: point),
-                                    ),
+      body: StreamBuilder<List<CollectionPoint>>(
+        stream: _service.watchAll(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingView(label: 'Loading collection points');
+          }
+          if (snapshot.hasError) {
+            return ErrorView(message: AppFeedback.describe(snapshot.error!));
+          }
+          final points = snapshot.data ?? const <CollectionPoint>[];
+          _frame(points);
+          return Column(
+            children: [
+              SizedBox(
+                height: 250,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: FlutterMap(
+                        mapController: _map,
+                        options: BatasanHills.options(
+                          center: points.isEmpty
+                              ? _fallbackCentre
+                              : points.first.latLng,
+                          zoom: BatasanHills.minZoom,
+                        ),
+                        children: [
+                          BatasanHills.tiles(),
+                          BatasanHills.boundaryLayer(),
+                          PolylineLayer(polylines: _routes(points)),
+                          MarkerLayer(
+                            markers: [
+                              for (final point in points)
+                                Marker(
+                                  point: point.latLng,
+                                  width: 42,
+                                  height: 42,
+                                  child: GestureDetector(
+                                    onTap: () => _openDetail(context, point),
+                                    child: _MapPin(point: point),
                                   ),
-                              ],
-                            ),
-                            // The recentre button owns the bottom-right corner.
-                            const OsmAttribution(
-                              alignment: Alignment.bottomLeft,
-                            ),
-                          ],
-                        ),
+                                ),
+                            ],
+                          ),
+                          // The recentre button owns the bottom-right corner.
+                          const OsmAttribution(alignment: Alignment.bottomLeft),
+                        ],
                       ),
-                      Positioned(
-                        right: 10,
-                        bottom: 10,
-                        child: _MapButton(
-                          icon: Icons.my_location_rounded,
-                          onTap: () {
-                            if (points.isNotEmpty) {
-                              _map.move(points.first.latLng, 16);
-                            }
-                          },
-                        ),
+                    ),
+                    Positioned(
+                      right: 10,
+                      bottom: 10,
+                      child: _MapButton(
+                        icon: Icons.my_location_rounded,
+                        onTap: () {
+                          if (points.isNotEmpty) {
+                            _map.move(points.first.latLng, 16);
+                          }
+                        },
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${points.length} designated location${points.length == 1 ? '' : 's'}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.darkGreen,
-                        ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(
+                  children: [
+                    Text(
+                      '${points.length} designated location${points.length == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.darkGreen,
                       ),
-                      const Spacer(),
-                      const Icon(
-                        Icons.route_rounded,
-                        size: 13,
+                    ),
+                    const Spacer(),
+                    const Icon(
+                      Icons.route_rounded,
+                      size: 13,
+                      color: AppColors.inkMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Lines link each driver\'s stops',
+                      style: TextStyle(
+                        fontSize: 8.5,
                         color: AppColors.inkMuted,
                       ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Lines link each driver\'s stops',
-                        style: TextStyle(
-                          fontSize: 8.5,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                  child: EcoSearchField(
-                    controller: _search,
-                    hint: 'Search point, street or driver',
-                    onChanged: (value) => setState(() {
-                      _query = value;
-                      _page = 0;
-                    }),
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: EcoSearchField(
+                  controller: _search,
+                  hint: 'Search point, street or driver',
+                  onChanged: (value) => setState(() {
+                    _query = value;
+                    _page = 0;
+                  }),
                 ),
-                Expanded(
-                  child: points.isEmpty
-                      ? EmptyState(
-                          icon: Icons.add_location_alt_outlined,
-                          title: 'No collection points yet',
-                          message:
-                              'Pin the first pickup location so drivers know where to go.',
-                          actionLabel: 'Add collection point',
-                          onAction: () => _openEditor(context),
-                        )
-                      : Builder(
-                          builder: (context) {
-                            final items = _filter(points);
-                            final page = clampPage(
-                              _page,
-                              items.length,
-                              _pageSize,
+              ),
+              Expanded(
+                child: points.isEmpty
+                    ? EmptyState(
+                        icon: Icons.add_location_alt_outlined,
+                        title: 'No collection points yet',
+                        message:
+                            'Pin the first pickup location so drivers know where to go.',
+                        actionLabel: 'Add collection point',
+                        onAction: () => _openEditor(context),
+                      )
+                    : Builder(
+                        builder: (context) {
+                          final items = _filter(points);
+                          final page = clampPage(
+                            _page,
+                            items.length,
+                            _pageSize,
+                          );
+                          final visible = pageSlice(items, page, _pageSize);
+                          if (items.isEmpty) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                  'No point matches your search.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.inkMuted,
+                                  ),
+                                ),
+                              ),
                             );
-                            final visible = pageSlice(items, page, _pageSize);
-                            if (items.isEmpty) {
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(24),
-                                  child: Text(
-                                    'No point matches your search.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.inkMuted,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-                            return Column(
-                              children: [
-                                Expanded(
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      18,
-                                      0,
-                                      18,
-                                      10,
-                                    ),
-                                    itemCount: visible.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 10),
-                                    itemBuilder: (context, i) {
-                                      final point = visible[i];
-                                      return _PointCard(
-                                        point: point,
-                                        onTap: () =>
-                                            _openDetail(context, point),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                Padding(
+                          }
+                          return Column(
+                            children: [
+                              Expanded(
+                                child: ListView.separated(
                                   padding: const EdgeInsets.fromLTRB(
                                     18,
                                     0,
                                     18,
-                                    8,
+                                    10,
                                   ),
-                                  child: EcoPaginationBar(
-                                    page: page,
-                                    pageSize: _pageSize,
-                                    total: items.length,
-                                    onPageChanged: (next) =>
-                                        setState(() => _page = next),
-                                    onPageSizeChanged: (size) => setState(() {
-                                      _pageSize = size;
-                                      _page = 0;
-                                    }),
-                                  ),
+                                  itemCount: visible.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder: (context, i) {
+                                    final point = visible[i];
+                                    return _PointCard(
+                                      point: point,
+                                      onTap: () => _openDetail(context, point),
+                                    );
+                                  },
                                 ),
-                              ],
-                            );
-                          },
-                        ),
-                ),
-              ],
-            );
-          },
-        ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  0,
+                                  18,
+                                  8,
+                                ),
+                                child: EcoPaginationBar(
+                                  page: page,
+                                  pageSize: _pageSize,
+                                  total: items.length,
+                                  onPageChanged: (next) =>
+                                      setState(() => _page = next),
+                                  onPageSizeChanged: (size) => setState(() {
+                                    _pageSize = size;
+                                    _page = 0;
+                                  }),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

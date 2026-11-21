@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -148,24 +149,11 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.pop(),
-        ),
-        title: const Text(
-          'Memo',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'MEMORANDUM',
+      title: 'Memo',
+      subtitle: 'The full text, the signatures and the trail behind it.',
+      onBack: () => context.pop(),
       body: StreamBuilder<Memo?>(
         stream: MemoService().watchOne(widget.memoId),
         builder: (context, snapshot) {

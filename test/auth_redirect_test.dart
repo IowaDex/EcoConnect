@@ -79,9 +79,9 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.user, location: '/routes'), '/user');
   });
 
-  test('the barangay lost routes, incidents and account provisioning', () {
-    // Incidents go straight to DSQC / City Hall.
-    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/incidents'), '/admin-dashboard');
+  test('the barangay lost routes and account provisioning', () {
+    // The incident desk is the barangay's: the dashboard links straight to it.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/incidents'), isNull);
     // No live dispatch board either.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/live-routes'), '/admin-dashboard');
     // City Hall alone creates logins.
