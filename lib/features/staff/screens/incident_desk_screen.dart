@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../incident/models/incident.dart';
 import '../../incident/services/incident_service.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
-import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/status_badge.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class IncidentDeskScreen extends StatefulWidget {
   const IncidentDeskScreen({super.key});
@@ -22,6 +27,7 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
   final _search = TextEditingController();
   late final Stream<List<Incident>> _stream;
   String _query = '';
+  IncidentStatus? _status;
   int _page = 0;
   int _pageSize = 10;
 
@@ -39,8 +45,9 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
 
   List<Incident> _filter(List<Incident> incidents) {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return incidents;
     return incidents.where((i) {
+      if (_status != null && i.status != _status) return false;
+      if (q.isEmpty) return true;
       return i.category.label.toLowerCase().contains(q) ||
           i.description.toLowerCase().contains(q) ||
           i.residentName.toLowerCase().contains(q) ||
@@ -48,88 +55,140 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
     }).toList();
   }
 
+  void _clear() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      _status = null;
+      _page = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final role = context.watch<AuthProvider>().currentUser?.role;
+    final isCityHall = role == UserRole.cityHall;
+    final home = isCityHall ? '/cityhall' : '/admin-dashboard';
+
     return EcoPageScaffold(
-      eyebrow: 'BARANGAY STAFF · INCIDENT DESK',
+      eyebrow: isCityHall
+          ? 'CITY HALL · INCIDENT DESK'
+          : 'BARANGAY STAFF · INCIDENT DESK',
       title: 'Incident desk',
-      subtitle: 'Reports submitted by residents, newest first.',
-      onBack: () => ecoBack(context, '/admin-dashboard'),
+      subtitle:
+          'Reports submitted by residents, newest first. Resolve one and the '
+          'resident sees the change on their own report.',
+      onBack: () => ecoBack(context, home),
       body: StreamBuilder<List<Incident>>(
         stream: _stream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not load reports: ${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: AppColors.danger),
-                ),
-              ),
+            return EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Could not load reports',
+              message: '${snapshot.error}',
             );
           }
           if (!snapshot.hasData) {
             return const EcoLoadingView(label: 'Loading reports');
           }
+
           final all = snapshot.data!;
-          if (all.isEmpty) {
-            return const _EmptyState();
-          }
           final incidents = _filter(all);
           final page = clampPage(_page, incidents.length, _pageSize);
           final visible = pageSlice(incidents, page, _pageSize);
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: EcoSearchField(
-                  controller: _search,
-                  hint: 'Search type, place or reporter',
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
+          final pending = all
+              .where((i) => i.status == IncidentStatus.pending)
+              .length;
+          final resolved = all.length - pending;
+          final filtered = _query.trim().isNotEmpty || _status != null;
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: Icons.warning_amber_rounded,
+                label: 'Pending',
+                value: '$pending',
+                accent: AppColors.warning,
+                highlight: pending > 0,
+              ),
+              DeskMetric(
+                icon: Icons.check_circle_outline_rounded,
+                label: 'Resolved',
+                value: '$resolved',
+              ),
+              DeskMetric(
+                icon: Icons.report_outlined,
+                label: 'Total',
+                value: '${all.length}',
+              ),
+            ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search type, place or reporter',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+            ),
+            filters: DeskSegmented<IncidentStatus?>(
+              value: _status,
+              onChanged: (value) => setState(() {
+                _status = value;
+                _page = 0;
+              }),
+              segments: [
+                DeskSegment(value: null, label: 'All', count: all.length),
+                DeskSegment(
+                  value: IncidentStatus.pending,
+                  label: 'Pending',
+                  count: pending,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                child: EcoResultCount(
-                  shown: incidents.length,
-                  total: all.length,
-                  singular: 'report',
-                  plural: 'reports',
+                DeskSegment(
+                  value: IncidentStatus.resolved,
+                  label: 'Resolved',
+                  count: resolved,
                 ),
-              ),
-              Expanded(
-                child: incidents.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'No report matches your search.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) => _IncidentTile(
-                          incident: visible[i],
-                          onResolve: () => _resolve(visible[i]),
-                        ),
-                      ),
-              ),
-              if (incidents.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: EcoPaginationBar(
+              ],
+            ),
+            resultLine: DeskResultLine(
+              label: filtered
+                  ? 'Showing ${incidents.length} of ${all.length} reports'
+                  : '${all.length} '
+                        '${all.length == 1 ? 'report' : 'reports'}',
+              onClear: filtered ? _clear : null,
+            ),
+            empty: all.isEmpty
+                ? const DeskEmptyQueue(
+                    icon: Icons.check_circle_outline_rounded,
+                    title: 'No reports yet',
+                    message:
+                        'Resident reports appear here in real time. An '
+                        'empty desk means nothing has been filed.',
+                    steps: [
+                      'Resident submits a report',
+                      'The desk reviews it',
+                      'Resolving it closes the report',
+                    ],
+                  )
+                : DeskEmptyQueue(
+                    icon: Icons.search_off_rounded,
+                    title: 'No report matches',
+                    message:
+                        'Try another type, place or reporter, or clear the '
+                        'status filter.',
+                    actionLabel: 'Clear filters',
+                    actionIcon: Icons.filter_alt_off_outlined,
+                    onAction: _clear,
+                  ),
+            itemCount: visible.length,
+            itemBuilder: (context, i) => _IncidentTile(
+              incident: visible[i],
+              onResolve: () => _resolve(visible[i]),
+            ),
+            pagination: incidents.isEmpty
+                ? null
+                : EcoPaginationBar(
                     page: page,
                     pageSize: _pageSize,
                     total: incidents.length,
@@ -139,8 +198,6 @@ class _IncidentDeskScreenState extends State<IncidentDeskScreen> {
                       _page = 0;
                     }),
                   ),
-                ),
-            ],
           );
         },
       ),
@@ -166,8 +223,12 @@ class _IncidentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EcoCard(
-      padding: const EdgeInsets.all(16),
+    final pending = incident.status == IncidentStatus.pending;
+    final accent = pending ? AppColors.warning : AppColors.primary;
+
+    return DeskRailCard(
+      railColor: accent,
+      padding: const EdgeInsets.fromLTRB(17, 13, 14, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -176,136 +237,128 @@ class _IncidentTile extends StatelessWidget {
               Container(
                 height: 32,
                 width: 32,
-                decoration: const BoxDecoration(
-                  color: AppColors.mint,
-                  shape: BoxShape.circle,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
                 ),
                 child: Icon(
                   incident.category.icon,
                   size: 16,
-                  color: AppColors.forest,
+                  color: pending ? const Color(0xFFB26A00) : accent,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       incident.category.label,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.cardTitle(
+                        context,
+                        color: AppColors.darkGreen,
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      '${incident.residentName} · ${_ago(incident.createdAt)}',
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: AppColors.inkMuted,
-                      ),
+                      timeAgo(incident.createdAt),
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                decoration: BoxDecoration(
-                  color: incident.status.color.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: incident.status.color.withValues(alpha: 0.6),
-                  ),
-                ),
-                child: Text(
-                  incident.status.label,
-                  style: TextStyle(
-                    fontSize: 8,
-                    fontWeight: FontWeight.w700,
-                    color: incident.status.color,
-                  ),
-                ),
+              StatusBadge(
+                label: incident.status.label,
+                color: incident.status.color,
+                compact: true,
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Text(
             incident.description,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.5,
-              color: AppColors.forest,
-            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.body(context, color: AppColors.textDark),
           ),
-          if (incident.latitude != null && incident.longitude != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(
-                  Icons.place_outlined,
-                  size: 12,
-                  color: AppColors.inkMuted,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${incident.latitude!.toStringAsFixed(5)}, '
-                  '${incident.longitude!.toStringAsFixed(5)}',
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              DeskInitialAvatar(name: incident.residentName, size: 22),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  incident.residentName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 9,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.inkMuted,
                   ),
                 ),
-              ],
-            ),
-          ],
-          if (incident.status == IncidentStatus.pending) ...[
-            const SizedBox(height: 12),
+              ),
+              if (incident.latitude != null && incident.longitude != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(EcoRadius.pill),
+                    border: Border.all(
+                      color: AppColors.sage.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.place_outlined,
+                        size: 10,
+                        color: AppColors.inkMuted,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${incident.latitude!.toStringAsFixed(4)}, '
+                        '${incident.longitude!.toStringAsFixed(4)}',
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (pending) ...[
+            const SizedBox(height: 11),
             SizedBox(
               width: double.infinity,
               height: 36,
-              child: OutlinedButton(
+              child: OutlinedButton.icon(
                 onPressed: onResolve,
+                icon: const Icon(Icons.task_alt_rounded, size: 14),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.forest,
-                  side: const BorderSide(color: AppColors.forest),
+                  side: const BorderSide(color: AppColors.primary),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(EcoRadius.sm),
                   ),
                   textStyle: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: const Text('Mark as resolved'),
+                label: const Text('Mark as resolved'),
               ),
             ),
           ],
         ],
       ),
-    );
-  }
-
-  static String _ago(DateTime? time) {
-    if (time == null) return 'just now';
-    final diff = DateTime.now().difference(time);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hr ago';
-    return '${diff.inDays} d ago';
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const EmptyState(
-      icon: Icons.inbox_rounded,
-      title: 'No reports yet',
-      message: 'Resident reports will appear here in real time.',
     );
   }
 }

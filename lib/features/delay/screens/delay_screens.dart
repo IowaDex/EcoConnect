@@ -4,15 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
+import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../models/delay_report.dart';
 import '../services/delay_service.dart';
 import '../widgets/district_officer_alarm.dart';
+import '../../../core/widgets/desk_ui.dart';
 
 /// Iswim files the delay report. Truck and driver come from the fleet roster,
 /// so the report always names a real plate.
@@ -113,102 +119,102 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.pop(),
-        ),
-        title: const Text(
-          'Delay report',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'ISWIM · DELAY DESK',
+      title: 'File a delay report',
+      subtitle:
+          'Name the plate and the reason. The DSQC sees it immediately, then '
+          'passes it to the district officer and the barangay.',
+      onBack: () => ecoBack(context, '/iswim'),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+          padding: const EdgeInsets.fromLTRB(20, 2, 20, 28),
           children: [
-            DropdownButtonFormField<GarbageTruck>(
-              initialValue: _truck,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Truck',
-                isDense: true,
-              ),
-              items: [
-                for (final truck in _trucks)
-                  DropdownMenuItem(
-                    value: truck,
-                    child: Text(
-                      '${truck.plateNumber} · ${truck.driverName}',
-                      style: const TextStyle(fontSize: 11),
-                    ),
+            _FormSection(
+              title: 'THE ROUND',
+              children: [
+                DropdownButtonFormField<GarbageTruck>(
+                  initialValue: _truck,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Truck',
+                    isDense: true,
                   ),
-              ],
-              onChanged: (value) => setState(() => _truck = value),
-              validator: (value) => value == null ? 'Select a truck' : null,
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _reason,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Reason',
-                isDense: true,
-              ),
-              items: [
-                for (final reason in _reasons)
-                  DropdownMenuItem(
-                    value: reason,
-                    child: Text(reason, style: const TextStyle(fontSize: 11)),
+                  items: [
+                    for (final truck in _trucks)
+                      DropdownMenuItem(
+                        value: truck,
+                        child: Text(
+                          '${truck.plateNumber} · ${truck.driverName}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _truck = value),
+                  validator: (value) => value == null ? 'Select a truck' : null,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _reason,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason',
+                    isDense: true,
                   ),
+                  items: [
+                    for (final reason in _reasons)
+                      DropdownMenuItem(
+                        value: reason,
+                        child: Text(
+                          reason,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _reason = value ?? _reason),
+                ),
               ],
-              onChanged: (value) => setState(() => _reason = value ?? _reason),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _minutes,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Minutes late',
-                isDense: true,
-              ),
-              validator: (value) {
-                final parsed = int.tryParse((value ?? '').trim());
-                if (parsed == null || parsed <= 0) return 'Enter the minutes';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notes,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Details (optional)',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                onPressed: _busy ? null : _submit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.forest,
-                  textStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+            _FormSection(
+              title: 'HOW LATE',
+              children: [
+                TextFormField(
+                  controller: _minutes,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes late',
+                    suffixText: 'min',
+                    isDense: true,
+                  ),
+                  validator: (value) {
+                    final parsed = int.tryParse((value ?? '').trim());
+                    if (parsed == null || parsed <= 0) {
+                      return 'Enter the minutes';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _notes,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Details (optional)',
+                    hintText: 'Anything the desk should know on the ground',
+                    isDense: true,
                   ),
                 ),
-                child: _busy
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _submit,
+                icon: _busy
                     ? const SizedBox(
                         height: 18,
                         width: 18,
@@ -217,22 +223,66 @@ class _FileDelayScreenState extends State<FileDelayScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Send to DSQC'),
+                    : const Icon(Icons.send_rounded, size: 17),
+                label: const Text('Send to DSQC'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.forest,
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             const Text(
               'Iswim → DSQC → District Officer (alarm on the DSQC device) → '
               'Barangay copy.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 10,
                 height: 1.5,
                 color: AppColors.inkMuted,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FormSection extends StatelessWidget {
+  const _FormSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(EcoRadius.lg),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.75)),
+        boxShadow: AppColors.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.9,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...children,
+        ],
       ),
     );
   }
@@ -260,6 +310,7 @@ class DelayListScreen extends StatefulWidget {
 class _DelayListScreenState extends State<DelayListScreen> {
   final _search = TextEditingController();
   String _query = '';
+  DelayStage? _stage;
   int _page = 0;
   int _pageSize = 10;
 
@@ -271,105 +322,160 @@ class _DelayListScreenState extends State<DelayListScreen> {
 
   List<DelayReport> _filter(List<DelayReport> reports) {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return reports;
     return reports.where((r) {
+      if (_stage != null && r.stage != _stage) return false;
+      if (q.isEmpty) return true;
       return r.code.toLowerCase().contains(q) ||
           r.plateNumber.toLowerCase().contains(q) ||
-          r.reason.toLowerCase().contains(q);
+          r.reason.toLowerCase().contains(q) ||
+          r.driverName.toLowerCase().contains(q);
     }).toList();
+  }
+
+  int _count(List<DelayReport> reports, DelayStage stage) =>
+      reports.where((report) => report.stage == stage).length;
+
+  void _clear() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      _stage = null;
+      _page = 0;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final canForward = widget.canForward;
     final canAnnounce = widget.canAnnounce;
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/cityhall');
-            }
-          },
-        ),
-        title: const Text(
-          'Delay reports',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
+    final eyebrow = canForward
+        ? 'CITY HALL · DELAY REPORTS'
+        : canAnnounce
+        ? 'BARANGAY · DELAY REPORTS'
+        : 'DELAY DESK';
+
+    return EcoPageScaffold(
+      eyebrow: eyebrow,
+      title: 'Delay reports',
+      subtitle: canForward
+          ? 'Late collections filed by Iswim. Push one to the district officer '
+                'or send the barangay its copy.'
+          : 'Late collections filed by Iswim, newest first.',
+      onBack: () => ecoBack(
+        context,
+        canForward
+            ? '/cityhall'
+            : canAnnounce
+            ? '/admin-dashboard'
+            : '/iswim',
       ),
       body: StreamBuilder<List<DelayReport>>(
         stream: DelayService().watchAll(),
         builder: (context, snapshot) {
-          final reports = snapshot.data ?? const <DelayReport>[];
-          if (reports.isEmpty) {
-            return const Center(
-              child: Text(
-                'No delay reports yet.',
-                style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-              ),
-            );
+          if (!snapshot.hasData &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return const EcoLoadingView(label: 'Loading delay reports');
           }
+
+          final reports = snapshot.data ?? const <DelayReport>[];
           final items = _filter(reports);
           final page = clampPage(_page, items.length, _pageSize);
           final visible = pageSlice(items, page, _pageSize);
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
-                child: EcoSearchField(
-                  controller: _search,
-                  hint: 'Search ticket, plate or reason',
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
+          final filtered = _query.trim().isNotEmpty || _stage != null;
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: Icons.timer_outlined,
+                label: 'At DSQC',
+                value: '${_count(reports, DelayStage.dsqc)}',
+                accent: AppColors.warning,
+                highlight: _count(reports, DelayStage.dsqc) > 0,
+              ),
+              DeskMetric(
+                icon: Icons.local_police_outlined,
+                label: 'With district',
+                value: '${_count(reports, DelayStage.districtOfficer)}',
+              ),
+              DeskMetric(
+                icon: Icons.campaign_outlined,
+                label: 'Announced',
+                value:
+                    '${reports.where((r) => r.announcementId != null).length}',
+              ),
+            ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search ticket, plate or reason',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+            ),
+            filters: DeskSegmented<DelayStage?>(
+              value: _stage,
+              onChanged: (value) => setState(() {
+                _stage = value;
+                _page = 0;
+              }),
+              segments: [
+                DeskSegment(value: null, label: 'All', count: reports.length),
+                DeskSegment(
+                  value: DelayStage.dsqc,
+                  label: 'DSQC',
+                  count: _count(reports, DelayStage.dsqc),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                child: EcoResultCount(
-                  shown: items.length,
-                  total: reports.length,
-                  singular: 'report',
-                  plural: 'reports',
+                DeskSegment(
+                  value: DelayStage.districtOfficer,
+                  label: 'District',
+                  count: _count(reports, DelayStage.districtOfficer),
                 ),
-              ),
-              Expanded(
-                child: items.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No report matches your search.',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 9),
-                        itemBuilder: (context, i) => _DelayCard(
-                          report: visible[i],
-                          canForward: canForward,
-                          canAnnounce: canAnnounce,
-                        ),
-                      ),
-              ),
-              if (items.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: EcoPaginationBar(
+                DeskSegment(
+                  value: DelayStage.barangay,
+                  label: 'Barangay',
+                  count: _count(reports, DelayStage.barangay),
+                ),
+              ],
+            ),
+            resultLine: DeskResultLine(
+              label: filtered
+                  ? 'Showing ${items.length} of ${reports.length} reports'
+                  : '${reports.length} '
+                        '${reports.length == 1 ? 'report' : 'reports'}',
+              onClear: filtered ? _clear : null,
+            ),
+            empty: reports.isEmpty
+                ? const DeskEmptyQueue(
+                    icon: Icons.timer_outlined,
+                    title: 'No delay reports yet',
+                    message:
+                        'When a collection runs late, Iswim files it here '
+                        'and the DSQC decides who needs to know.',
+                    steps: [
+                      'Iswim files the late round',
+                      'DSQC pushes it to the district officer',
+                      'The barangay gets its copy',
+                    ],
+                  )
+                : DeskEmptyQueue(
+                    icon: Icons.search_off_rounded,
+                    title: 'No report matches',
+                    message:
+                        'Try another plate or reason, or clear the stage '
+                        'filter.',
+                    actionLabel: 'Clear filters',
+                    actionIcon: Icons.filter_alt_off_outlined,
+                    onAction: _clear,
+                  ),
+            itemCount: visible.length,
+            itemBuilder: (context, i) => _DelayCard(
+              report: visible[i],
+              canForward: canForward,
+              canAnnounce: canAnnounce,
+            ),
+            pagination: items.isEmpty
+                ? null
+                : EcoPaginationBar(
                     page: page,
                     pageSize: _pageSize,
                     total: items.length,
@@ -379,8 +485,6 @@ class _DelayListScreenState extends State<DelayListScreen> {
                       _page = 0;
                     }),
                   ),
-                ),
-            ],
           );
         },
       ),
@@ -398,6 +502,20 @@ class _DelayCard extends StatelessWidget {
   final DelayReport report;
   final bool canForward;
   final bool canAnnounce;
+
+  static Color _stageColor(DelayStage stage) => switch (stage) {
+    DelayStage.dsqc => AppColors.warning,
+    DelayStage.districtOfficer => const Color(0xFF1565C0),
+    DelayStage.barangay => AppColors.primary,
+    DelayStage.closed => AppColors.inkMuted,
+  };
+
+  static int _stageIndex(DelayStage stage) => switch (stage) {
+    DelayStage.dsqc => 0,
+    DelayStage.districtOfficer => 1,
+    DelayStage.barangay => 2,
+    DelayStage.closed => 3,
+  };
 
   Future<void> _announce(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -447,58 +565,157 @@ class _DelayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stage = report.stage;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.sage),
-      ),
+    final stageColor = _stageColor(stage);
+
+    return DeskRailCard(
+      railColor: stageColor,
+      padding: const EdgeInsets.fromLTRB(17, 13, 14, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(
-                report.code,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.forest,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.cream,
+                  borderRadius: BorderRadius.circular(EcoRadius.sm - 2),
+                ),
+                child: Text(
+                  report.code,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                    color: AppColors.forest,
+                  ),
                 ),
               ),
               const Spacer(),
-              Text(
-                stage.label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: stage == DelayStage.dsqc
-                      ? AppColors.warning
-                      : AppColors.inkMuted,
+              StatusBadge(label: stage.label, color: stageColor, compact: true),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      report.plateNumber,
+                      style: EcoType.identifier(
+                        context,
+                        color: AppColors.darkGreen,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      report.driverName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.bodySmall(
+                        context,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '${report.minutesLate}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFB26A00),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    const Text(
+                      'MIN LATE',
+                      style: TextStyle(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Color(0xFFB26A00),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${report.plateNumber} · ${report.driverName}',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textDark,
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 12,
+                color: AppColors.inkMuted,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  report.reason,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              Text(
+                timeAgo(report.createdAt),
+                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+              ),
+            ],
+          ),
+          if (report.notes.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(EcoRadius.sm),
+                border: Border.all(
+                  color: AppColors.sage.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Text(
+                report.notes,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.45,
+                  color: AppColors.inkMuted,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${report.reason} · ${report.minutesLate} min late',
-            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-          ),
+          ],
+          const SizedBox(height: 11),
+          _StageTrack(current: _stageIndex(stage)),
           if (canForward && stage == DelayStage.dsqc) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
             SizedBox(
               height: 38,
-              child: FilledButton(
+              child: FilledButton.icon(
                 onPressed: () async {
                   final service = DelayService();
                   await service.forwardToDistrictOfficer(report);
@@ -510,6 +727,7 @@ class _DelayCard extends StatelessWidget {
                     () => service.sendToBarangay(report),
                   );
                 },
+                icon: const Icon(Icons.campaign_rounded, size: 15),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.error,
                   textStyle: const TextStyle(
@@ -517,34 +735,35 @@ class _DelayCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: const Text('Forward to District Officer'),
+                label: const Text('Forward to District Officer'),
               ),
             ),
           ],
           if (canForward && stage == DelayStage.districtOfficer) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
             SizedBox(
               height: 38,
-              child: OutlinedButton(
+              child: OutlinedButton.icon(
                 onPressed: () => DelayService().sendToBarangay(report),
+                icon: const Icon(Icons.send_outlined, size: 14),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.forest,
                   side: const BorderSide(color: AppColors.sage),
                   textStyle: const TextStyle(fontSize: 11),
                 ),
-                child: const Text('Send a copy to the Barangay'),
+                label: const Text('Send a copy to the Barangay'),
               ),
             ),
           ],
           if (canAnnounce &&
               stage == DelayStage.barangay &&
               report.announcementId == null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
             SizedBox(
               height: 38,
               child: FilledButton.icon(
                 onPressed: () => _announce(context),
-                icon: const Icon(Icons.campaign_outlined, size: 16),
+                icon: const Icon(Icons.campaign_outlined, size: 15),
                 label: const Text('Announce to residents'),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.forest,
@@ -557,18 +776,91 @@ class _DelayCard extends StatelessWidget {
             ),
           ],
           if (report.announcementId != null) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Announced to residents',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 13,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'Announced to residents${report.announcedAt == null ? '' : ' · ${timeAgo(report.announcedAt)}'}',
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Three dots joined by a rule: DSQC → District → Barangay.
+class _StageTrack extends StatelessWidget {
+  const _StageTrack({required this.current});
+
+  final int current;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['DSQC', 'District', 'Barangay'];
+
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 2,
+                color: current > i - 1
+                    ? AppColors.primary.withValues(alpha: 0.45)
+                    : AppColors.sage.withValues(alpha: 0.6),
+              ),
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 13,
+                width: 13,
+                decoration: BoxDecoration(
+                  color: current >= i ? AppColors.primary : Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: current >= i ? AppColors.primary : AppColors.sage,
+                    width: 1.4,
+                  ),
+                ),
+                child: current > i
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 8,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                labels[i],
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  color: current >= i
+                      ? AppColors.forest
+                      : AppColors.inkMuted.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
