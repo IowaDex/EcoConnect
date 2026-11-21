@@ -130,6 +130,35 @@ void main() {
       expect(routes, ['/tracking']);
     });
 
+    testWidgets('a badge counts work on the tile and zero hides it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const QuickActionGrid(
+            actions: [
+              QuickAction(
+                label: 'Manual requests',
+                icon: Icons.mark_email_unread_outlined,
+                route: '/manual-requests',
+                badge: 3,
+              ),
+              QuickAction(
+                label: 'Fleet',
+                icon: Icons.local_shipping_outlined,
+                route: '/fleet',
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('3'), findsOneWidget);
+      expect(find.text('0'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a locked tile explains instead of navigating', (tester) async {
       final lockedNotes = <String>[];
       final routes = <String>[];

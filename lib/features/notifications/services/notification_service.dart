@@ -56,21 +56,21 @@ class NotificationService {
   /// Writes [data] once for a deterministic document id.
   ///
   /// A retry, a double tap or two screens reacting to the same event all
-  /// produce the same document id, so the second write is skipped instead of
-  /// stacking another identical notification. Returns true only when a new
-  /// document was created.
+  /// produce the same document id. The first write is a create and lands; a
+  /// repeat hits the existing document, where the security rules only allow
+  /// `read` to change, so it is refused and the alert is not duplicated.
+  /// Returns true only when a new document was created.
+  ///
+  /// This deliberately avoids a transaction: reading a notification that does
+  /// not exist yet is refused by the rules, which made every keyed alert —
+  /// including the manual request sent to the Iswim desk — silently vanish.
   Future<bool> _writeOnce({
     required String docId,
     required Map<String, dynamic> data,
   }) async {
-    final ref = _col.doc(docId);
     try {
-      return await _db.runTransaction<bool>((tx) async {
-        final existing = await tx.get(ref);
-        if (existing.exists) return false;
-        tx.set(ref, data);
-        return true;
-      });
+      await _col.doc(docId).set(data);
+      return true;
     } catch (error) {
       AppLogger.error('Notification write failed', error);
       return false;

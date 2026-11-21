@@ -19,6 +19,7 @@ import '../../dashboard/widgets/role_hero.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
 import '../../incident/models/incident.dart';
 import '../../incident/services/incident_service.dart';
+import '../../manuals/widgets/approved_manuals_section.dart';
 import '../../memos/services/memo_service.dart';
 import '../../requests/models/collection_request.dart';
 import '../../requests/services/collection_request_service.dart';
@@ -210,8 +211,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final incidents = _pendingIncidents;
     final requests = _openRequests;
     final pendingAccounts = pendingResidents.length;
-    final attentionTotal =
-        pendingAccounts + incidents.length + requests.length;
+    final attentionTotal = pendingAccounts + incidents.length + requests.length;
     final attention = _attentionFor(
       residents: pendingResidents,
       incidents: incidents,
@@ -280,8 +280,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: EcoSpace.xl),
-                      FadeSlideIn(
+                      const FadeSlideIn(
                         index: 2,
+                        child: ApprovedManualsSection(),
+                      ),
+                      const SizedBox(height: EcoSpace.xl),
+                      FadeSlideIn(
+                        index: 3,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -322,6 +327,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   label: 'Trip tickets',
                                   icon: Icons.confirmation_number_outlined,
                                   route: '/ticket-signatures',
+                                ),
+                                const QuickAction(
+                                  label: 'Schedules',
+                                  icon: Icons.calendar_month_outlined,
+                                  route: '/assignments',
                                 ),
                                 const QuickAction(
                                   label: 'Wave 2',

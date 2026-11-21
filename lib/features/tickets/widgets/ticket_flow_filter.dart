@@ -71,6 +71,7 @@ extension TicketFlowStageX on TicketFlowStage {
     TicketFlowStage.withDriver =>
       status == TicketStatus.issued ||
           status == TicketStatus.accepted ||
+          status == TicketStatus.valid ||
           status == TicketStatus.revisionRequired,
     TicketFlowStage.onTheRoad => status == TicketStatus.running,
     TicketFlowStage.barangay => status == TicketStatus.submitted,

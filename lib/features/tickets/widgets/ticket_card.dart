@@ -20,7 +20,7 @@ class TicketCard extends StatelessWidget {
   final String? trailingLabel;
 
   Color get _statusColor => switch (ticket.status) {
-    TicketStatus.completed => AppColors.primary,
+    TicketStatus.completed || TicketStatus.valid => AppColors.primary,
     TicketStatus.missed || TicketStatus.cancelled => AppColors.error,
     TicketStatus.declined => AppColors.warning,
     TicketStatus.issued => AppColors.warning,
@@ -30,7 +30,11 @@ class TicketCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = trailingLabel ?? ticket.status.label;
+    final label =
+        trailingLabel ??
+        (ticket.approvalPending
+            ? 'Waiting for City Hall'
+            : ticket.status.label);
     final card = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -138,7 +142,9 @@ class TicketCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${ticket.route} · ${ticket.zone}',
+                ticket.isAssignment
+                    ? '${ticket.routesLabel} · ${ticket.scheduleLabel}'
+                    : '${ticket.route} · ${ticket.zone}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

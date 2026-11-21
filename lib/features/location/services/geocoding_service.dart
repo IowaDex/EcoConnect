@@ -80,4 +80,53 @@ class GeocodingService {
     }
     return results;
   }
+
+  /// Names the street or purok under [point], for a route picked on the map.
+  ///
+  /// Returns null when Nominatim has nothing readable, so the caller keeps its
+  /// own fallback label instead of showing coordinates.
+  Future<String?> reverse(LatLng point) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'lat': '${point.latitude}',
+      'lon': '${point.longitude}',
+      'format': 'jsonv2',
+      'zoom': '17',
+      'addressdetails': '1',
+    });
+
+    final response = await http
+        .get(
+          uri,
+          headers: const {
+            'User-Agent': 'EcoConnect/1.0 (barangay waste collection app)',
+            'Accept': 'application/json',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) return null;
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) return null;
+
+    final address = decoded['address'];
+    if (address is Map) {
+      for (final key in const [
+        'road',
+        'pedestrian',
+        'residential',
+        'neighbourhood',
+        'suburb',
+        'quarter',
+      ]) {
+        final value = (address[key] as String?)?.trim();
+        if (value != null && value.isNotEmpty) return value;
+      }
+    }
+
+    final display = (decoded['display_name'] as String?)?.trim();
+    if (display == null || display.isEmpty) return null;
+    final parts = display.split(',').map((part) => part.trim()).toList();
+    return parts.take(2).join(', ');
+  }
 }

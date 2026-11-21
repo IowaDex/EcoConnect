@@ -306,14 +306,27 @@ service cloud.firestore {
       allow update: if (isTicketStakeholder()
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['signatures', 'status', 'pendingSigner', 'completedAt',
-                         'history', 'revisionReason', 'rejectionReason']))
+                         'approvalPending', 'history', 'revisionReason',
+                         'rejectionReason']))
+        // A manual still waiting for City Hall's signature is not the driver's
+        // to take: the ticket only becomes theirs once it is 'valid'.
         || (isSelf(resource.data.driverId)
           && isActive()
+          && resource.data.get('approvalPending', false) == false
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['status', 'pendingSigner', 'acceptedAt', 'startedAt',
                          'submittedAt', 'declineReason', 'history'])
           && request.resource.data.status in
-               ['accepted', 'declined', 'running', 'submitted']);
+               ['accepted', 'declined', 'running', 'submitted'])
+        // A manual ticket ends when the driver marks the approved run done;
+        // there is no end time to close it automatically.
+        || (isSelf(resource.data.driverId)
+          && isActive()
+          && resource.data.get('kind', 'run') == 'assignment'
+          && resource.data.status == 'valid'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'completedAt', 'history'])
+          && request.resource.data.status == 'completed');
       allow delete: if isCityHall();
     }
 
@@ -826,6 +839,24 @@ service cloud.firestore {
         && request.resource.data.title.size() <= 200;
       allow update: if isIswim() || isCityHall();
       allow delete: if isCityHall();
+    }
+
+    // The collection manual Iswim builds from a City Hall request: one driver,
+    // the truck that comes with him, up to three routes, days, a start time and
+    // a recurrence. It is only visible to residents once City Hall approves it.
+    match /assignment_manuals/{manualId} {
+      allow read: if isIswim() || isCityHall() || isAdmin() || isCrew()
+        || (isActive() && profile(request.auth.uid).role == 'driver')
+        || (isActive()
+          && profile(request.auth.uid).role == 'user'
+          && resource.data.status == 'approved');
+      allow create: if isIswim()
+        && request.resource.data.status == 'pendingApproval'
+        && request.resource.data.driverName is string
+        && request.resource.data.plateNumber is string
+        && request.resource.data.startTime is string;
+      allow update: if isIswim() || isCityHall();
+      allow delete: if isIswim() || isCityHall();
     }
 
     // Resident complaints go straight to DSQC / City Hall. The barangay is

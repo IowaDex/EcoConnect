@@ -10,6 +10,7 @@ import '../../route/models/collection_route.dart';
 import '../../route/models/route_plan.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
+import '../../location/services/geocoding_service.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/network/network_status.dart';
 import '../../../core/theme/app_colors.dart';
@@ -218,10 +219,22 @@ class _DriverScreenState extends State<DriverScreen> {
     _ticketSub = _ticketService.watchForDriver(uid).listen((tickets) {
       if (!mounted) return;
       TripTicket? active;
+      // A manual that runs today is the one the crew can start, so it wins
+      // over an older valid ticket for another day.
       for (final ticket in tickets) {
-        if (ticket.canStartTrip) {
+        if (ticket.canStartTrip &&
+            ticket.isAssignment &&
+            ticket.isScheduledToday) {
           active = ticket;
           break;
+        }
+      }
+      if (active == null) {
+        for (final ticket in tickets) {
+          if (ticket.canStartTrip) {
+            active = ticket;
+            break;
+          }
         }
       }
       if (active == null) {
@@ -252,9 +265,11 @@ class _DriverScreenState extends State<DriverScreen> {
       if (mounted) setState(() => _assignedPoints = points);
     }, onError: (_) {});
 
-    // Keeps the "running for…" clock ticking without another server read.
-    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _isRunning) setState(() {});
+    // Keeps the "running for…" clock ticking without another server read, and
+    // re-checks the manual's start time so the Start button unlocks on its own
+    // when the shift hour arrives.
+    _clockTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) setState(() {});
     });
 
     // Watch for GPS/permission/connectivity loss while a route is running.
@@ -669,6 +684,177 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
+  /// Starts the run a City Hall-approved manual describes.
+  ///
+  /// A manual has no staff-made [RoutePlan], so one is opened for today from
+  /// the manual's own streets. The day gate lives on the ticket: the button is
+  /// only live on a collection day, so a crew cannot start a Tuesday route on
+  /// a Friday.
+  Future<void> _startManualRun(TripTicket ticket) async {
+    final user = context.read<AuthProvider>().currentUser;
+    if (user == null) return;
+
+    final now = DateTime.now();
+    if (!ticket.isShiftOpen(now)) {
+      if (!ticket.runsOn(now)) {
+        final next = ticket.nextRun;
+        _toast(
+          next == null
+              ? 'This manual has no upcoming collection day.'
+              : 'Not your collection day. This route starts '
+                    '${manualDayLabel(next.weekday)} at ${ticket.windowStart}.',
+          isError: true,
+        );
+      } else {
+        _toast(
+          'Your shift starts at ${ticket.windowStart}. The Start button '
+          'unlocks then.',
+          isError: true,
+        );
+      }
+      return;
+    }
+    if (_isLive) {
+      _toast('Your run is already live.');
+      return;
+    }
+
+    final location = context.read<LocationProvider>();
+    if (!location.hasLocation) await location.getCurrentLocation();
+    if (!mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final trucks = context.read<TruckProvider>();
+      final truck = trucks.selectedTruck;
+
+      // Staff may already have planned today. Use their plan and its pinned
+      // stops rather than opening a second run on the same shift.
+      final activePlan =
+          _plan ??
+          await _routeService.createPlan(
+            driverId: user.uid,
+            driverName: user.displayName ?? 'Collector',
+            zone: ticket.routesLabel.isEmpty
+                ? (user.barangay ?? 'Batasan Hills')
+                : ticket.routesLabel,
+            date: now,
+            windowStart: ticket.windowStart.isEmpty
+                ? routeTimeKey(now)
+                : ticket.windowStart,
+            windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
+            stops: await _manualStops(ticket),
+            adHoc: true,
+            createdBy: user.uid,
+          );
+      if (!mounted) return;
+
+      ({double lat, double lng})? center;
+      if (truck != null &&
+          location.latitude != null &&
+          location.longitude != null) {
+        center = TripGuardService.resolveCenter(
+          zoneLat: truck.centerLatitude,
+          zoneLng: truck.centerLongitude,
+          startLat: location.latitude!,
+          startLng: location.longitude!,
+        );
+      }
+
+      await _routeService.activateRoute(
+        driverId: user.uid,
+        driverName: user.displayName ?? 'Collector',
+        phone: user.phone,
+        planId: activePlan.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        // The manual gates on the collection day, not on the minute, so a crew
+        // that leaves early is not blocked by the shift window.
+        overrideWindow: true,
+        truckPlate: truck?.plateNumber,
+        truckWheelers: truck?.wheelers,
+        crewRole: user.crewRole.wireName,
+        geofenceLat: center?.lat,
+        geofenceLng: center?.lng,
+      );
+      _ensureHealthTimer();
+      await _checkLocationHealth();
+      if (!mounted) return;
+      setState(() {
+        _status = RouteStatus.inTransit;
+        _startedAt = DateTime.now();
+        _activePlanId = activePlan.id;
+        _guardCenter = center;
+        _outsideRadius = false;
+        _metresFromCenter = null;
+      });
+      await _evaluateGeofence();
+      _toast('Route started — residents can see you now');
+      if (!mounted) return;
+
+      // Straight to the map: the crew asked to see the streets they cover.
+      final fix = location.hasLocation
+          ? LatLng(location.latitude!, location.longitude!)
+          : null;
+      final mapStops = activePlan.stops.isNotEmpty
+          ? activePlan.stops
+          : await _manualStops(ticket);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RouteMapScreen(
+            title: 'Your collection route',
+            stops: mapStops,
+            truck: fix,
+          ),
+        ),
+      );
+    } on RouteActivationException catch (e) {
+      _toast(e.message, isError: true);
+    } catch (e) {
+      _fail('start your route', e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// The manual's streets as map stops.
+  ///
+  /// Newer manuals carry the tapped points, so the map is instant. A manual
+  /// written before that only has names, so each one is looked up once; a
+  /// failed lookup keeps the name and the run still starts.
+  Future<List<RouteStop>> _manualStops(TripTicket ticket) async {
+    if (ticket.routePoints.isNotEmpty) {
+      return [
+        for (final point in ticket.routePoints)
+          RouteStop(
+            name: point.name,
+            latitude: point.latitude,
+            longitude: point.longitude,
+          ),
+      ];
+    }
+    final names = ticket.routes.isEmpty
+        ? [if (ticket.route.trim().isNotEmpty) ticket.route.trim()]
+        : ticket.routes;
+    return Future.wait(names.map(_geocodeStop));
+  }
+
+  Future<RouteStop> _geocodeStop(String name) async {
+    try {
+      final hits = await GeocodingService().search(name, limit: 1);
+      if (hits.isEmpty) return RouteStop(name: name);
+      final point = hits.first.point;
+      return RouteStop(
+        name: name,
+        latitude: point.latitude,
+        longitude: point.longitude,
+      );
+    } catch (_) {
+      return RouteStop(name: name);
+    }
+  }
+
   Future<void> _changeStatus(RouteStatus status) async {
     final user = context.read<AuthProvider>().currentUser;
     if (user == null) return;
@@ -990,6 +1176,18 @@ class _DriverScreenState extends State<DriverScreen> {
                             : null,
                         onTap: () => context.push('/tickets/${_ticket!.id}'),
                       ),
+                      // An approved manual is only actionable on a collection
+                      // day, so the start control sits right under its card.
+                      if (_ticket!.isAssignment &&
+                          _ticket!.status == TicketStatus.valid &&
+                          !_isLive) ...[
+                        const SizedBox(height: 10),
+                        _ManualStartCard(
+                          ticket: _ticket!,
+                          busy: _busy,
+                          onStart: () => _startManualRun(_ticket!),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                     ] else ...[
                       Container(
@@ -1154,6 +1352,122 @@ class _DriverScreenState extends State<DriverScreen> {
         ),
       ),
       bottomNavigationBar: const DriverNavBar(currentIndex: 0),
+    );
+  }
+}
+
+/// The start control for an approved manual.
+///
+/// A manual only runs on the days its roster names, so the button is live on
+/// those days and greyed out otherwise — the crew sees why, not just a dead
+/// control.
+class _ManualStartCard extends StatelessWidget {
+  const _ManualStartCard({
+    required this.ticket,
+    required this.busy,
+    required this.onStart,
+  });
+
+  final TripTicket ticket;
+  final bool busy;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final scheduled = ticket.runsOn(now);
+    final open = ticket.isShiftOpen(now);
+    final next = ticket.nextRun;
+    final nextLabel = next == null
+        ? 'This manual is no longer in force'
+        : '${manualDayLabel(next.weekday)}, ${next.month}/${next.day} '
+              'at ${ticket.windowStart}';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: BoxDecoration(
+        color: scheduled ? AppColors.mint : AppColors.cream,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheduled ? AppColors.primary : AppColors.sage,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                scheduled ? Icons.route_rounded : Icons.event_busy_rounded,
+                size: 16,
+                color: scheduled ? AppColors.primary : AppColors.inkMuted,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  scheduled
+                      ? 'Today is your collection day'
+                      : 'Not your collection day',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: scheduled ? AppColors.darkGreen : AppColors.inkMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            !scheduled
+                ? (next == null ? nextLabel : 'Next run $nextLabel')
+                : open
+                ? '${ticket.routesLabel} · starts ${ticket.windowStart}'
+                : 'Starts at ${ticket.windowStart} — the button unlocks then.',
+            style: const TextStyle(
+              fontSize: 9.5,
+              height: 1.45,
+              color: AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 42,
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: open && !busy ? onStart : null,
+              icon: busy
+                  ? const SizedBox(
+                      height: 15,
+                      width: 15,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.play_arrow_rounded, size: 19),
+              label: Text(
+                open
+                    ? 'Start route'
+                    : scheduled
+                    ? 'Starts at ${ticket.windowStart}'
+                    : next == null
+                    ? 'Schedule ended'
+                    : 'Starts ${manualDayLabel(next.weekday)}',
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.forest,
+                disabledBackgroundColor: AppColors.sage,
+                disabledForegroundColor: AppColors.inkMuted,
+                textStyle: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -16,7 +16,10 @@ import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../models/assignment_manual.dart';
 import '../models/manual.dart';
+import '../services/assignment_manual_service.dart';
+import '../services/manual_pdf.dart';
 import '../services/manual_service.dart';
 
 /// Manual library. Iswim publishes revisions here; City Hall reads and
@@ -98,93 +101,100 @@ class _ManualsScreenState extends State<ManualsScreen> {
             );
           }
           final manuals = snapshot.data ?? const <Manual>[];
-          if (manuals.isEmpty) {
-            return EmptyState(
-              icon: Icons.menu_book_outlined,
-              title: 'No manuals yet',
-              message: isIswim
-                  ? 'Upload the first manual. It is sent straight to City Hall.'
-                  : 'Iswim has not submitted a manual yet. You can request one.',
-              actionLabel: isIswim ? 'Upload a manual' : 'Request a manual',
-              onAction: () => isIswim
-                  ? _openCreate(context)
-                  : context.push('/manual-requests'),
-            );
-          }
-
           final filtered = _filter(manuals);
           final page = clampPage(_page, filtered.length, _pageSize);
           final visible = pageSlice(filtered, page, _pageSize);
 
           return Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-                child: EcoSearchField(
-                  controller: _search,
-                  hint: 'Search title, category, version',
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
-                ),
-              ),
-              SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  children: [
-                    for (final option in <ManualStatus?>[
-                      null,
-                      ...ManualStatus.values,
-                    ]) ...[
-                      ChoiceChip(
-                        label: Text(
-                          option?.label ?? 'All',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                        selected: _statusFilter == option,
-                        onSelected: (_) => setState(() {
-                          _statusFilter = option;
-                          _page = 0;
-                        }),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                  ],
-                ),
-              ),
               Expanded(
-                child: filtered.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(28),
-                          child: Text(
-                            'No manuals match your filters.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ),
-                      )
-                    : ListView(
-                        padding: EdgeInsets.fromLTRB(
-                          18,
-                          4,
-                          18,
-                          isIswim ? 88 : 20,
-                        ),
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(18, 8, 18, isIswim ? 88 : 20),
+                  children: [
+                    // Every manual lives here, signed or not, on both desks.
+                    const _CollectionManualsSection(),
+                    const SizedBox(height: 22),
+                    SectionHeader(
+                      title: 'Uploaded library',
+                      subtitle: isIswim
+                          ? 'The PDFs Iswim sends to City Hall for '
+                                'acknowledgement.'
+                          : 'The PDFs Iswim has submitted for review.',
+                    ),
+                    const SizedBox(height: 8),
+                    EcoSearchField(
+                      controller: _search,
+                      hint: 'Search title, category, version',
+                      onChanged: (value) => setState(() {
+                        _query = value;
+                        _page = 0;
+                      }),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
                         children: [
-                          const SectionHeader(title: 'Latest revisions'),
-                          const SizedBox(height: 8),
-                          for (final manual in visible) ...[
-                            _ManualCard(manual: manual),
-                            const SizedBox(height: 10),
+                          for (final option in <ManualStatus?>[
+                            null,
+                            ...ManualStatus.values,
+                          ]) ...[
+                            ChoiceChip(
+                              label: Text(
+                                option?.label ?? 'All',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              selected: _statusFilter == option,
+                              onSelected: (_) => setState(() {
+                                _statusFilter = option;
+                                _page = 0;
+                              }),
+                            ),
+                            const SizedBox(width: 6),
                           ],
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (manuals.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        child: EmptyState(
+                          compact: true,
+                          icon: Icons.menu_book_outlined,
+                          title: 'No uploaded manuals yet',
+                          message: isIswim
+                              ? 'Upload the first manual. It is sent straight '
+                                    'to City Hall.'
+                              : 'Iswim has not submitted a manual yet. You can '
+                                    'request one.',
+                          actionLabel: isIswim
+                              ? 'Upload a manual'
+                              : 'Request a manual',
+                          onAction: () => isIswim
+                              ? _openCreate(context)
+                              : context.push('/manual-requests'),
+                        ),
+                      )
+                    else if (filtered.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(28),
+                        child: Text(
+                          'No manuals match your filters.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      )
+                    else
+                      for (final manual in visible) ...[
+                        _ManualCard(manual: manual),
+                        const SizedBox(height: 10),
+                      ],
+                  ],
+                ),
               ),
               if (filtered.isNotEmpty)
                 Padding(
@@ -314,6 +324,194 @@ class _ManualCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Every collection manual Iswim has built, waiting for City Hall or signed.
+///
+/// This is the roster itself, not the uploaded PDFs below it: the manual is
+/// what generated the trip ticket, so it stays listed whether the approval has
+/// landed or not.
+class _CollectionManualsSection extends StatelessWidget {
+  const _CollectionManualsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<AssignmentManual>>(
+      stream: AssignmentManualService().watchAll(),
+      builder: (context, snapshot) {
+        // Pending first: that is the row the desk has to act on. Within each
+        // group the newest change leads.
+        final items = [...(snapshot.data ?? const <AssignmentManual>[])]
+          ..sort((a, b) {
+            if (a.isApproved != b.isApproved) return a.isApproved ? 1 : -1;
+            final left = a.updatedAt ?? a.createdAt ?? DateTime(0);
+            final right = b.updatedAt ?? b.createdAt ?? DateTime(0);
+            return right.compareTo(left);
+          });
+        final pending = items.where((manual) => !manual.isApproved).length;
+        final subtitle = items.isEmpty
+            ? 'The schedules Iswim builds for City Hall approval.'
+            : pending == 0
+            ? '${items.length} manual${items.length == 1 ? '' : 's'} · all '
+                  'approved'
+            : '${items.length} total · $pending waiting for City Hall';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              title: 'Collection manuals',
+              subtitle: subtitle,
+              actionLabel: 'Schedules',
+              onAction: () => context.push('/assignments'),
+            ),
+            const SizedBox(height: 10),
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                items.isEmpty)
+              const LinearProgressIndicator(minHeight: 2)
+            else if (items.isEmpty)
+              const Text(
+                'No collection manual yet. Create one from a City Hall '
+                'request and it is listed here straight away.',
+                style: TextStyle(
+                  fontSize: 10,
+                  height: 1.5,
+                  color: AppColors.inkMuted,
+                ),
+              )
+            else
+              for (var i = 0; i < items.length; i++) ...[
+                _CollectionManualCard(manual: items[i]),
+                if (i < items.length - 1) const SizedBox(height: 9),
+              ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CollectionManualCard extends StatelessWidget {
+  const _CollectionManualCard({required this.manual});
+
+  final AssignmentManual manual;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = !manual.isApproved;
+    final ticketId = manual.ticketId;
+
+    return EcoCard(
+      padding: const EdgeInsets.fromLTRB(13, 11, 11, 12),
+      onTap: ticketId == null || ticketId.isEmpty
+          ? null
+          : () => context.push('/tickets/$ticketId'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 34,
+                width: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.mint,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.assignment_ind_outlined,
+                  size: 17,
+                  color: AppColors.forest,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      manual.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.darkGreen,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${manual.driverName} · ${manual.plateNumber}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              StatusBadge(
+                label: manual.status.label,
+                color: pending ? AppColors.warning : AppColors.primary,
+                compact: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Text(
+                  manual.routesLabel,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    height: 1.4,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => _export(context),
+                tooltip: 'Export PDF',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                icon: const Icon(
+                  Icons.picture_as_pdf_outlined,
+                  size: 16,
+                  color: AppColors.forest,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${manual.scheduleLabel} · ${timeAgo(manual.updatedAt ?? manual.createdAt)}',
+            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _export(BuildContext context) async {
+    final saved = await exportManualPdfFromRecord(manual);
+    if (!context.mounted) return;
+    if (saved) {
+      AppFeedback.success(context, 'Manual PDF generated');
+    } else {
+      AppFeedback.error(
+        context,
+        'PDF download is only available in the browser build.',
+      );
+    }
   }
 }
 

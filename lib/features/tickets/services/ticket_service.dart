@@ -21,6 +21,10 @@ class TicketService {
       _db.collection('trip_tickets');
 
   /// Tickets waiting on, or already handled by, one driver.
+  ///
+  /// A manual the driver has been named on shows up as soon as Iswim saves it,
+  /// marked "waiting for City Hall", so the crew knows a schedule is coming
+  /// even though the ticket is not theirs to take yet.
   Stream<List<TripTicket>> watchForDriver(String driverId) => _col
       .where('driverId', isEqualTo: driverId)
       .limit(50)
@@ -32,7 +36,13 @@ class TicketService {
       .where('truckId', isEqualTo: truckId)
       .limit(100)
       .snapshots()
-      .map(_parse);
+      .map(_parse)
+      .map(_signedOnly);
+
+  /// The truck history is also read by the guide and by residents, so a manual
+  /// that City Hall has not signed is left out of it.
+  static List<TripTicket> _signedOnly(List<TripTicket> tickets) =>
+      tickets.where((t) => !t.approvalPending).toList(growable: false);
 
   /// The signature queue for one signer: `barangay`, `iswim` or `cityHall`.
   Stream<List<TripTicket>> watchSignerQueue(TicketStatusSigner signer) => _col
@@ -143,11 +153,134 @@ class TicketService {
     return 'TT-$year-${next.toString().padLeft(4, '0')}';
   }
 
+  /// Issues a manual ticket: the schedule Iswim builds from a City Hall manual
+  /// request. It starts in `issued` (the only status the rules accept on
+  /// create) with [TripTicket.approvalPending] set, so City Hall sees it in
+  /// its signature queue and the driver sees "waiting for approval" instead of
+  /// an accept button.
+  Future<TripTicket> createAssignment({
+    required String assignmentId,
+    required String truckId,
+    required String plateNumber,
+    required int wheelers,
+    required String driverId,
+    required String driverName,
+    required List<String> routes,
+    List<ManualRoutePoint> routePoints = const [],
+    required List<int> days,
+    required String startTime,
+    required ManualRecurrence recurrence,
+    required String createdBy,
+  }) async {
+    final code = await _nextCode();
+    final draft = TripTicket(
+      id: '',
+      code: code,
+      wave: 1,
+      truckId: truckId,
+      plateNumber: plateNumber,
+      wheelers: wheelers,
+      driverId: driverId,
+      driverName: driverName,
+      route: routes.join(' · '),
+      zone: '',
+      date: '',
+      windowStart: startTime,
+      windowEnd: '',
+      notes: '',
+      status: TicketStatus.issued,
+      createdBy: createdBy,
+      kind: TicketKind.assignment,
+      routes: routes,
+      routePoints: routePoints,
+      days: days,
+      recurrence: recurrence,
+      assignmentId: assignmentId,
+      approvalPending: true,
+    );
+
+    final data = draft.toMap();
+    // The manual ticket is never the driver's to accept: City Hall signs it
+    // first, then the schedule becomes valid.
+    data['pendingSigner'] = TicketStatusSigner.cityHall.wireName;
+    data['approvalPending'] = true;
+    final ref = await _col.add(data);
+
+    await _notifications.notifyCityHall(
+      title: 'Manual awaiting your approval · ${draft.code}',
+      body:
+          '${draft.plateNumber} · ${draft.driverName} · '
+          '${draft.scheduleLabel}. Sign it to make the schedule valid.',
+      type: AppNotificationType.system,
+      data: {'ticketId': ref.id, 'kind': 'manualApproval'},
+      dedupeKey: 'manual_ticket_${ref.id}_approval',
+    );
+
+    // The crew hears about the schedule as soon as it is written, with the
+    // approval still pending, so nobody is surprised when the ticket turns
+    // valid. It is not theirs to accept yet.
+    if (driverId.isNotEmpty) {
+      await _notifications.push(
+        userId: driverId,
+        title: 'New schedule · waiting for City Hall',
+        body:
+            '${draft.plateNumber} · ${draft.routesLabel} · '
+            '${draft.scheduleLabel}. City Hall still has to sign it.',
+        type: AppNotificationType.route,
+        data: {'ticketId': ref.id, 'kind': 'manualAssigned'},
+        dedupeKey: 'assignment_${ref.id}_assigned',
+      );
+    }
+
+    final snap = await ref.get();
+    return TripTicket.fromDoc(ref.id, snap.data()!)!;
+  }
+
+  /// The driver marks a City Hall-approved manual run as done. There is no end
+  /// time on a manual, so this is the only completion signal.
+  Future<void> completeAssignment(
+    String id, {
+    String byUid = '',
+    String byName = 'Driver',
+  }) async {
+    final ticket = await _load(id);
+    if (!ticket.isAssignment) {
+      throw const TicketException('This ticket is not a manual schedule.');
+    }
+    await _advance(
+      id,
+      from: TicketStatus.valid,
+      data: {
+        'status': TicketStatus.completed.name,
+        'pendingSigner': null,
+        'completedAt': FieldValue.serverTimestamp(),
+      },
+      byUid: byUid,
+      byName: byName,
+      note: 'Run marked complete by the driver',
+    );
+    await _notifications.notifyIswim(
+      title: 'Manual run completed · ${ticket.code}',
+      body:
+          '${ticket.plateNumber} · ${ticket.driverName} completed '
+          '${ticket.routesLabel}.',
+      type: AppNotificationType.route,
+      data: {'ticketId': id, 'kind': 'assignmentCompleted'},
+      dedupeKey: 'assignment_${id}_completed',
+    );
+  }
+
   Future<void> accept(
     String id, {
     String byUid = '',
     String byName = 'Driver',
   }) async {
+    final ticket = await _load(id);
+    if (ticket.approvalPending) {
+      throw const TicketException(
+        'This manual is waiting for the City Hall signature.',
+      );
+    }
     await _advance(
       id,
       from: TicketStatus.issued,
@@ -358,12 +491,19 @@ class TicketService {
       );
     }
 
-    final next = switch (signer) {
-      TicketStatusSigner.barangay => TicketStatus.barangaySigned,
-      TicketStatusSigner.iswim => TicketStatus.iswimSigned,
-      TicketStatusSigner.cityHall => TicketStatus.completed,
-      TicketStatusSigner.driver => TicketStatus.submitted,
-    };
+    // A manual ticket stops at City Hall: its signature turns the schedule
+    // valid instead of closing the barangay -> Iswim -> City Hall chain.
+    final approvingManual =
+        ticket.approvalPending && signer == TicketStatusSigner.cityHall;
+
+    final next = approvingManual
+        ? TicketStatus.valid
+        : switch (signer) {
+            TicketStatusSigner.barangay => TicketStatus.barangaySigned,
+            TicketStatusSigner.iswim => TicketStatus.iswimSigned,
+            TicketStatusSigner.cityHall => TicketStatus.completed,
+            TicketStatusSigner.driver => TicketStatus.submitted,
+          };
 
     await _col.doc(id).update({
       'signatures.${signer.wireName}': {
@@ -374,6 +514,7 @@ class TicketService {
       },
       'status': next.name,
       'pendingSigner': next.pendingSigner?.wireName,
+      if (approvingManual) 'approvalPending': false,
       if (next == TicketStatus.completed)
         'completedAt': FieldValue.serverTimestamp(),
       'history': FieldValue.arrayUnion([
@@ -382,10 +523,58 @@ class TicketService {
           previousStatus: ticket.status,
           byUid: uid,
           byName: name,
-          note: '${signer.label} signature recorded',
+          note: approvingManual
+              ? 'Manual approved by City Hall'
+              : '${signer.label} signature recorded',
         ).toMap(),
       ]),
     });
+
+    if (approvingManual) {
+      await _approveManual(ticket, byName: name);
+      await _notifications.notifyIswim(
+        title: 'Manual request, approved · ${ticket.code}',
+        body:
+            'City Hall approved ${ticket.driverName}\'s schedule for '
+            '${ticket.plateNumber}. The trip ticket is now valid.',
+        type: AppNotificationType.system,
+        data: {'ticketId': id, 'kind': 'manualApproved'},
+        dedupeKey: 'manual_ticket_${id}_approved',
+      );
+      // The barangay keeps a copy of the approved schedule, and residents get
+      // the route and collection time on their own desk.
+      await _notifications.notifyStaff(
+        title: 'Collection schedule approved · ${ticket.code}',
+        body:
+            '${ticket.plateNumber} · ${ticket.driverName} · '
+            '${ticket.scheduleLabel}. ${ticket.routesLabel}',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'manualApprovedCopy'},
+        dedupeKey: 'manual_ticket_${id}_approved_staff',
+      );
+      await _notifications.notifyResidents(
+        title: 'Collection schedule · ${ticket.routesLabel}',
+        body:
+            '${ticket.scheduleLabel}. Truck ${ticket.plateNumber} will cover '
+            'your area.',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'manualApprovedSchedule'},
+        dedupeKey: 'manual_ticket_${id}_approved_residents',
+      );
+      // The driver only hears about the run once City Hall has signed it.
+      if (ticket.driverId.isNotEmpty) {
+        await _notifications.push(
+          userId: ticket.driverId,
+          title: 'Collection schedule approved · ${ticket.code}',
+          body:
+              '${ticket.plateNumber} · ${ticket.routesLabel} · '
+              '${ticket.scheduleLabel}. Mark the run complete when you finish.',
+          type: AppNotificationType.route,
+          data: {'ticketId': id, 'kind': 'manualApprovedDriver'},
+          dedupeKey: 'assignment_${id}_approved',
+        );
+      }
+    }
 
     // Each hop tells the next signer that the document is waiting for them.
     if (next == TicketStatus.barangaySigned) {
@@ -434,6 +623,41 @@ class TicketService {
     }
 
     return next;
+  }
+
+  /// Mirrors City Hall's approval onto the assignment manual and closes the
+  /// manual request that started it. Best effort: the ticket is already valid,
+  /// so a failed mirror must not surface as a signing error.
+  Future<void> _approveManual(
+    TripTicket ticket, {
+    required String byName,
+  }) async {
+    final assignmentId = ticket.assignmentId;
+    if (assignmentId == null || assignmentId.isEmpty) return;
+    try {
+      await _db.collection('assignment_manuals').doc(assignmentId).update({
+        'status': 'approved',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'approvedByName': byName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      final requests = await _db
+          .collection('manual_requests')
+          .where('assignmentManualId', isEqualTo: assignmentId)
+          .get();
+      if (requests.docs.isEmpty) return;
+      final batch = _db.batch();
+      for (final doc in requests.docs) {
+        batch.update(doc.reference, {
+          'status': 'approved',
+          'approvedAt': FieldValue.serverTimestamp(),
+          'approvedByName': byName,
+        });
+      }
+      await batch.commit();
+    } catch (_) {
+      // The ticket is the source of truth; the mirror can be repaired later.
+    }
   }
 
   Future<void> cancel(String id) async {

@@ -63,6 +63,8 @@ import 'features/auth/widgets/session_ended_host.dart';
 import 'features/manuals/screens/manuals_screen.dart';
 import 'features/manuals/screens/manual_detail_screen.dart';
 import 'features/manuals/screens/manual_requests_screen.dart';
+import 'features/manuals/screens/create_assignment_manual_screen.dart';
+import 'features/manuals/screens/assignment_schedule_screen.dart';
 import 'features/complaints/screens/complaint_form_screen.dart';
 import 'features/complaints/screens/my_complaints_screen.dart';
 import 'features/complaints/screens/complaint_desk_screen.dart';
@@ -103,6 +105,8 @@ const _residentRoutes = {
   '/my-complaints',
   '/complaints/new',
   '/verify-identity',
+  // Residents read the approved collection schedule.
+  '/schedule',
   ..._sharedRoutes,
 };
 
@@ -114,6 +118,7 @@ const _driverRoutes = {
   '/driver-profile',
   '/driver-tickets',
   '/tickets',
+  '/schedule',
   ..._sharedRoutes,
 };
 
@@ -133,6 +138,9 @@ const _iswimRoutes = {
   '/memo',
   '/manuals',
   '/manual-requests',
+  '/assignment-manuals/new',
+  '/assignments',
+  '/schedule',
   // Iswim provisions its own colleagues and the crew logins.
   '/accounts',
   ..._sharedRoutes,
@@ -153,6 +161,8 @@ const _cityHallRoutes = {
   '/cityhall-requests',
   '/manuals',
   '/manual-requests',
+  '/assignments',
+  '/schedule',
   '/audit-log',
   ..._sharedRoutes,
 };
@@ -178,6 +188,8 @@ const _staffRoutes = {
   '/wave2',
   '/wave2/pass',
   '/audit-log',
+  '/assignments',
+  '/schedule',
   ..._ticketRoutes,
   ..._sharedRoutes,
 };
@@ -188,9 +200,8 @@ String _homeFor(UserRole role, {TruckCrewRole? crewRole}) => switch (role) {
   // A guide has no plate of his own: he starts on the fleet list and taps the
   // truck he is riding today. Decided here, in the redirect, so the dashboard
   // never flashes up as a landing page for him.
-  UserRole.driver => crewRole == TruckCrewRole.guide
-      ? '/driver-trucks'
-      : '/driver',
+  UserRole.driver =>
+    crewRole == TruckCrewRole.guide ? '/driver-trucks' : '/driver',
   UserRole.iswim => '/iswim',
   UserRole.cityHall => '/cityhall',
   UserRole.user => '/user',
@@ -251,6 +262,7 @@ String? authRedirect({
       '/tracking',
       '/verify-identity',
       '/notifications',
+      '/schedule',
     };
     if (!open.contains(location)) return '/user';
   }
@@ -539,6 +551,21 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         GoRoute(
           path: '/manual-requests',
           builder: (_, __) => const ManualRequestsScreen(),
+        ),
+        GoRoute(
+          path: '/assignment-manuals/new',
+          builder: (_, state) => CreateAssignmentManualScreen(
+            requestId: state.uri.queryParameters['requestId'],
+            requestTitle: state.uri.queryParameters['title'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: '/assignments',
+          builder: (_, __) => const AssignmentScheduleScreen(staffView: true),
+        ),
+        GoRoute(
+          path: '/schedule',
+          builder: (_, __) => const AssignmentScheduleScreen(),
         ),
         GoRoute(
           path: '/notifications',

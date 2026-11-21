@@ -6,20 +6,21 @@ import 'package:go_router/go_router.dart';
 
 void main() {
   group('desk tools', () {
-    testWidgets('keeps all twelve shortcuts and the count in the header', (
+    testWidgets('keeps all thirteen shortcuts and the count in the header', (
       tester,
     ) async {
       await tester.pumpWidget(_wrap(const DeskTools(pendingSignatures: 2)));
 
       expect(find.text('DESK TOOLS'), findsOneWidget);
-      expect(find.textContaining('12 shortcuts'), findsOneWidget);
-      expect(find.byType(EcoCard), findsNWidgets(12));
+      expect(find.textContaining('13 shortcuts'), findsOneWidget);
+      expect(find.byType(EcoCard), findsNWidgets(13));
 
       for (final label in const [
         'Complaints',
         'Resident requests',
         'Manuals',
         'Manual requests',
+        'Schedules',
         'Delay reports',
         'Incidents',
         'Wave 2',
@@ -47,13 +48,13 @@ void main() {
         await _pumpAtWidth(tester, width);
 
         final lefts = <double>{};
-        for (var i = 0; i < 12; i++) {
+        for (var i = 0; i < 13; i++) {
           lefts.add(tester.getTopLeft(find.byType(EcoCard).at(i)).dx);
         }
         expect(lefts.length, columns, reason: 'at ${width}px wide');
 
         // Every card sits inside the viewport: nothing is clipped off-screen.
-        for (var i = 0; i < 12; i++) {
+        for (var i = 0; i < 13; i++) {
           final rect = tester.getRect(find.byType(EcoCard).at(i));
           expect(rect.left, greaterThanOrEqualTo(0));
           expect(rect.right, lessThanOrEqualTo(width));

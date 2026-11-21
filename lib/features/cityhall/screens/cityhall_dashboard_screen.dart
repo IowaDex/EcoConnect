@@ -15,6 +15,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../auth/services/session_actions.dart';
 import '../../dashboard/widgets/role_hero.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
+import '../../manuals/widgets/shift_calendar_card.dart';
 import '../../memos/services/memo_service.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
@@ -180,7 +181,9 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
               child: DeskTools(pendingSignatures: documents.pendingSignatures),
             ),
             const SizedBox(height: EcoSpace.lg),
-            FadeSlideIn(index: 2, child: _tabs(documents)),
+            const FadeSlideIn(index: 2, child: ShiftCalendarCard()),
+            const SizedBox(height: EcoSpace.lg),
+            FadeSlideIn(index: 3, child: _tabs(documents)),
             const SizedBox(height: EcoSpace.md),
             if (error != null) ...[
               EcoBanner(

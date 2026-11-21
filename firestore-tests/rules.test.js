@@ -812,6 +812,47 @@ test('City Hall requests a manual and Iswim fulfils it', async () => {
   await assertFails(getDoc(doc(as('alice'), 'manual_requests/r1')));
 });
 
+const assignmentManual = (overrides = {}) => ({
+  title: 'Manual for MR-2026-0001',
+  driverId: 'dan',
+  driverName: 'Dan',
+  truckId: 't1',
+  plateNumber: 'ABC-123',
+  wheelers: 6,
+  routes: ['Purok 1', 'Purok 2', 'Purok 3'],
+  days: [1, 3, 5],
+  startTime: '06:00',
+  recurrence: 'weekly',
+  status: 'pendingApproval',
+  createdAt: serverTimestamp(),
+  ...overrides,
+});
+
+test('Iswim drafts the manual and only City Hall approves it', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'assignment_manuals/a1'), assignmentManual()));
+  // Nobody else drafts one, and Iswim cannot approve his own work.
+  await assertFails(setDoc(doc(as('ivy'), 'assignment_manuals/a2'), assignmentManual({status: 'approved'})));
+  await assertFails(setDoc(doc(as('carl'), 'assignment_manuals/a3'), assignmentManual()));
+  await assertFails(setDoc(doc(as('alice'), 'assignment_manuals/a4'), assignmentManual()));
+  // Staff, the crew and the named driver see the draft...
+  await assertSucceeds(getDoc(doc(as('ivy'), 'assignment_manuals/a1')));
+  await assertSucceeds(getDoc(doc(as('carl'), 'assignment_manuals/a1')));
+  await assertSucceeds(getDoc(doc(as('root'), 'assignment_manuals/a1')));
+  await assertSucceeds(getDoc(doc(as('dan'), 'assignment_manuals/a1')));
+  // ...but a resident only sees it once it is approved.
+  await assertFails(getDoc(doc(as('alice'), 'assignment_manuals/a1')));
+  await assertFails(updateDoc(doc(as('root'), 'assignment_manuals/a1'), {status: 'approved'}));
+  await assertFails(updateDoc(doc(as('alice'), 'assignment_manuals/a1'), {startTime: '05:00'}));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'assignment_manuals/a1'), {
+    status: 'approved',
+    approvedAt: Timestamp.now(),
+    approvedByName: 'Carl',
+  }));
+  await assertSucceeds(getDoc(doc(as('alice'), 'assignment_manuals/a1')));
+  await assertFails(deleteDoc(doc(as('dan'), 'assignment_manuals/a1')));
+  await assertSucceeds(deleteDoc(doc(as('carl'), 'assignment_manuals/a1')));
+});
+
 // --- Complaints: resident -> DSQC / City Hall only -------------------------
 
 const complaint = (overrides = {}) => ({
@@ -951,6 +992,42 @@ test('a driver may append an audit entry when accepting a ticket', async () => {
   await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t1'), {
     plateNumber: 'FORGED',
   }));
+});
+
+test('a manual ticket waits for City Hall before the driver can take it', async () => {
+  await assertSucceeds(setDoc(doc(as('ivy'), 'trip_tickets/t2'), {
+    code: 'TT-2026-0002',
+    plateNumber: 'ABC 123',
+    driverId: 'dan',
+    driverName: 'Dan',
+    kind: 'assignment',
+    status: 'issued',
+    approvalPending: true,
+    pendingSigner: 'cityHall',
+    createdBy: 'ivy',
+    createdAt: serverTimestamp(),
+    signatures: {},
+    history: [],
+  }));
+  // The driver cannot accept, run or decline a manual the desk has not signed.
+  await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t2'), {
+    status: 'accepted',
+    acceptedAt: Timestamp.now(),
+  }));
+  await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t2'), {status: 'valid'}));
+  // Only City Hall's signature turns it into a valid manual.
+  await assertSucceeds(updateDoc(doc(as('carl'), 'trip_tickets/t2'), {
+    status: 'valid',
+    approvalPending: false,
+    pendingSigner: null,
+    signatures: {cityHall: {name: 'Carl', uid: 'carl', at: Timestamp.now()}},
+  }));
+  // With no end time, the driver closes the run themselves.
+  await assertSucceeds(updateDoc(doc(as('dan'), 'trip_tickets/t2'), {
+    status: 'completed',
+    completedAt: Timestamp.now(),
+  }));
+  await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t2'), {plateNumber: 'FORGED'}));
 });
 
 // --- Resident registration decision ---------------------------------------

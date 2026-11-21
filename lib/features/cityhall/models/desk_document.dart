@@ -323,6 +323,37 @@ CityHallDocuments buildCityHallDocuments({
     ]);
 
     switch (ticket.status) {
+      case TicketStatus.issued:
+        // A manual ticket is issued as `issued` but it is City Hall that acts
+        // next, not the driver. Everything else waits for the driver.
+        if (ticket.approvalPending) {
+          addSignature(
+            _ticketDocument(
+              ticket,
+              driverName,
+              DeskDocumentStatus.awaitingSignature,
+              dateCaption: 'Submitted',
+              canSign: true,
+            ),
+          );
+        }
+      case TicketStatus.valid:
+        addSignature(
+          _ticketDocument(
+            ticket,
+            driverName,
+            DeskDocumentStatus.signed,
+            dateCaption: 'Signed',
+          ),
+        );
+        addReceived(
+          _ticketDocument(
+            ticket,
+            driverName,
+            DeskDocumentStatus.acknowledged,
+            dateCaption: 'Approved',
+          ),
+        );
       case TicketStatus.iswimSigned:
         addSignature(
           _ticketDocument(
@@ -457,7 +488,8 @@ DeskDocument _ticketDocument(
 }) {
   final date = switch (dateCaption) {
     'Signed' ||
-    'Received' => ticket.completedAt ?? ticket.submittedAt ?? ticket.createdAt,
+    'Received' ||
+    'Approved' => ticket.completedAt ?? ticket.submittedAt ?? ticket.createdAt,
     'Rejected' || 'Returned' =>
       ticket.history.isNotEmpty ? ticket.history.last.at : ticket.createdAt,
     _ => ticket.submittedAt ?? ticket.createdAt,

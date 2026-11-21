@@ -132,7 +132,11 @@ class _TicketQueue extends StatelessWidget {
       builder: (context, snapshot) {
         final loading = snapshot.connectionState == ConnectionState.waiting;
         final pending = (snapshot.data ?? const <TripTicket>[])
-            .where((ticket) => ticket.status == TicketStatus.iswimSigned)
+            .where(
+              (ticket) =>
+                  ticket.status == TicketStatus.iswimSigned ||
+                  ticket.approvalPending,
+            )
             .toList(growable: false);
 
         return _QueueSection(

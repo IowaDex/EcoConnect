@@ -145,18 +145,20 @@ class Manual {
   }
 }
 
-enum ManualRequestStatus { pending, fulfilled, cancelled }
+enum ManualRequestStatus { pending, fulfilled, approved, cancelled }
 
 extension ManualRequestStatusX on ManualRequestStatus {
   String get label => switch (this) {
     ManualRequestStatus.pending => 'Waiting for Iswim',
     ManualRequestStatus.fulfilled => 'Submitted to City Hall',
+    ManualRequestStatus.approved => 'Approved by City Hall',
     ManualRequestStatus.cancelled => 'Cancelled',
   };
 
   Color get color => switch (this) {
     ManualRequestStatus.pending => AppColors.warning,
     ManualRequestStatus.fulfilled => AppColors.primary,
+    ManualRequestStatus.approved => AppColors.primary,
     ManualRequestStatus.cancelled => AppColors.inkMuted,
   };
 
@@ -176,11 +178,16 @@ class ManualRequest {
     required this.details,
     required this.requestedByName,
     required this.status,
+    this.requestedByUid = '',
     this.neededBy,
     this.createdAt,
     this.fulfilledAt,
     this.fulfilledByName,
     this.manualId,
+    this.assignmentManualId,
+    this.ticketId,
+    this.approvedAt,
+    this.approvedByName,
   });
 
   final String id;
@@ -188,12 +195,22 @@ class ManualRequest {
   final String title;
   final String details;
   final String requestedByName;
+  final String requestedByUid;
   final ManualRequestStatus status;
   final DateTime? neededBy;
   final DateTime? createdAt;
   final DateTime? fulfilledAt;
   final String? fulfilledByName;
   final String? manualId;
+
+  /// Set when Iswim answered with an assignment manual instead of an uploaded
+  /// document.
+  final String? assignmentManualId;
+
+  /// The trip ticket generated from the assignment manual.
+  final String? ticketId;
+  final DateTime? approvedAt;
+  final String? approvedByName;
 
   static ManualRequest? fromDoc(String id, Map<String, dynamic> data) {
     if (data['title'] is! String) return null;
@@ -203,12 +220,17 @@ class ManualRequest {
       title: data['title'] as String,
       details: data['details'] as String? ?? '',
       requestedByName: data['requestedByName'] as String? ?? 'City Hall',
+      requestedByUid: data['requestedByUid'] as String? ?? '',
       status: ManualRequestStatusX.fromName(data['status'] as String?),
       neededBy: _date(data['neededBy']),
       createdAt: _date(data['createdAt']),
       fulfilledAt: _date(data['fulfilledAt']),
       fulfilledByName: data['fulfilledByName'] as String?,
       manualId: data['manualId'] as String?,
+      assignmentManualId: data['assignmentManualId'] as String?,
+      ticketId: data['ticketId'] as String?,
+      approvedAt: _date(data['approvedAt']),
+      approvedByName: data['approvedByName'] as String?,
     );
   }
 }

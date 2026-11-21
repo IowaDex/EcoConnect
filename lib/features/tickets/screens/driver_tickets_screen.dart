@@ -26,6 +26,7 @@ class DriverTicketsScreen extends StatefulWidget {
 
 class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
   final _search = TextEditingController();
+  _ManualView _manualView = _ManualView.all;
 
   @override
   void dispose() {
@@ -74,6 +75,8 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
                   search: _search,
                   visible: _visible(tickets),
                   onSearchChanged: () => setState(() {}),
+                  manualView: _manualView,
+                  onManualView: (view) => setState(() => _manualView = view),
                 );
               },
             ),
@@ -81,16 +84,31 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
   }
 }
 
+/// How the manual schedules in the driver's inbox are filtered.
+enum _ManualView {
+  all('All'),
+  waiting('For approval'),
+  approved('Approved');
+
+  const _ManualView(this.label);
+
+  final String label;
+}
+
 class _Inbox extends StatelessWidget {
   const _Inbox({
     required this.search,
     required this.visible,
     required this.onSearchChanged,
+    required this.manualView,
+    required this.onManualView,
   });
 
   final TextEditingController search;
   final List<TripTicket> visible;
   final VoidCallback onSearchChanged;
+  final _ManualView manualView;
+  final ValueChanged<_ManualView> onManualView;
 
   @override
   Widget build(BuildContext context) {
@@ -107,8 +125,24 @@ class _Inbox extends StatelessWidget {
     final waiting = visible
         .where((t) => t.needsDriver && t.id != live?.id)
         .toList(growable: false);
+    // Manual schedules are their own list: one is still with City Hall, the
+    // next is already valid, and neither is a ticket the driver can accept.
+    final manuals = visible
+        .where((t) => t.isAssignment && t.id != live?.id)
+        .toList(growable: false);
+    final waitingManuals = manuals
+        .where((t) => t.approvalPending)
+        .toList(growable: false);
+    final approvedManuals = manuals
+        .where((t) => !t.approvalPending)
+        .toList(growable: false);
+    final shownManuals = switch (manualView) {
+      _ManualView.all => manuals,
+      _ManualView.waiting => waitingManuals,
+      _ManualView.approved => approvedManuals,
+    };
     final others = visible
-        .where((t) => !t.needsDriver && t.id != live?.id)
+        .where((t) => !t.needsDriver && t.id != live?.id && !t.isAssignment)
         .toList(growable: false);
 
     return Column(
@@ -153,8 +187,53 @@ class _Inbox extends StatelessWidget {
                       ],
                       const SizedBox(height: 8),
                     ],
+                    if (manuals.isNotEmpty) ...[
+                      Text(
+                        'Manual schedules (${manuals.length})',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: AppColors.forest,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _ManualFilterRow(
+                        view: manualView,
+                        total: manuals.length,
+                        waiting: waitingManuals.length,
+                        approved: approvedManuals.length,
+                        onChanged: onManualView,
+                      ),
+                      const SizedBox(height: 10),
+                      if (shownManuals.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            'No manuals in this filter.',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final ticket in shownManuals) ...[
+                          TicketCard(
+                            ticket: ticket,
+                            trailingLabel: ticket.approvalPending
+                                ? 'For approval'
+                                : 'Approved',
+                            onTap: () => context.push('/tickets/${ticket.id}'),
+                          ),
+                          const SizedBox(height: 9),
+                        ],
+                      const SizedBox(height: 8),
+                    ],
                     if (others.isNotEmpty) ...[
-                      if (live != null || waiting.isNotEmpty) ...[
+                      if (live != null ||
+                          waiting.isNotEmpty ||
+                          manuals.isNotEmpty) ...[
                         const Text(
                           'Other tickets',
                           style: TextStyle(
@@ -453,6 +532,53 @@ class _SearchField extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.forest, width: 1.4),
         ),
+      ),
+    );
+  }
+}
+
+class _ManualFilterRow extends StatelessWidget {
+  const _ManualFilterRow({
+    required this.view,
+    required this.total,
+    required this.waiting,
+    required this.approved,
+    required this.onChanged,
+  });
+
+  final _ManualView view;
+  final int total;
+  final int waiting;
+  final int approved;
+  final ValueChanged<_ManualView> onChanged;
+
+  int _countFor(_ManualView value) => switch (value) {
+    _ManualView.all => total,
+    _ManualView.waiting => waiting,
+    _ManualView.approved => approved,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final value in _ManualView.values) ...[
+            ChoiceChip(
+              label: Text(
+                '${value.label} (${_countFor(value)})',
+                style: const TextStyle(fontSize: 9.5),
+              ),
+              selected: value == view,
+              onSelected: (_) => onChanged(value),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            const SizedBox(width: 6),
+          ],
+        ],
       ),
     );
   }

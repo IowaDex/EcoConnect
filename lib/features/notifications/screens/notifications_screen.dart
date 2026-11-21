@@ -300,6 +300,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         context.push('/delays');
         return;
       }
+      if (kind == 'manualApprovedCopy') {
+        context.push(role == UserRole.admin ? '/assignments' : '/cityhall');
+        return;
+      }
+      if (kind == 'manualApprovedSchedule') {
+        // Residents read the approved manual, not the trip ticket.
+        context.push('/schedule');
+        return;
+      }
+      if (kind.startsWith('manual') &&
+          ticketId is String &&
+          ticketId.isNotEmpty) {
+        context.push('/tickets/$ticketId');
+        return;
+      }
       if (kind.startsWith('manual')) {
         context.push(
           kind.toLowerCase().contains('request')

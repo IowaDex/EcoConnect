@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../manuals/services/manual_pdf.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
 import '../widgets/signature_sheet.dart';
@@ -42,6 +44,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '${time.month}/${time.day} $h:$m';
+  }
+
+  /// Rebuilds the manual sheet from the ticket, so the PDF can be printed at
+  /// any point in its life instead of only while it is being created.
+  Future<void> _exportPdf(TripTicket ticket) async {
+    final saved = await exportManualPdfFromTicket(ticket);
+    if (!mounted) return;
+    if (saved) {
+      AppFeedback.success(context, 'Manual PDF generated');
+    } else {
+      AppFeedback.error(
+        context,
+        'PDF download is only available in the browser build.',
+      );
+    }
   }
 
   Future<void> _run(Future<void> Function() action, String success) async {
@@ -221,7 +238,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         name: user.displayName ?? signer.label,
         image: image,
       ),
-      'Signed — automatically forwarded to the next signer',
+      ticket.approvalPending && signer == TicketStatusSigner.cityHall
+          ? 'Manual approved — the trip ticket is now valid'
+          : 'Signed — automatically forwarded to the next signer',
+    );
+  }
+
+  Future<void> _completeAssignment() async {
+    final user = context.read<AuthProvider>().currentUser;
+    await _run(
+      () => _service.completeAssignment(
+        widget.ticketId,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'Driver',
+      ),
+      'Run marked complete',
     );
   }
 
@@ -261,241 +292,301 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             });
           }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          return Stack(
             children: [
-              _Header(ticket: ticket),
-              const SizedBox(height: 14),
-              _Details(ticket: ticket),
-              const SizedBox(height: 14),
-              _Timeline(ticket: ticket, format: _format),
-              const SizedBox(height: 14),
-              _Signatures(ticket: ticket, format: _format),
-              const SizedBox(height: 14),
-              _AuditTrail(ticket: ticket, format: _format),
-              const SizedBox(height: 18),
-              if (isDriver && ticket.needsRevision && !_busy) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.warning),
-                  ),
-                  child: Text(
-                    'Returned by the barangay: '
-                    '${ticket.revisionReason ?? 'Please correct the trip details.'}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      height: 1.5,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 46,
-                  child: FilledButton.icon(
-                    onPressed: _resubmit,
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text(
-                      'Resubmit corrected ticket',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
-                    ),
-                  ),
-                ),
-              ],
-              if (user?.role == UserRole.admin &&
-                  ticket.status == TicketStatus.submitted &&
-                  !_busy) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: _returnForRevision,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.warning,
-                            side: const BorderSide(color: AppColors.warning),
-                            textStyle: const TextStyle(fontSize: 10.5),
-                          ),
-                          child: const Text('Return for revision'),
+              ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                children: [
+                  _Header(ticket: ticket),
+                  const SizedBox(height: 14),
+                  if (ticket.isAssignment) ...[
+                    _AssignmentDetails(ticket: ticket),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _exportPdf(ticket),
+                        icon: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          size: 17,
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: _rejectTicket,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.error,
-                            side: const BorderSide(color: AppColors.error),
-                            textStyle: const TextStyle(fontSize: 10.5),
-                          ),
-                          child: const Text('Reject'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (user?.role == UserRole.iswim &&
-                  ticket.status == TicketStatus.barangaySigned &&
-                  !_busy) ...[
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton(
-                    onPressed: _rejectTicket,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                      textStyle: const TextStyle(fontSize: 11),
-                    ),
-                    child: const Text('Reject after barangay approval'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (isDriver && ticket.needsDriver && !_busy) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 46,
-                        child: OutlinedButton(
-                          onPressed: _decline,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.error,
-                            side: const BorderSide(color: AppColors.error),
-                            textStyle: const TextStyle(fontSize: 12),
-                          ),
-                          child: const Text('Decline'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: SizedBox(
-                        height: 46,
-                        child: FilledButton(
-                          onPressed: () => _run(
-                            () => _service.accept(
-                              ticket.id,
-                              byUid: user?.uid ?? '',
-                              byName: user?.displayName ?? 'Driver',
-                            ),
-                            'Ticket accepted — you can start the trip',
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.forest,
-                            textStyle: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          child: const Text('Accept ticket'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (isDriver && ticket.canStartTrip) ...[
-                SizedBox(
-                  height: 46,
-                  child: FilledButton.icon(
-                    onPressed: () => context.go('/driver'),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: const Text('Go to trip dashboard'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              if (canSign) ...[
-                SizedBox(
-                  height: 48,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : () => _sign(ticket, mySigner),
-                    icon: _busy
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.draw_rounded, size: 18),
-                    label: Text(
-                      'Sign as ${mySigner.label}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
-                    ),
-                  ),
-                ),
-              ],
-              if (expected != null && !canSign) ...[
-                Text(
-                  'Waiting for the ${expected.label} signature.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
-              ],
-              if (ticket.status == TicketStatus.completed)
-                Container(
-                  padding: const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: AppColors.mint,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.primary),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.verified_rounded,
-                        size: 18,
-                        color: AppColors.primary,
-                      ),
-                      SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          'All three signatures are complete. The barangay and '
-                          'City Hall each have a signed copy.',
+                        label: const Text(
+                          'Export manual PDF',
                           style: TextStyle(
-                            fontSize: 10,
-                            height: 1.45,
-                            color: AppColors.forest,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.forest,
+                          side: const BorderSide(color: AppColors.sage),
+                        ),
+                      ),
+                    ),
+                  ] else
+                    _Details(ticket: ticket),
+                  const SizedBox(height: 14),
+                  _Timeline(ticket: ticket, format: _format),
+                  const SizedBox(height: 14),
+                  _Signatures(ticket: ticket, format: _format),
+                  const SizedBox(height: 14),
+                  _AuditTrail(ticket: ticket, format: _format),
+                  const SizedBox(height: 18),
+                  if (isDriver && ticket.needsRevision && !_busy) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.warning),
+                      ),
+                      child: Text(
+                        'Returned by the barangay: '
+                        '${ticket.revisionReason ?? 'Please correct the trip details.'}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          height: 1.5,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 46,
+                      child: FilledButton.icon(
+                        onPressed: _resubmit,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text(
+                          'Resubmit corrected ticket',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.forest,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (user?.role == UserRole.admin &&
+                      ticket.status == TicketStatus.submitted &&
+                      !_busy) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: OutlinedButton(
+                              onPressed: _returnForRevision,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.warning,
+                                side: const BorderSide(
+                                  color: AppColors.warning,
+                                ),
+                                textStyle: const TextStyle(fontSize: 10.5),
+                              ),
+                              child: const Text('Return for revision'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: OutlinedButton(
+                              onPressed: _rejectTicket,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.error,
+                                side: const BorderSide(color: AppColors.error),
+                                textStyle: const TextStyle(fontSize: 10.5),
+                              ),
+                              child: const Text('Reject'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  if (user?.role == UserRole.iswim &&
+                      ticket.status == TicketStatus.barangaySigned &&
+                      !_busy) ...[
+                    SizedBox(
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: _rejectTicket,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.error,
+                          side: const BorderSide(color: AppColors.error),
+                          textStyle: const TextStyle(fontSize: 11),
+                        ),
+                        child: const Text('Reject after barangay approval'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  if (isDriver && ticket.needsDriver && !_busy) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 46,
+                            child: OutlinedButton(
+                              onPressed: _decline,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.error,
+                                side: const BorderSide(color: AppColors.error),
+                                textStyle: const TextStyle(fontSize: 12),
+                              ),
+                              child: const Text('Decline'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: SizedBox(
+                            height: 46,
+                            child: FilledButton(
+                              onPressed: () => _run(
+                                () => _service.accept(
+                                  ticket.id,
+                                  byUid: user?.uid ?? '',
+                                  byName: user?.displayName ?? 'Driver',
+                                ),
+                                'Ticket accepted — you can start the trip',
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.forest,
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              child: const Text('Accept ticket'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (isDriver && ticket.canStartTrip) ...[
+                    SizedBox(
+                      height: 46,
+                      child: FilledButton.icon(
+                        onPressed: () => context.go('/driver'),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                        label: const Text('Go to trip dashboard'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.forest,
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  ],
+                  if (isDriver && ticket.canCompleteAssignment && !_busy) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 46,
+                      child: FilledButton.icon(
+                        onPressed: _completeAssignment,
+                        icon: const Icon(Icons.task_alt_rounded, size: 18),
+                        label: const Text(
+                          'Mark run as completed',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.forest,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (canSign) ...[
+                    SizedBox(
+                      height: 48,
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : () => _sign(ticket, mySigner),
+                        icon: _busy
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.draw_rounded, size: 18),
+                        label: Text(
+                          ticket.approvalPending
+                              ? 'Approve manual as City Hall'
+                              : 'Sign as ${mySigner.label}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.forest,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (expected != null && !canSign) ...[
+                    Text(
+                      'Waiting for the ${expected.label} signature.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ],
+                  if (ticket.status == TicketStatus.completed)
+                    Container(
+                      padding: const EdgeInsets.all(13),
+                      decoration: BoxDecoration(
+                        color: AppColors.mint,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.primary),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              ticket.isAssignment
+                                  ? 'This run is complete. The approved schedule '
+                                        'stays available to the barangay and '
+                                        'residents.'
+                                  : 'All three signatures are complete. The '
+                                        'barangay and City Hall each have a signed '
+                                        'copy.',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                height: 1.45,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (ticket.approvalPending && user?.role != UserRole.cityHall)
+                Positioned.fill(child: _ApprovalOverlay(ticket: ticket)),
             ],
           );
         },
@@ -549,7 +640,9 @@ class _Header extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                ticket.status.label,
+                ticket.approvalPending
+                    ? 'Waiting for City Hall'
+                    : ticket.status.label,
                 style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
@@ -659,6 +752,162 @@ class _Details extends StatelessWidget {
   }
 }
 
+class _AssignmentDetails extends StatelessWidget {
+  const _AssignmentDetails({required this.ticket});
+
+  final TripTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = ([...ticket.days]..sort()).map(manualDayLabel).join(', ');
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _row(Icons.person_pin_circle_rounded, 'Driver', ticket.driverName),
+          _row(
+            Icons.local_shipping_rounded,
+            'Plate number',
+            '${ticket.plateNumber} · ${ticket.wheelers}-wheeler',
+          ),
+          _row(
+            Icons.route_rounded,
+            'Routes',
+            ticket.routes.isEmpty ? ticket.route : ticket.routes.join('\n'),
+          ),
+          _row(Icons.schedule_rounded, 'Start time', ticket.windowStart),
+          _row(Icons.event_repeat_rounded, 'Schedule', days),
+          _row(Icons.autorenew_rounded, 'Repeats', ticket.recurrence.label),
+          if (ticket.notes.trim().isNotEmpty)
+            _row(Icons.sticky_note_2_outlined, 'Notes', ticket.notes),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: AppColors.moss),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 82,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 10.5,
+                height: 1.45,
+                color: AppColors.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The translucent cover that keeps a freshly submitted manual from reading as
+/// a valid trip ticket. City Hall sees through it (it is the desk that signs);
+/// every other role sees the waiting state instead.
+class _ApprovalOverlay extends StatelessWidget {
+  const _ApprovalOverlay({required this.ticket});
+
+  final TripTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.45),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 34),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x33000000),
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 46,
+                width: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.hourglass_top_rounded,
+                  size: 24,
+                  color: AppColors.warning,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Waiting for City Hall\'s approval',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.darkGreen,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'The manual was submitted by ISWIM. This trip ticket becomes '
+                'valid once the DSQC signs it.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  height: 1.5,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                ticket.code,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: AppColors.moss,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Timeline extends StatelessWidget {
   const _Timeline({required this.ticket, required this.format});
 
@@ -667,42 +916,64 @@ class _Timeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steps = <({String label, DateTime? time, bool done})>[
-      (
-        label: 'Issued by Iswim',
-        time: ticket.createdAt,
-        done: ticket.createdAt != null,
-      ),
-      (
-        label: 'Received by driver',
-        time: ticket.acceptedAt,
-        done: ticket.acceptedAt != null,
-      ),
-      (
-        label: 'Route completed',
-        time: ticket.submittedAt,
-        done: ticket.submittedAt != null,
-      ),
-      (
-        label: 'Barangay signature',
-        time: ticket.signatureFor(TicketStatusSigner.barangay)?.signedAt,
-        done:
-            ticket.signatureFor(TicketStatusSigner.barangay)?.isPresent ??
-            false,
-      ),
-      (
-        label: 'Iswim signature',
-        time: ticket.signatureFor(TicketStatusSigner.iswim)?.signedAt,
-        done: ticket.signatureFor(TicketStatusSigner.iswim)?.isPresent ?? false,
-      ),
-      (
-        label: 'City Hall signature',
-        time: ticket.signatureFor(TicketStatusSigner.cityHall)?.signedAt,
-        done:
-            ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ??
-            false,
-      ),
-    ];
+    final steps = ticket.isAssignment
+        ? <({String label, DateTime? time, bool done})>[
+            (
+              label: 'Manual issued by Iswim',
+              time: ticket.createdAt,
+              done: ticket.createdAt != null,
+            ),
+            (
+              label: 'City Hall approval',
+              time: ticket.signatureFor(TicketStatusSigner.cityHall)?.signedAt,
+              done:
+                  ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ??
+                  false,
+            ),
+            (
+              label: 'Run completed by driver',
+              time: ticket.completedAt,
+              done: ticket.status == TicketStatus.completed,
+            ),
+          ]
+        : <({String label, DateTime? time, bool done})>[
+            (
+              label: 'Issued by Iswim',
+              time: ticket.createdAt,
+              done: ticket.createdAt != null,
+            ),
+            (
+              label: 'Received by driver',
+              time: ticket.acceptedAt,
+              done: ticket.acceptedAt != null,
+            ),
+            (
+              label: 'Route completed',
+              time: ticket.submittedAt,
+              done: ticket.submittedAt != null,
+            ),
+            (
+              label: 'Barangay signature',
+              time: ticket.signatureFor(TicketStatusSigner.barangay)?.signedAt,
+              done:
+                  ticket.signatureFor(TicketStatusSigner.barangay)?.isPresent ??
+                  false,
+            ),
+            (
+              label: 'Iswim signature',
+              time: ticket.signatureFor(TicketStatusSigner.iswim)?.signedAt,
+              done:
+                  ticket.signatureFor(TicketStatusSigner.iswim)?.isPresent ??
+                  false,
+            ),
+            (
+              label: 'City Hall signature',
+              time: ticket.signatureFor(TicketStatusSigner.cityHall)?.signedAt,
+              done:
+                  ticket.signatureFor(TicketStatusSigner.cityHall)?.isPresent ??
+                  false,
+            ),
+          ];
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -886,11 +1157,14 @@ class _Signatures extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              for (final signer in const [
-                TicketStatusSigner.barangay,
-                TicketStatusSigner.iswim,
-                TicketStatusSigner.cityHall,
-              ])
+              for (final signer
+                  in ticket.isAssignment
+                      ? const [TicketStatusSigner.cityHall]
+                      : const [
+                          TicketStatusSigner.barangay,
+                          TicketStatusSigner.iswim,
+                          TicketStatusSigner.cityHall,
+                        ])
                 Expanded(
                   child: _SignatureBox(
                     signer: signer,

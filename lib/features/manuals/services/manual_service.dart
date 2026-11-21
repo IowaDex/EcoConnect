@@ -246,6 +246,7 @@ class ManualService {
     required String title,
     required String details,
     required String byName,
+    String byUid = '',
     DateTime? neededBy,
   }) async {
     final code = await _nextRequestCode();
@@ -255,6 +256,7 @@ class ManualService {
       'title': title.trim(),
       'details': details.trim(),
       'requestedByName': byName,
+      'requestedByUid': byUid,
       'status': ManualRequestStatus.pending.name,
       if (neededBy != null) 'neededBy': Timestamp.fromDate(neededBy),
       'createdAt': FieldValue.serverTimestamp(),

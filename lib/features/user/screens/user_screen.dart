@@ -213,6 +213,12 @@ class _UserScreenState extends State<UserScreen> {
       route: '/verify-identity',
     ),
     QuickAction(
+      label: 'Collection schedule',
+      icon: Icons.calendar_month_outlined,
+      route: '/schedule',
+      lockedNote: 'see the collection schedule',
+    ),
+    QuickAction(
       label: 'Events',
       icon: Icons.event_available_outlined,
       route: '/events',
@@ -511,10 +517,7 @@ class _TrackTruckCardState extends State<_TrackTruckCard> {
                   onTap: () => context.push('/tracking'),
                   borderRadius: BorderRadius.circular(20),
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 7,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 7),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

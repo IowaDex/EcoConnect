@@ -38,6 +38,11 @@ class DeskTools extends StatelessWidget {
       route: '/manual-requests',
     ),
     const QuickAction(
+      label: 'Schedules',
+      icon: Icons.calendar_month_outlined,
+      route: '/assignments',
+    ),
+    const QuickAction(
       label: 'Delay reports',
       icon: Icons.timer_outlined,
       route: '/delays',

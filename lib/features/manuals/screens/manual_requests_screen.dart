@@ -113,6 +113,9 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
           final fulfilled = requests
               .where((r) => r.status == ManualRequestStatus.fulfilled)
               .length;
+          final approved = requests
+              .where((r) => r.status == ManualRequestStatus.approved)
+              .length;
           final filtered = _query.trim().isNotEmpty || _status != null;
 
           return DeskQueueView(
@@ -130,9 +133,9 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
                 value: '$fulfilled',
               ),
               DeskMetric(
-                icon: Icons.menu_book_outlined,
-                label: 'Total',
-                value: '${requests.length}',
+                icon: Icons.verified_rounded,
+                label: 'Approved',
+                value: '$approved',
               ),
             ],
             search: EcoSearchField(
@@ -160,6 +163,11 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
                   value: ManualRequestStatus.fulfilled,
                   label: 'Submitted',
                   count: fulfilled,
+                ),
+                DeskSegment(
+                  value: ManualRequestStatus.approved,
+                  label: 'Approved',
+                  count: approved,
                 ),
               ],
             ),
@@ -238,6 +246,13 @@ class _RequestCard extends StatelessWidget {
 
   final ManualRequest request;
   final bool isIswim;
+
+  Future<void> _createManual(BuildContext context) async {
+    final title = Uri.encodeComponent(request.title);
+    final query = StringBuffer('/assignment-manuals/new?title=$title');
+    query.write('&requestId=${request.id}');
+    context.push(query.toString());
+  }
 
   Future<void> _fulfill(BuildContext context) async {
     final user = context.read<AuthProvider>().currentUser;
@@ -407,13 +422,32 @@ class _RequestCard extends StatelessWidget {
               ],
             ),
           ],
-          if (request.manualId != null ||
+          if (request.ticketId != null ||
+              request.manualId != null ||
               (isIswim && request.status == ManualRequestStatus.pending) ||
               (!isIswim && request.status == ManualRequestStatus.pending)) ...[
             const SizedBox(height: 11),
             Row(
               children: [
-                if (request.manualId != null)
+                if (request.ticketId != null)
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            context.push('/tickets/${request.ticketId}'),
+                        icon: const Icon(
+                          Icons.confirmation_number_outlined,
+                          size: 14,
+                        ),
+                        label: const Text(
+                          'Open trip ticket',
+                          style: TextStyle(fontSize: 10.5),
+                        ),
+                      ),
+                    ),
+                  )
+                else if (request.manualId != null)
                   Expanded(
                     child: SizedBox(
                       height: 36,
@@ -428,13 +462,16 @@ class _RequestCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (request.manualId != null) const SizedBox(width: 8),
+                if ((request.ticketId != null || request.manualId != null) &&
+                    isIswim &&
+                    request.status == ManualRequestStatus.pending)
+                  const SizedBox(width: 8),
                 if (isIswim && request.status == ManualRequestStatus.pending)
                   Expanded(
                     child: SizedBox(
                       height: 36,
                       child: FilledButton(
-                        onPressed: () => _fulfill(context),
+                        onPressed: () => _createManual(context),
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.forest,
                           textStyle: const TextStyle(
@@ -442,7 +479,7 @@ class _RequestCard extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        child: const Text('Submit manual'),
+                        child: const Text('Create manual'),
                       ),
                     ),
                   ),
@@ -463,6 +500,20 @@ class _RequestCard extends StatelessWidget {
                   ),
               ],
             ),
+            if (isIswim && request.status == ManualRequestStatus.pending) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _fulfill(context),
+                  icon: const Icon(Icons.link_rounded, size: 14),
+                  label: const Text(
+                    'Link an uploaded manual instead',
+                    style: TextStyle(fontSize: 9.5),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -600,15 +651,17 @@ class _RequestFormState extends State<_RequestForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
+      final uid = context.read<AuthProvider>().currentUser?.uid ?? '';
       await ManualService().requestManual(
         title: _title.text,
         details: _details.text,
         byName: widget.byName,
+        byUid: uid,
         neededBy: _neededBy,
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
       AppFeedback.success(context, 'Request sent to Iswim');
+      Navigator.of(context).pop();
     } catch (e) {
       if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
     } finally {
