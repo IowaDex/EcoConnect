@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/design/eco_tokens.dart';
@@ -486,15 +487,33 @@ class _RequestCard extends StatelessWidget {
                 if (!isIswim && request.status == ManualRequestStatus.pending)
                   Expanded(
                     child: SizedBox(
-                      height: 36,
-                      child: OutlinedButton(
+                      height: 42,
+                      child: OutlinedButton.icon(
                         onPressed: () => _cancel(context),
+                        icon: const Icon(Icons.close_rounded, size: 15),
+                        label: const Text('Cancel request'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.error,
-                          side: const BorderSide(color: AppColors.error),
-                          textStyle: const TextStyle(fontSize: 10.5),
+                          // A tinted fill rather than a bare outline: the
+                          // destructive action still reads as a real button
+                          // instead of a thin red line across the card.
+                          backgroundColor: AppColors.error.withValues(
+                            alpha: 0.05,
+                          ),
+                          side: BorderSide(
+                            color: AppColors.error.withValues(alpha: 0.45),
+                            width: 1.2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              EcoRadius.sm + 2,
+                            ),
+                          ),
+                          textStyle: GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                        child: const Text('Cancel request'),
                       ),
                     ),
                   ),
@@ -682,7 +701,12 @@ class _RequestFormState extends State<_RequestForm> {
           padding: EdgeInsets.only(
             bottom: MediaQuery.viewInsetsOf(context).bottom,
           ),
-          child: Center(
+          child: Align(
+            alignment: Alignment.topCenter,
+            // heightFactor 1 makes the sheet hug the form. A plain Center
+            // takes every point of height the sheet is allowed, which is what
+            // left a screen-tall slab of empty background above the fields.
+            heightFactor: 1,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
               child: SingleChildScrollView(

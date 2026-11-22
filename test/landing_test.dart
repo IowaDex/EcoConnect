@@ -74,7 +74,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Smarter waste collection\nfor every barangay'),
+    expect(find.text('Smarter waste collection\nfor Barangay Batasan Hills'),
         findsOneWidget);
 
     // Dispose the animation controllers so no ticker survives the test.
@@ -149,7 +149,7 @@ void main() {
         reason: reason,
       );
       expect(
-        find.text('Smarter waste collection\nfor every barangay'),
+        find.text('Smarter waste collection\nfor Barangay Batasan Hills'),
         findsOneWidget,
         reason: reason,
       );
@@ -175,7 +175,7 @@ void main() {
       // The wordmark must never be swallowed by the panel.
       final brand = tester.getRect(find.text('EC'));
       final headline = tester.getRect(
-        find.text('Smarter waste collection\nfor every barangay'),
+        find.text('Smarter waste collection\nfor Barangay Batasan Hills'),
       );
       expect(brand.top, greaterThanOrEqualTo(0), reason: reason);
       expect(

@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/constants/service_area.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
@@ -33,7 +35,6 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
   final _search = TextEditingController();
 
   RequestStatus? _status;
-  String _barangay = '';
   int _days = 0;
   int _page = 0;
   int _pageSize = 10;
@@ -103,14 +104,13 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                     message: AppFeedback.describe(snapshot.error!),
                   );
                 }
-                final all = snapshot.data ?? const <CollectionRequest>[];
-                final barangays =
-                    all
-                        .map((r) => r.requesterBarangay?.trim() ?? '')
-                        .where((b) => b.isNotEmpty)
-                        .toSet()
-                        .toList()
-                      ..sort();
+                // The desk is scoped to this deployment's barangay. Requests
+                // filed anywhere else are dropped before the counts, the
+                // filters and the list are built, so the screen can never show
+                // another barangay even if such a record exists.
+                final all = (snapshot.data ?? const <CollectionRequest>[])
+                    .where((r) => ServiceArea.covers(r.requesterBarangay))
+                    .toList(growable: false);
                 final items = _applyFilters(all);
                 final page = clampPage(_page, items.length, _pageSize);
                 final visible = pageSlice(items, page, _pageSize);
@@ -119,13 +119,7 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                     _FilterSummary(
                       total: all.length,
                       shown: items.length,
-                      barangays: barangays,
-                      selectedBarangay: _barangay,
                       days: _days,
-                      onBarangay: (value) => setState(() {
-                        _barangay = value;
-                        _page = 0;
-                      }),
                       onDays: (value) => setState(() {
                         _days = value;
                         _page = 0;
@@ -136,8 +130,7 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                           ? const EmptyState(
                               icon: Icons.inbox_outlined,
                               title: 'No requests match',
-                              message:
-                                  'Try clearing the status, barangay or date filter.',
+                              message: 'Try clearing the status or date filter.',
                             )
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
@@ -186,10 +179,6 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
         .where((request) {
           if (_status != null && request.status != _status) return false;
           if (_specialOnly && !request.isSpecial) return false;
-          if (_barangay.isNotEmpty &&
-              (request.requesterBarangay ?? '').trim() != _barangay) {
-            return false;
-          }
           if (cutoff != null) {
             final created = request.createdAt;
             if (created == null || created.isBefore(cutoff)) return false;
@@ -297,19 +286,13 @@ class _FilterSummary extends StatelessWidget {
   const _FilterSummary({
     required this.total,
     required this.shown,
-    required this.barangays,
-    required this.selectedBarangay,
     required this.days,
-    required this.onBarangay,
     required this.onDays,
   });
 
   final int total;
   final int shown;
-  final List<String> barangays;
-  final String selectedBarangay;
   final int days;
-  final ValueChanged<String> onBarangay;
   final ValueChanged<int> onDays;
 
   @override
@@ -318,11 +301,16 @@ class _FilterSummary extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 0, 12, 8),
       child: Row(
         children: [
-          Text(
-            '$shown of $total requests',
-            style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+          // Expanded rather than a Spacer: on a narrow phone the count gives
+          // way to the pills instead of pushing them off the row.
+          Expanded(
+            child: Text(
+              '$shown of $total requests',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+            ),
           ),
-          const Spacer(),
           PopupMenuButton<int>(
             tooltip: 'Date',
             onSelected: onDays,
@@ -335,24 +323,18 @@ class _FilterSummary extends StatelessWidget {
             child: _filterPill(days == 0 ? 'Any date' : 'Last $days days'),
           ),
           const SizedBox(width: 6),
-          PopupMenuButton<String>(
-            tooltip: 'Barangay',
-            onSelected: onBarangay,
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: '', child: Text('All barangays')),
-              for (final barangay in barangays)
-                PopupMenuItem(value: barangay, child: Text(barangay)),
-            ],
-            child: _filterPill(
-              selectedBarangay.isEmpty ? 'All barangays' : selectedBarangay,
-            ),
+          // Not a menu any more: the desk only ever serves one barangay, so
+          // the scope is stated rather than offered as a choice.
+          _filterPill(
+            'Barangay ${ServiceArea.barangay}',
+            leading: Icons.place_rounded,
           ),
         ],
       ),
     );
   }
 
-  Widget _filterPill(String label) {
+  Widget _filterPill(String label, {IconData? leading}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -363,20 +345,26 @@ class _FilterSummary extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (leading != null) ...[
+            Icon(leading, size: 11, color: AppColors.darkGreen),
+            const SizedBox(width: 3),
+          ],
           Text(
             label,
-            style: const TextStyle(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 9,
               fontWeight: FontWeight.w600,
               color: AppColors.darkGreen,
             ),
           ),
-          const SizedBox(width: 2),
-          const Icon(
-            Icons.expand_more_rounded,
-            size: 13,
-            color: AppColors.inkMuted,
-          ),
+          if (leading == null) ...[
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.expand_more_rounded,
+              size: 13,
+              color: AppColors.inkMuted,
+            ),
+          ],
         ],
       ),
     );

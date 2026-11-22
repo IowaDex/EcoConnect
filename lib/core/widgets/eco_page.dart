@@ -192,12 +192,7 @@ class EcoPageHeader extends StatelessWidget {
                     eyebrow!.toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.1,
-                      color: AppColors.primary,
-                    ),
+                    style: EcoType.eyebrow(context, color: AppColors.primary),
                   ),
                   const SizedBox(height: 3),
                 ],

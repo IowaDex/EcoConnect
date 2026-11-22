@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../design/eco_tokens.dart';
 import '../theme/app_colors.dart';
@@ -285,7 +286,7 @@ class _SegmentLabel<T> extends StatelessWidget {
             child: AnimatedDefaultTextStyle(
               duration: EcoMotion.fast,
               curve: EcoMotion.enter,
-              style: TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w700,
                 color: foreground,

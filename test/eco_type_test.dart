@@ -3,18 +3,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The desk screens read their type from [EcoType] instead of spelling sizes
-/// out inline. These tests pin the two things that matters: every role keeps
-/// the corporate family set by the theme, and every role stays on the scale.
+/// out inline. These tests pin the two things that matter: every role keeps
+/// the family it is meant to use, and every role stays on the scale.
 void main() {
   late Map<String, TextStyle> styles;
+
+  /// Roles that are labels or controls. Everything else is reading copy or a
+  /// heading and stays on the theme's brand face.
+  const labelRoles = {
+    'eyebrow',
+    'metricLabel',
+    'micro',
+    'label',
+    'chip',
+    'action',
+  };
 
   setUp(() {
     styles = {};
   });
 
-  testWidgets('every role inherits the corporate family from the theme', (
-    tester,
-  ) async {
+  testWidgets('every role uses its agreed family', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true, fontFamily: 'Poppins'),
@@ -46,11 +55,22 @@ void main() {
 
     expect(styles, hasLength(16));
     for (final entry in styles.entries) {
-      expect(
-        entry.value.fontFamily,
-        'Poppins',
-        reason: '${entry.key} must keep the corporate face',
-      );
+      final family = entry.value.fontFamily ?? '';
+      if (labelRoles.contains(entry.key)) {
+        // google_fonts registers one family per weight (`PlusJakartaSans_800`),
+        // so match the prefix rather than the display name.
+        expect(
+          family.startsWith('PlusJakartaSans'),
+          isTrue,
+          reason: '${entry.key} must use Plus Jakarta Sans, got $family',
+        );
+      } else {
+        expect(
+          family,
+          'Poppins',
+          reason: '${entry.key} must keep the brand face',
+        );
+      }
     }
   });
 
