@@ -1,0 +1,478 @@
+%% EcoConnect — Firestore ERD (single diagram, paste-ready)
+%% PK = document id · FK = string pointer, not an enforced foreign key
+erDiagram
+    USERS ||--o| SESSIONS : holds
+    USERS ||--o{ USER_LOCATIONS : streams
+    USERS ||--o{ DEVICES : registers
+    USERS ||--o| SHARED_LOCATIONS : shares
+    USERS ||--o{ VERIFICATION_REQUESTS : submits
+    USERS ||--o| TRUCKS : assigned_to
+    USERS ||--o{ ROUTES : broadcasts
+    USERS ||--o{ ROUTE_PLANS : assigned
+    USERS ||--o{ TRIP_TICKETS : drives
+    USERS ||--o{ ASSIGNMENT_MANUALS : rostered
+    USERS ||--o{ MANUALS : authors
+    USERS ||--o{ MEMOS : sends
+    USERS ||--o{ DELAY_REPORTS : files
+    USERS ||--o{ COLLECTION_REQUESTS : requests
+    USERS ||--o{ WASTE_SUBMISSIONS : submits
+    USERS ||--o{ COMPLAINTS : files
+    USERS ||--o{ INCIDENTS : reports
+    USERS ||--o{ COMMUNITY_POSTS : writes
+    USERS ||--o{ NOTIFICATIONS : receives
+    USERS ||--o{ EVENT_PARTICIPANTS : joins
+    USERS ||--o{ COLLECTION_POINTS : serves
+    USERS ||--o{ ADMIN_AUDIT : acts_in
+    TRUCKS ||--o{ TRIP_TICKETS : used_on
+    TRUCKS ||--o{ ASSIGNMENT_MANUALS : rostered_to
+    ROUTE_PLANS ||--o| ROUTES : activated_as
+    MANUAL_REQUESTS ||--o| MANUALS : answered_by
+    MANUAL_REQUESTS ||--o| ASSIGNMENT_MANUALS : answered_by
+    MANUALS ||--o{ MANUAL_VERSIONS : has
+    ASSIGNMENT_MANUALS ||--o| TRIP_TICKETS : generates
+    TRIP_TICKETS ||--o{ DELAY_REPORTS : delayed_by
+    DELAY_REPORTS ||--o| ANNOUNCEMENTS : published_as
+    EVENTS ||--o{ EVENT_PARTICIPANTS : has
+    EVENTS ||--o{ EVENT_STREETS : tallies
+
+    USERS {
+        string uid PK
+        string email
+        string displayName
+        string role
+        string accountStatus
+        string registrationStatus
+        string accountType
+        string verificationStatus
+        string crewRole
+        string assignedTruckId FK
+        string phone
+        string houseStreet
+        string barangay
+        string city
+        string province
+        timestamp birthdate
+        string photoUrl
+        bool emailVerified
+        timestamp createdAt
+    }
+
+    SESSIONS {
+        string uid PK
+        string sessionId
+        string platform
+        timestamp startedAt
+        number authTime
+    }
+
+    USER_LOCATIONS {
+        string id PK
+        string uid FK
+        double latitude
+        double longitude
+        double accuracy
+        timestamp recordedAt
+        timestamp uploadedAt
+    }
+
+    DEVICES {
+        string id PK
+        string uid FK
+        string token
+        string platform
+        timestamp updatedAt
+    }
+
+    SHARED_LOCATIONS {
+        string uid PK
+        double lat
+        double lng
+        timestamp updatedAt
+    }
+
+    REMOVED_USERS {
+        string uid PK
+        string reason
+        timestamp removedAt
+    }
+
+    VERIFICATION_REQUESTS {
+        string id PK
+        string userId FK
+        string name
+        string email
+        string phone
+        string barangay
+        string accountType
+        map document
+        string status
+        timestamp submittedAt
+        string reviewedBy FK
+        timestamp reviewedAt
+        string rejectionReason
+    }
+
+    TRUCKS {
+        string id PK
+        string plateNumber
+        number wheelers
+        string bodyType
+        string barangay
+        string zone
+        double centerLatitude
+        double centerLongitude
+        string driverName
+        string driverAccountId FK
+    }
+
+    ROUTES {
+        string driverId PK
+        string status
+        string driverName
+        string phone
+        string zone
+        double lat
+        double lng
+        number etaMinutes
+        string planId FK
+        string sessionId
+        string truckPlate
+        string crewRole
+        timestamp startedAt
+        timestamp pausedAt
+        timestamp completedAt
+        timestamp lastSeenAt
+        string locationState
+        string connectionState
+        string geofenceState
+        timestamp updatedAt
+    }
+
+    ROUTE_PLANS {
+        string id PK
+        string driverId FK
+        string driverName
+        string zone
+        string date
+        string windowStart
+        string windowEnd
+        array stops
+        string status
+        bool adHoc
+        string createdBy FK
+        timestamp createdAt
+        timestamp activatedAt
+        timestamp completedAt
+    }
+
+    COLLECTION_POINTS {
+        string id PK
+        string name
+        string address
+        double lat
+        double lng
+        string barangay
+        string zone
+        string driverId FK
+        array scheduleDays
+        string scheduleTime
+        string category
+        string status
+        string notes
+        timestamp updatedAt
+    }
+
+    TRIP_TICKETS {
+        string id PK
+        string code
+        number wave
+        string kind
+        string truckId FK
+        string plateNumber
+        number wheelers
+        string driverId FK
+        string driverName
+        string route
+        string zone
+        array routes
+        array routePoints
+        array days
+        string recurrence
+        string date
+        string windowStart
+        string windowEnd
+        string status
+        string pendingSigner
+        bool approvalPending
+        string assignmentId FK
+        string createdBy FK
+        map signatures
+        array history
+        timestamp createdAt
+        timestamp completedAt
+    }
+
+    DELAY_REPORTS {
+        string id PK
+        string code
+        string ticketId FK
+        string plateNumber
+        string driverName
+        string reason
+        number minutesLate
+        string stage
+        string filedBy FK
+        timestamp createdAt
+        timestamp forwardedAt
+        timestamp barangayAt
+        timestamp closedAt
+        string announcementId FK
+    }
+
+    ANNOUNCEMENTS {
+        string id PK
+        string title
+        string body
+        string category
+        map image
+        string status
+        timestamp publishAt
+        string authorId FK
+        string authorName
+        string barangay
+        timestamp createdAt
+        timestamp updatedAt
+    }
+
+    ASSIGNMENT_MANUALS {
+        string id PK
+        string title
+        string driverId FK
+        string truckId FK
+        string plateNumber
+        number wheelers
+        array routes
+        array routePoints
+        array days
+        string startTime
+        string recurrence
+        string status
+        string requestId FK
+        string ticketId FK
+        string createdBy FK
+        timestamp createdAt
+        timestamp approvedAt
+    }
+
+    MANUAL_REQUESTS {
+        string id PK
+        string code
+        string title
+        string details
+        string requestedByUid FK
+        string status
+        timestamp neededBy
+        string manualId FK
+        string assignmentManualId FK
+        string ticketId FK
+        timestamp createdAt
+        timestamp fulfilledAt
+        timestamp approvedAt
+    }
+
+    MANUALS {
+        string id PK
+        string title
+        string category
+        string summary
+        number version
+        string status
+        string createdBy FK
+        string currentNotes
+        map file
+        timestamp createdAt
+        timestamp updatedAt
+        timestamp acknowledgedAt
+    }
+
+    MANUAL_VERSIONS {
+        string id PK
+        string manualId FK
+        number version
+        string notes
+        map file
+        string submittedBy FK
+        timestamp submittedAt
+    }
+
+    MEMOS {
+        string id PK
+        string kind
+        string subject
+        string body
+        string fromUid FK
+        string fromName
+        string fromRole
+        string toChannel
+        map attachment
+        string status
+        timestamp createdAt
+        timestamp receivedAt
+        timestamp acknowledgedAt
+        string acknowledgedByUid FK
+    }
+
+    COLLECTION_REQUESTS {
+        string id PK
+        string requesterId FK
+        string requesterName
+        string kind
+        string title
+        string description
+        string category
+        string estimatedQuantity
+        string location
+        timestamp preferredDate
+        string status
+        number wave
+        string cityHallStatus
+        string assignedDriverId FK
+        timestamp scheduledAt
+        array images
+        array history
+        array responses
+        timestamp createdAt
+    }
+
+    WASTE_SUBMISSIONS {
+        string id PK
+        string userId FK
+        string userName
+        string category
+        string quantity
+        string location
+        string barangay
+        array images
+        string status
+        string remarks
+        string validatedBy FK
+        timestamp validatedAt
+        timestamp createdAt
+    }
+
+    COMPLAINTS {
+        string id PK
+        string referenceNo
+        string residentId FK
+        string residentName
+        string residentBarangay
+        string title
+        string description
+        string category
+        string status
+        string location
+        array images
+        array responses
+        timestamp createdAt
+        timestamp resolvedAt
+    }
+
+    INCIDENTS {
+        string id PK
+        string residentId FK
+        string residentName
+        string category
+        string description
+        string status
+        double lat
+        double lng
+        timestamp createdAt
+    }
+
+    EVENTS {
+        string id PK
+        string title
+        string description
+        string category
+        string location
+        timestamp startAt
+        timestamp endAt
+        map image
+        string status
+        string registrationInfo
+        string contact
+        string authorId FK
+        string barangay
+        timestamp createdAt
+    }
+
+    EVENT_PARTICIPANTS {
+        string uid PK
+        string eventId FK
+        string name
+        string street
+        string streetKey
+        string barangay
+        timestamp joinedAt
+    }
+
+    EVENT_STREETS {
+        string key PK
+        string eventId FK
+        string label
+        number count
+    }
+
+    COMMUNITY_POSTS {
+        string id PK
+        string authorId FK
+        string authorName
+        string authorRole
+        string body
+        map image
+        array likedBy
+        array comments
+        timestamp createdAt
+        timestamp updatedAt
+    }
+
+    NOTIFICATIONS {
+        string id PK
+        string userId FK
+        string title
+        string body
+        string type
+        bool read
+        map data
+        timestamp createdAt
+    }
+
+    ADMIN_AUDIT {
+        string id PK
+        string action
+        string documentPath
+        string actorUid FK
+        string actorType
+        array changedFields
+        string outcome
+        timestamp at
+    }
+
+    COUNTERS {
+        string id PK
+        number value
+    }
+
+    SETTINGS {
+        string id PK
+        string email
+    }
+
+    EMAIL_LOG {
+        string id PK
+        string to
+        string subject
+        string body
+        string byName
+        timestamp sentAt
+    }

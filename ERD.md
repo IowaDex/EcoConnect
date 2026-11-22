@@ -3,6 +3,10 @@
 Data model derived from the models in `lib/features/**/models`, the document paths in
 `firestore.rules`, and the write paths in the services.
 
+> **Paste-ready versions:** `ERD.mmd` (one Mermaid diagram, all 32 entities) and
+> `ERD.drawio` (draw.io file). The two diagrams below are the same model split by
+> domain so each stays readable.
+
 ## How to read this
 
 EcoConnect keeps everything in **Cloud Firestore**, a document database, so an ERD
