@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/eco_card.dart';
 
@@ -55,7 +56,7 @@ class QuickActionGrid extends StatelessWidget {
   /// Widest a tile may get before another column is added.
   final double maxExtent;
 
-  /// Tile height. 92 fits a 30 px icon well and a two-line label.
+  /// Tile height. 92 fits a centred icon well and a two-line label.
   final double extent;
 
   @override
@@ -77,93 +78,160 @@ class QuickActionGrid extends StatelessWidget {
   }
 }
 
-/// A single shortcut. [EcoCard] supplies the surface, radius, border and tap
-/// feedback so a shortcut looks like every other panel in the app.
-class _ActionTile extends StatelessWidget {
+/// A single shortcut.
+///
+/// The tile is centred so it reads as an app shortcut rather than a list row.
+/// Hovering lights the icon well with the brand gradient and warms the card,
+/// which is the only hover cue the tile needs: [EcoCard] supplies the lift,
+/// shadow and border.
+class _ActionTile extends StatefulWidget {
   const _ActionTile({required this.action, this.onLocked});
 
   final QuickAction action;
   final ValueChanged<QuickAction>? onLocked;
 
   @override
+  State<_ActionTile> createState() => _ActionTileState();
+}
+
+class _ActionTileState extends State<_ActionTile> {
+  bool _hovered = false;
+
+  void _setHover(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final action = widget.action;
     final locked = action.locked;
+    final interactive = !locked || widget.onLocked != null;
+    final lit = _hovered && !locked;
+
     final VoidCallback? onTap;
     if (locked) {
-      onTap = onLocked == null ? null : () => onLocked!(action);
+      onTap = widget.onLocked == null
+          ? null
+          : () => widget.onLocked!(action);
     } else {
       onTap = () => context.push(action.route);
     }
-    return EcoCard(
-      padding: const EdgeInsets.all(11),
-      onTap: onTap,
-      child: Opacity(
-        opacity: locked ? 0.5 : 1,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+
+    return MouseRegion(
+      cursor: interactive ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => _setHover(true),
+      onExit: (_) => _setHover(false),
+      child: EcoCard(
+        padding: const EdgeInsets.all(10),
+        onTap: onTap,
+        color: lit ? const Color(0xFFF3F9F3) : Colors.white,
+        child: Stack(
           children: [
-            Row(
-              children: [
-                Container(
-                  height: 30,
-                  width: 30,
-                  decoration: BoxDecoration(
-                    color: locked ? AppColors.cream : AppColors.mint,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    action.icon,
-                    size: 16,
-                    color: locked ? AppColors.inkMuted : AppColors.forest,
-                  ),
-                ),
-                const Spacer(),
-                if (locked)
-                  const Icon(
-                    Icons.lock_outline_rounded,
-                    size: 12,
-                    color: AppColors.inkMuted,
-                  )
-                else if (action.badge > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: EcoMotion.fast,
+                    curve: EcoMotion.enter,
+                    height: 32,
+                    width: 32,
                     decoration: BoxDecoration(
-                      color: AppColors.warning,
-                      borderRadius: BorderRadius.circular(20),
+                      color: lit
+                          ? null
+                          : (locked ? AppColors.cream : AppColors.mint),
+                      gradient: lit ? AppColors.forestGradient : null,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: lit
+                          ? [
+                              BoxShadow(
+                                color: AppColors.forest.withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
                     ),
-                    child: Text(
-                      '${action.badge}',
-                      style: const TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
+                    child: Icon(
+                      action.icon,
+                      size: 17,
+                      color: lit
+                          ? Colors.white
+                          : (locked ? AppColors.inkMuted : AppColors.forest),
                     ),
-                  )
-                else
-                  const Icon(
-                    Icons.north_east_rounded,
-                    size: 11,
-                    color: AppColors.sage,
                   ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              action.label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 10.5,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
-                color: AppColors.forest,
+                  const SizedBox(height: 7),
+                  Text(
+                    action.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      color: locked ? AppColors.inkMuted : AppColors.forest,
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (locked)
+              const Positioned(
+                right: 0,
+                top: 0,
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  size: 12,
+                  color: AppColors.inkMuted,
+                ),
+              )
+            else if (action.badge > 0)
+              Positioned(right: 0, top: 0, child: _CountBadge(action.badge)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The small count in the tile's top-right corner. It pops in the first time
+/// the count is above zero, so work arriving while the dashboard is open is
+/// noticeable without a full repaint.
+class _CountBadge extends StatelessWidget {
+  const _CountBadge(this.count);
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.7, end: 1),
+      duration: EcoMotion.slow,
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: AppColors.warning,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.warning.withValues(alpha: 0.35),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            fontSize: 8,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textDark,
+          ),
         ),
       ),
     );

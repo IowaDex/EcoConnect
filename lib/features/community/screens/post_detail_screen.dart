@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/community_post.dart';
@@ -74,28 +75,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 6, 16, 6),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => context.pop(),
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 17,
-                      color: AppColors.darkGreen,
-                    ),
-                  ),
-                  const Text(
-                    'Community post',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.darkGreen,
-                    ),
-                  ),
-                ],
-              ),
+            EcoPageHeader(
+              eyebrow: 'COMMUNITY',
+              title: 'Community post',
+              onBack: () => context.pop(),
             ),
             Expanded(
               child: StreamBuilder<CommunityPost?>(

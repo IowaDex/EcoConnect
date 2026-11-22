@@ -18,7 +18,7 @@ PROJECT = "ecoconnect-ecaf8"
 API_KEY = os.environ["FIREBASE_API_KEY"]
 BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
 AUTH = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
-PASSWORD = os.environ.get("ECO_TEST_PASSWORD", "EcoConnect2026")
+PASSWORD = os.environ["ECO_TEST_PASSWORD"]
 
 
 def post_json(url, payload, token=None):

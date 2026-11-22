@@ -17,8 +17,8 @@
  *   guide.ecoconnect@gmail.com     -> Driver   (then switch to Truck Guide on the
  *                                          fleet list to preview the guide view)
  *
- * Passwords are printed at the end. Nothing is deleted: re-running skips
- * accounts that already exist.
+ * The shared password comes from ECO_SEED_PASSWORD (.env or shell). Nothing
+ * is deleted: re-running skips accounts that already exist.
  */
 import { readFileSync } from 'node:fs';
 
@@ -40,7 +40,12 @@ if (!API_KEY || !PROJECT) {
   process.exit(1);
 }
 
-const PASSWORD = 'EcoConnect2026!';
+// No default on purpose: a committed password is a leaked password.
+const PASSWORD = process.env.ECO_SEED_PASSWORD ?? env.ECO_SEED_PASSWORD;
+if (!PASSWORD) {
+  console.error('ECO_SEED_PASSWORD missing (set it in .env or the shell)');
+  process.exit(1);
+}
 
 const ACCOUNTS = [
   { email: 'cityhall.ecoconnect@gmail.com', name: 'DSQC City Hall' },
@@ -131,7 +136,7 @@ for (const account of ACCOUNTS) {
 }
 
 console.log(`
-Accounts ready. Password for all: ${PASSWORD}
+Accounts ready. Password for all: the ECO_SEED_PASSWORD you supplied.
 
 ONE manual step, in the Firebase console (Firestore -> users -> the doc):
   cityhall.ecoconnect@gmail.com -> role: cityHall   (this is the super admin)

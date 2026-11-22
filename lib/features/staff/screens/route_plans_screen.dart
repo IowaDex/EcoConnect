@@ -7,9 +7,11 @@ import '../../auth/providers/auth_provider.dart';
 import '../../route/services/route_service.dart';
 import 'stop_picker_screen.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/brand_wordmark.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/section_header.dart';
 
 /// Iswim's dispatch board: assign one collection run per driver per day.
 /// Drivers can only activate a route that exists here (or start an ad-hoc run).
@@ -293,171 +295,130 @@ class _RoutePlansScreenState extends State<RoutePlansScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: _goBack,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 16,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const BrandWordmark(fontSize: 10.5),
-                  const Spacer(),
-                  Text(
-                    routeDateLabel(DateTime.now()),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Route assignments',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Iswim assigns one collection run per driver. A driver can only '
-                'activate the run you schedule here.',
-                style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
-              ),
-              const SizedBox(height: 18),
-              _AssignCard(
-                drivers: _drivers,
-                loading: _loadingDrivers,
-                driverId: _driverId,
-                zoneController: _zoneController,
-                stops: _stops,
-                start: _start,
-                end: _end,
-                date: _date,
-                windowError: _windowError,
-                busy: _busy,
-                onDriverChanged: (value) {
-                  setState(() => _driverId = value);
-                  _prefillZone(value);
-                },
-                onPickStart: () => _pickTime(isStart: true),
-                onPickEnd: () => _pickTime(isStart: false),
-                onShiftPreset: (shift) => setState(() {
-                  _start = shift.start;
-                  _end = shift.end;
-                  _windowError = null;
-                }),
-                onPickDate: _pickDate,
-                onPickStops: _pickStops,
-                onRemoveStop: (index) =>
-                    setState(() => _stops = [..._stops]..removeAt(index)),
-                onAssign: _assign,
-              ),
-              const SizedBox(height: 22),
-              const Text(
-                'Today’s runs',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.forest,
-                ),
-              ),
-              const SizedBox(height: 8),
-              StreamBuilder<List<RoutePlan>>(
-                stream: _routeService.watchPlansForToday(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const _EmptyPlans(
-                      message:
-                          'Could not load today’s assignments. '
-                          'Check that the Firestore rules are published.',
-                    );
-                  }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const EcoLoadingView(
-                      truckWidth: 96,
-                      label: 'Loading today\u2019s routes',
-                    );
-                  }
-                  final plans = snapshot.data ?? const <RoutePlan>[];
-                  if (plans.isEmpty) {
-                    return const _EmptyPlans(
-                      message: 'No routes scheduled for today yet.',
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final plan in plans)
-                        _PlanTile(
-                          plan: plan,
-                          onCancel: plan.status == RoutePlanStatus.scheduled
-                              ? () => _cancelPlan(plan)
-                              : null,
-                        ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 22),
-              const Text(
-                'Scheduled ahead',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.forest,
-                ),
-              ),
-              const SizedBox(height: 8),
-              StreamBuilder<List<RoutePlan>>(
-                stream: _routeService.watchPlansAhead(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const EcoLoadingView(
-                      truckWidth: 96,
-                      label: 'Loading upcoming routes',
-                    );
-                  }
-                  final plans = snapshot.data ?? const <RoutePlan>[];
-                  if (plans.isEmpty) {
-                    return const _EmptyPlans(
-                      message: 'No future duty assignments yet.',
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final plan in plans)
-                        _PlanTile(
-                          plan: plan,
-                          onCancel: plan.status == RoutePlanStatus.scheduled
-                              ? () => _cancelPlan(plan)
-                              : null,
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ],
+    return EcoPageScaffold(
+      eyebrow: 'ISWIM · ROUTE ASSIGNMENTS',
+      title: 'Route assignments',
+      subtitle:
+          'Iswim assigns one collection run per driver. A driver can only '
+          'activate the run you schedule here.',
+      onBack: _goBack,
+      actions: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(EcoRadius.pill),
+            border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+          ),
+          child: Text(
+            routeDateLabel(DateTime.now()),
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: AppColors.inkMuted,
+            ),
           ),
         ),
-      ),
+      ],
+      children: [
+        _AssignCard(
+          drivers: _drivers,
+          loading: _loadingDrivers,
+          driverId: _driverId,
+          zoneController: _zoneController,
+          stops: _stops,
+          start: _start,
+          end: _end,
+          date: _date,
+          windowError: _windowError,
+          busy: _busy,
+          onDriverChanged: (value) {
+            setState(() => _driverId = value);
+            _prefillZone(value);
+          },
+          onPickStart: () => _pickTime(isStart: true),
+          onPickEnd: () => _pickTime(isStart: false),
+          onShiftPreset: (shift) => setState(() {
+            _start = shift.start;
+            _end = shift.end;
+            _windowError = null;
+          }),
+          onPickDate: _pickDate,
+          onPickStops: _pickStops,
+          onRemoveStop: (index) =>
+              setState(() => _stops = [..._stops]..removeAt(index)),
+          onAssign: _assign,
+        ),
+        const SizedBox(height: EcoSpace.xl),
+        const SectionLabel('TODAY’S RUNS'),
+        const SizedBox(height: EcoSpace.sm),
+        StreamBuilder<List<RoutePlan>>(
+          stream: _routeService.watchPlansForToday(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const _EmptyPlans(
+                message:
+                    'Could not load today’s assignments. '
+                    'Check that the Firestore rules are published.',
+              );
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const EcoLoadingView(
+                truckWidth: 96,
+                label: 'Loading today\u2019s routes',
+              );
+            }
+            final plans = snapshot.data ?? const <RoutePlan>[];
+            if (plans.isEmpty) {
+              return const _EmptyPlans(
+                message: 'No routes scheduled for today yet.',
+              );
+            }
+            return Column(
+              children: [
+                for (final plan in plans)
+                  _PlanTile(
+                    plan: plan,
+                    onCancel: plan.status == RoutePlanStatus.scheduled
+                        ? () => _cancelPlan(plan)
+                        : null,
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: EcoSpace.xl),
+        const SectionLabel('SCHEDULED AHEAD'),
+        const SizedBox(height: EcoSpace.sm),
+        StreamBuilder<List<RoutePlan>>(
+          stream: _routeService.watchPlansAhead(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const EcoLoadingView(
+                truckWidth: 96,
+                label: 'Loading upcoming routes',
+              );
+            }
+            final plans = snapshot.data ?? const <RoutePlan>[];
+            if (plans.isEmpty) {
+              return const _EmptyPlans(
+                message: 'No future duty assignments yet.',
+              );
+            }
+            return Column(
+              children: [
+                for (final plan in plans)
+                  _PlanTile(
+                    plan: plan,
+                    onCancel: plan.status == RoutePlanStatus.scheduled
+                        ? () => _cancelPlan(plan)
+                        : null,
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }

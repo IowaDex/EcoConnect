@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/motion.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -46,68 +46,56 @@ class _EventParticipationScreenState extends State<EventParticipationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'Event participation',
-              subtitle: 'Who is coming, and which street shows up most.',
-              onBack: () => context.go('/admin-dashboard'),
-              actions: [
-                IconButton(
-                  onPressed: _reload,
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh_rounded),
-                ),
-              ],
-            ),
-            Expanded(
-              child: FutureBuilder<ParticipationOverview>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Counting sign-ups');
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  final data = snapshot.data;
-                  if (data == null || data.totalSignUps == 0) {
-                    return const EmptyState(
-                      icon: Icons.groups_outlined,
-                      title: 'No sign-ups yet',
-                      message:
-                          'When residents tap "Join this event", their street '
-                          'shows up here and starts earning points.',
-                    );
-                  }
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
-                    children: [
-                      _StreetRanking(standings: data.standings),
-                      const SizedBox(height: 22),
-                      const SectionLabel('PER EVENT'),
-                      const SizedBox(height: 10),
-                      for (final event in data.events)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _EventRow(
-                            event: event,
-                            count: data.countFor(event.id),
-                            onTap: () => _openRoster(event),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+    return EcoPageScaffold(
+      eyebrow: 'BARANGAY STAFF · EVENT SIGN-UPS',
+      title: 'Event participation',
+      subtitle: 'Who is coming, and which street shows up most.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.refresh_rounded,
+          tooltip: 'Refresh',
+          onTap: _reload,
         ),
+      ],
+      body: FutureBuilder<ParticipationOverview>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingView(label: 'Counting sign-ups');
+          }
+          if (snapshot.hasError) {
+            return ErrorView(message: AppFeedback.describe(snapshot.error!));
+          }
+          final data = snapshot.data;
+          if (data == null || data.totalSignUps == 0) {
+            return const EmptyState(
+              icon: Icons.groups_outlined,
+              title: 'No sign-ups yet',
+              message:
+                  'When residents tap "Join this event", their street '
+                  'shows up here and starts earning points.',
+            );
+          }
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+            children: [
+              _StreetRanking(standings: data.standings),
+              const SizedBox(height: 22),
+              const SectionLabel('PER EVENT'),
+              const SizedBox(height: 10),
+              for (final event in data.events)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _EventRow(
+                    event: event,
+                    count: data.countFor(event.id),
+                    onTap: () => _openRoster(event),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

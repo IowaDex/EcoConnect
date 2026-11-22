@@ -5,9 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../dashboard/widgets/role_hero.dart';
 import '../../verification/services/verification_service.dart';
 
 /// Opens the resident's details and ID. Returns true once a decision was
@@ -195,6 +199,7 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
     final isPending = _a['accountStatus'] == 'pending';
     // Only a new, still-pending sign-up waits for the email confirmation.
     final canApprove = emailConfirmed || !isPending;
+    final status = _status();
     final address = [
       _a['houseStreet'],
       _a['barangay'],
@@ -207,62 +212,281 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
       initialChildSize: 0.9,
       minChildSize: 0.5,
       maxChildSize: 0.96,
-      builder: (context, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
+      builder: (context, controller) => Column(
         children: [
-          Center(
-            child: Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(4),
-              ),
+          Expanded(
+            child: ListView(
+              controller: controller,
+              padding: EdgeInsets.zero,
+              children: [
+                _header(status, emailConfirmed),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SectionLabel('RESIDENT DETAILS'),
+                      const SizedBox(height: 8),
+                      _detailsCard(address),
+                      const SizedBox(height: 18),
+                      const SectionLabel('VALID ID'),
+                      const SizedBox(height: 8),
+                      _idCard(),
+                      const SizedBox(height: 7),
+                      const Text(
+                        'Pinch to zoom. Check the name and that the address is '
+                        'in Batasan Hills.',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          height: 1.45,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            (_a['name'] as String?) ?? 'Unnamed resident',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
+          _DecisionBar(
+            busy: _busy,
+            canApprove: canApprove,
+            onReject: () => _decide(approve: false),
+            onApprove: () => _decide(approve: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  VerificationStatus _status() {
+    final verification = VerificationStatusX.fromName(
+      _a['verificationStatus'] as String?,
+    );
+    if (verification != VerificationStatus.unverified) return verification;
+    // Older records carry only the account status.
+    if (_a['accountStatus'] == 'pending') return VerificationStatus.pending;
+    return verification;
+  }
+
+  /// The forest band that names the person and their standing before any
+  /// detail is read.
+  Widget _header(VerificationStatus status, bool emailConfirmed) {
+    final name = (_a['name'] as String?)?.trim();
+    final display = (name == null || name.isEmpty)
+        ? 'Unnamed resident'
+        : name;
+    final initial = display.substring(0, 1).toUpperCase();
+    final barangay = (_a['barangay'] as String?)?.trim();
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: AppColors.forestGradient,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          const Positioned(
+            right: -40,
+            top: -54,
+            child: RoleHeroRing(size: 140, opacity: 0.09),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+            child: Column(
+              children: [
+                Center(
+                  child: Container(
+                    height: 4,
+                    width: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      height: 54,
+                      width: 54,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            display,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 19,
+                              height: 1.15,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            barangay == null || barangay.isEmpty
+                                ? 'Resident'
+                                : 'Resident · $barangay',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.white.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _HeaderChip(
+                      label: status.label,
+                      color: status.color,
+                      icon: status.icon,
+                    ),
+                    const SizedBox(width: 7),
+                    _HeaderChip(
+                      label: emailConfirmed ? 'Email confirmed' : 'Email pending',
+                      color: emailConfirmed
+                          ? AppColors.primary
+                          : AppColors.warning,
+                      icon: emailConfirmed
+                          ? Icons.mark_email_read_outlined
+                          : Icons.mail_outline_rounded,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            isPending ? 'Resident sign-up · waiting for approval' : 'Resident',
-            style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-          ),
-          const SizedBox(height: 16),
-          _InfoRow(label: 'Email', value: _a['email']),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailsCard(String address) {
+    return EcoCard(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+      child: Column(
+        children: [
           _InfoRow(
-            label: 'Email confirmed',
-            value: emailConfirmed ? 'Yes' : 'Not yet',
-            valueColor: emailConfirmed ? AppColors.primary : AppColors.warning,
+            icon: Icons.alternate_email_rounded,
+            label: 'Email',
+            value: _a['email'],
           ),
-          _InfoRow(label: 'Phone', value: _a['phone']),
-          _InfoRow(label: 'Birthdate', value: _birthdateLabel()),
-          _InfoRow(label: 'Age', value: _ageFromBirthdate()?.toString()),
-          _InfoRow(label: 'Address', value: address.isEmpty ? null : address),
-          _InfoRow(label: 'Signed up', value: _formatDate(_a['createdAt'])),
-          const SizedBox(height: 18),
-          const Text(
-            'Valid ID',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
+          _InfoRow(
+            icon: Icons.call_outlined,
+            label: 'Phone',
+            value: _a['phone'],
+          ),
+          _InfoRow(
+            icon: Icons.cake_outlined,
+            label: 'Birthdate',
+            value: _birthdateLabel(),
+          ),
+          _InfoRow(
+            icon: Icons.perm_identity_rounded,
+            label: 'Age',
+            value: _ageFromBirthdate()?.toString(),
+          ),
+          _InfoRow(
+            icon: Icons.place_outlined,
+            label: 'Address',
+            value: address.isEmpty ? null : address,
+          ),
+          _InfoRow(
+            icon: Icons.event_available_outlined,
+            label: 'Signed up',
+            value: _formatDate(_a['createdAt']),
+            last: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _idCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+        boxShadow: AppColors.cardShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+            color: AppColors.mintSoft,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.badge_outlined,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 7),
+                const Expanded(
+                  child: Text(
+                    'Uploaded document',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.zoom_in_rounded,
+                  size: 13,
+                  color: AppColors.inkMuted.withValues(alpha: 0.9),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Zoom',
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
           FutureBuilder<String?>(
             future: _idDataUrl,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const SizedBox(
-                  height: 160,
+                  height: 170,
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
@@ -273,71 +497,171 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
               if (dataUrl == null) {
                 return const _IdMessage('This resident did not upload an ID.');
               }
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  color: Colors.black,
-                  constraints: const BoxConstraints(maxHeight: 360),
-                  width: double.infinity,
-                  child: InteractiveViewer(
-                    maxScale: 4,
-                    child: Image.memory(
-                      _bytes(dataUrl),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                          const _IdMessage('The ID file could not be shown.'),
-                    ),
+              return Container(
+                color: Colors.black,
+                constraints: const BoxConstraints(maxHeight: 360),
+                width: double.infinity,
+                child: InteractiveViewer(
+                  maxScale: 4,
+                  child: Image.memory(
+                    _bytes(dataUrl),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        const _IdMessage('The ID file could not be shown.'),
                   ),
                 ),
               );
             },
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Pinch to zoom. Check the name and that the address is in '
-            'Batasan Hills.',
-            style: TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
-          ),
-          const SizedBox(height: 22),
-          if (!canApprove)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 10),
+        ],
+      ),
+    );
+  }
+}
+
+/// A translucent pill on the review header. The dot carries the colour so the
+/// label stays readable on the gradient.
+class _HeaderChip extends StatelessWidget {
+  const _HeaderChip({
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Flexible(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(EcoRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 4),
+            Flexible(
               child: Text(
-                'You can approve once the resident confirms their email.',
-                style: TextStyle(fontSize: 10, color: AppColors.warning),
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Reject / Approve, pinned under the scroll so the decision never needs a
+/// scroll to the bottom of a long record.
+class _DecisionBar extends StatelessWidget {
+  const _DecisionBar({
+    required this.busy,
+    required this.canApprove,
+    required this.onReject,
+    required this.onApprove,
+  });
+
+  final bool busy;
+  final bool canApprove;
+  final VoidCallback onReject;
+  final VoidCallback onApprove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: AppColors.sage.withValues(alpha: 0.6)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.forestDeep.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!canApprove) ...[
+            const Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 13,
+                  color: AppColors.warning,
+                ),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Approve unlocks once the resident confirms their email.',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+          ],
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: _busy ? null : () => _decide(approve: false),
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : onReject,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.danger,
-                    minimumSize: const Size.fromHeight(44),
+                    minimumSize: const Size.fromHeight(46),
+                    side: BorderSide(
+                      color: AppColors.danger.withValues(alpha: 0.5),
+                    ),
                   ),
-                  child: const Text('Reject'),
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('Reject'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: FilledButton(
-                  onPressed: (_busy || !canApprove)
-                      ? null
-                      : () => _decide(approve: true),
+                flex: 2,
+                child: FilledButton.icon(
+                  onPressed: (busy || !canApprove) ? null : onApprove,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
+                    minimumSize: const Size.fromHeight(46),
                   ),
-                  child: _busy
+                  icon: busy
                       ? const SizedBox(
-                          height: 16,
-                          width: 16,
+                          height: 15,
+                          width: 15,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Approve'),
+                      : const Icon(Icons.check_rounded, size: 17),
+                  label: Text(busy ? 'Saving' : 'Approve'),
                 ),
               ),
             ],
@@ -349,34 +673,59 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, this.value, this.valueColor});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    this.value,
+    this.last = false,
+  });
 
+  final IconData icon;
   final String label;
   final Object? value;
-  final Color? valueColor;
+
+  /// The final row drops its divider so the card closes cleanly.
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
     final text = value?.toString().trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    final empty = text == null || text.isEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : Border(
+                bottom: BorderSide(
+                  color: AppColors.sage.withValues(alpha: 0.35),
+                ),
+              ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Icon(icon, size: 13, color: AppColors.inkMuted),
+          const SizedBox(width: 9),
           SizedBox(
-            width: 110,
+            width: 84,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
+              style: const TextStyle(
+                fontSize: 9.5,
+                color: AppColors.inkMuted,
+              ),
             ),
           ),
           Expanded(
             child: Text(
-              (text == null || text.isEmpty) ? '—' : text,
+              empty ? '—' : text,
               style: TextStyle(
                 fontSize: 11.5,
+                height: 1.35,
                 fontWeight: FontWeight.w600,
-                color: valueColor ?? AppColors.textDark,
+                color: empty ? AppColors.inkMuted : AppColors.textDark,
               ),
             ),
           ),

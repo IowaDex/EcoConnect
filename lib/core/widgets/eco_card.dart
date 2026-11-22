@@ -52,19 +52,23 @@ class _EcoCardState extends State<EcoCard> {
     final radius = BorderRadius.circular(18);
     final baseBorder =
         widget.borderColor ?? AppColors.sage.withValues(alpha: 0.7);
+    final lifted = _interactive && _hovered;
+    // A white card warms towards mint under the pointer; a card with its own
+    // colour keeps it, so tinted panels do not drift.
+    final surface = lifted && widget.color == Colors.white
+        ? Color.lerp(Colors.white, AppColors.mintSoft, 0.6)!
+        : widget.color;
     return BoxDecoration(
-      color: widget.color,
+      color: surface,
       borderRadius: radius,
       border: Border.all(
-        color: _interactive && _hovered
-            ? AppColors.primary.withValues(alpha: 0.45)
+        color: lifted
+            ? AppColors.primary.withValues(alpha: 0.5)
             : baseBorder,
       ),
       boxShadow: !widget.elevated
           ? null
-          : (_interactive && _hovered
-                ? AppColors.cardShadowHover
-                : AppColors.cardShadow),
+          : (lifted ? AppColors.cardShadowHover : AppColors.cardShadow),
     );
   }
 

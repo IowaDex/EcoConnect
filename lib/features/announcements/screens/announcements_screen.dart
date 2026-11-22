@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -48,107 +50,170 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               onPressed: () => _openEditor(context),
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('New announcement'),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(EcoRadius.lg),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 19),
+              label: const Text(
+                'New announcement',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
             )
           : null,
       body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'Announcements',
-              subtitle: isStaff
-                  ? 'Publish schedules and reminders for your barangay.'
-                  : 'Updates from your barangay team.',
-              onBack: () => context.go(isStaff ? '/admin-dashboard' : '/user'),
-              actions: const [NotificationBell()],
-            ),
-            _CategoryFilter(
-              selected: _filter,
-              onChanged: (value) => setState(() {
-                _filter = value;
-                _page = 0;
-              }),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: StreamBuilder<List<Announcement>>(
-                stream: isStaff
-                    ? _service.watchAll()
-                    : _service.watchPublished(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading announcements');
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  var items = snapshot.data ?? const <Announcement>[];
-                  if (_filter != null) {
-                    items = items
-                        .where((a) => a.category == _filter)
-                        .toList(growable: false);
-                  }
-                  if (items.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.campaign_outlined,
-                      title: isStaff
-                          ? 'No announcements yet'
-                          : 'No announcements right now',
-                      message: isStaff
-                          ? 'Publish a collection schedule or community reminder so residents stay informed.'
-                          : 'Your barangay will post schedules and reminders here.',
-                      // The FAB already creates one; a second button doing the
-                      // same thing just reads as a duplicate.
-                    );
-                  }
-                  final page = clampPage(_page, items.length, _pageSize);
-                  final visible = pageSlice(items, page, _pageSize);
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
-                          itemCount: visible.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 14),
-                          itemBuilder: (context, i) {
-                            final item = visible[i];
-                            return _AnnouncementCard(
-                              announcement: item,
-                              canManage: isStaff,
-                              onTap: () => _openDetail(context, item, isStaff),
-                              onEdit: () =>
-                                  _openEditor(context, existing: item),
-                              onToggle: () => _toggle(context, item),
-                              onDelete: () => _delete(context, item),
-                            );
-                          },
-                        ),
-                      ),
-                      if (items.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                          child: EcoPaginationBar(
-                            page: page,
-                            pageSize: _pageSize,
-                            total: items.length,
-                            onPageChanged: (next) =>
-                                setState(() => _page = next),
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              children: [
+                AppPageHeader(
+                  title: 'Announcements',
+                  subtitle: isStaff
+                      ? 'Publish schedules and reminders for your barangay.'
+                      : 'Updates from your barangay team.',
+                  onBack: () =>
+                      context.go(isStaff ? '/admin-dashboard' : '/user'),
+                  actions: const [NotificationBell()],
+                ),
+                Expanded(
+                  child: StreamBuilder<List<Announcement>>(
+                    stream: isStaff
+                        ? _service.watchAll()
+                        : _service.watchPublished(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const LoadingView(
+                          label: 'Loading announcements',
+                        );
+                      }
+                      if (snapshot.hasError) {
+                        return ErrorView(
+                          message: AppFeedback.describe(snapshot.error!),
+                        );
+                      }
+
+                      final all = snapshot.data ?? const <Announcement>[];
+                      final items = _filter == null
+                          ? all
+                          : all
+                                .where((a) => a.category == _filter)
+                                .toList(growable: false);
+                      final page = clampPage(_page, items.length, _pageSize);
+                      final visible = pageSlice(items, page, _pageSize);
+                      final published = all.where((a) => a.isPublished).length;
+                      final drafts = all.length - published;
+
+                      return Column(
+                        children: [
+                          if (isStaff)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                              child: DeskMetricRow(
+                                metrics: [
+                                  DeskMetric(
+                                    icon: Icons.campaign_outlined,
+                                    label: 'Published',
+                                    value: '$published',
+                                  ),
+                                  DeskMetric(
+                                    icon: Icons.edit_note_rounded,
+                                    label: 'Drafts',
+                                    value: '$drafts',
+                                    accent: AppColors.warning,
+                                    highlight: drafts > 0,
+                                  ),
+                                  DeskMetric(
+                                    icon: Icons.feed_outlined,
+                                    label: 'Total',
+                                    value: '${all.length}',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          _CategoryFilter(
+                            all: all,
+                            selected: _filter,
+                            onChanged: (value) => setState(() {
+                              _filter = value;
                               _page = 0;
                             }),
                           ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: items.isEmpty
+                                ? DeskEmptyQueue(
+                                    icon: Icons.campaign_outlined,
+                                    title: isStaff
+                                        ? 'No announcements yet'
+                                        : 'No announcements right now',
+                                    message: isStaff
+                                        ? 'Publish a collection schedule or '
+                                              'community reminder so residents '
+                                              'stay informed.'
+                                        : 'Your barangay will post schedules '
+                                              'and reminders here.',
+                                    actionLabel: _filter == null
+                                        ? null
+                                        : 'Show all categories',
+                                    actionIcon: Icons.filter_alt_off_outlined,
+                                    onAction: _filter == null
+                                        ? null
+                                        : () => setState(() {
+                                            _filter = null;
+                                            _page = 0;
+                                          }),
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      20,
+                                      6,
+                                      20,
+                                      10,
+                                    ),
+                                    itemCount: visible.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 12),
+                                    itemBuilder: (context, i) {
+                                      final item = visible[i];
+                                      return _AnnouncementCard(
+                                        announcement: item,
+                                        canManage: isStaff,
+                                        onTap: () =>
+                                            _openDetail(context, item, isStaff),
+                                        onEdit: () => _openEditor(
+                                          context,
+                                          existing: item,
+                                        ),
+                                        onToggle: () => _toggle(context, item),
+                                        onDelete: () => _delete(context, item),
+                                      );
+                                    },
+                                  ),
+                          ),
+                          if (items.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                              child: EcoPaginationBar(
+                                page: page,
+                                pageSize: _pageSize,
+                                total: items.length,
+                                onPageChanged: (next) =>
+                                    setState(() => _page = next),
+                                onPageSizeChanged: (size) => setState(() {
+                                  _pageSize = size;
+                                  _page = 0;
+                                }),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -231,25 +296,42 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 }
 
 class _CategoryFilter extends StatelessWidget {
-  const _CategoryFilter({required this.selected, required this.onChanged});
+  const _CategoryFilter({
+    required this.all,
+    required this.selected,
+    required this.onChanged,
+  });
 
+  final List<Announcement> all;
   final AnnouncementCategory? selected;
   final ValueChanged<AnnouncementCategory?> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 38,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
+    final categories = [
+      for (final category in AnnouncementCategory.values)
+        if (all.any((a) => a.category == category)) category,
+    ];
+
+    // A wrapping row rather than a horizontal scroller: six categories fit in
+    // two lines on a phone, and every filter stays visible instead of the
+    // last one being clipped at the edge of the screen.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 7,
         children: [
-          _chip(context, 'All', selected == null, () => onChanged(null)),
-          for (final category in AnnouncementCategory.values)
+          _chip(context, 'All', all.length, selected == null, null, () {
+            onChanged(null);
+          }),
+          for (final category in categories)
             _chip(
               context,
               category.shortLabel,
+              all.where((a) => a.category == category).length,
               selected == category,
+              category,
               () => onChanged(category),
             ),
         ],
@@ -260,25 +342,79 @@ class _CategoryFilter extends StatelessWidget {
   Widget _chip(
     BuildContext context,
     String label,
+    int count,
     bool active,
+    AnnouncementCategory? category,
     VoidCallback onTap,
   ) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: active,
-        onSelected: (_) => onTap(),
-        labelStyle: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: active ? Colors.white : AppColors.darkGreen,
+    final color = category?.color ?? AppColors.forest;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        child: AnimatedContainer(
+          duration: EcoMotion.fast,
+          curve: EcoMotion.enter,
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            gradient: active ? AppColors.forestGradient : null,
+            color: active ? null : Colors.white,
+            borderRadius: BorderRadius.circular(EcoRadius.pill),
+            border: Border.all(
+              color: active
+                  ? AppColors.forest
+                  : AppColors.sage.withValues(alpha: 0.85),
+            ),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: AppColors.forest.withValues(alpha: 0.22),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (category != null) ...[
+                Icon(
+                  category.icon,
+                  size: 12,
+                  color: active ? Colors.white : color,
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: EcoType.label(
+                  context,
+                  color: active ? Colors.white : AppColors.darkGreen,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white.withValues(alpha: 0.24)
+                      : AppColors.cream,
+                  borderRadius: BorderRadius.circular(EcoRadius.pill),
+                ),
+                child: Text(
+                  '$count',
+                  style: EcoType.micro(
+                    context,
+                    color: active ? Colors.white : AppColors.forest,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        selectedColor: AppColors.primary,
-        backgroundColor: Colors.white,
-        side: BorderSide(color: AppColors.sage.withValues(alpha: 0.8)),
-        showCheckmark: false,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
       ),
     );
   }
@@ -304,133 +440,302 @@ class _AnnouncementCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = announcement.imageUrl;
+    final hasImage = image.isNotEmpty;
+
     return EcoCard(
       padding: EdgeInsets.zero,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (image.isNotEmpty)
+          if (hasImage)
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(18),
               ),
-              child: Image.memory(
-                _bytes(image),
-                height: 132,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              child: Stack(
+                children: [
+                  Image.memory(
+                    _bytes(image),
+                    height: 168,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const _CoverFallback(),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.18),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.22),
+                            ],
+                            stops: const [0, 0.45, 1],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Row(
+                      children: [
+                        _GlassBadge(
+                          label: announcement.category.shortLabel,
+                          icon: announcement.category.icon,
+                          color: announcement.category.color,
+                        ),
+                        if (canManage && !announcement.isPublished) ...[
+                          const SizedBox(width: 6),
+                          const _GlassBadge(
+                            label: 'Draft',
+                            icon: Icons.edit_note_rounded,
+                            color: Color(0xFF6B6B6B),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (canManage)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.94),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: _ManageMenu(
+                          isPublished: announcement.isPublished,
+                          onEdit: onEdit,
+                          onToggle: onToggle,
+                          onDelete: onDelete,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    StatusBadge(
-                      label: announcement.category.shortLabel,
-                      color: announcement.category.color,
-                      icon: announcement.category.icon,
-                    ),
-                    const SizedBox(width: 6),
-                    if (canManage && !announcement.isPublished)
-                      const StatusBadge(
-                        label: 'Draft',
-                        color: AppColors.inkMuted,
+                if (!hasImage)
+                  Row(
+                    children: [
+                      StatusBadge(
+                        label: announcement.category.shortLabel,
+                        color: announcement.category.color,
+                        icon: announcement.category.icon,
                       ),
-                    const Spacer(),
-                    if (canManage)
-                      PopupMenuButton<String>(
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(
-                          Icons.more_horiz_rounded,
-                          size: 19,
+                      const SizedBox(width: 6),
+                      if (canManage && !announcement.isPublished)
+                        const StatusBadge(
+                          label: 'Draft',
                           color: AppColors.inkMuted,
                         ),
-                        onSelected: (value) {
-                          switch (value) {
-                            case 'edit':
-                              onEdit();
-                            case 'toggle':
-                              onToggle();
-                            case 'delete':
-                              onDelete();
-                          }
-                        },
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Text('Edit'),
-                          ),
-                          PopupMenuItem(
-                            value: 'toggle',
-                            child: Text(
-                              announcement.isPublished
-                                  ? 'Unpublish'
-                                  : 'Publish',
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete'),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
+                      const Spacer(),
+                      if (canManage)
+                        _ManageMenu(
+                          isPublished: announcement.isPublished,
+                          onEdit: onEdit,
+                          onToggle: onToggle,
+                          onDelete: onDelete,
+                        ),
+                    ],
+                  ),
                 Text(
                   announcement.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.3,
-                    fontWeight: FontWeight.w700,
+                  style: EcoType.cardTitleLarge(
+                    context,
                     color: AppColors.darkGreen,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  announcement.body,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    height: 1.55,
-                    color: AppColors.inkMuted,
+                if (announcement.body.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    announcement.body,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: EcoType.body(context, color: AppColors.inkMuted),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Row(
+                    children: [
+                      DeskInitialAvatar(
+                        name: announcement.authorName ?? 'Barangay',
+                        size: 24,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          '${announcement.authorName ?? 'Barangay'} · '
+                          '${timeAgo(announcement.publishAt ?? announcement.createdAt)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: EcoType.meta(
+                            context,
+                            color: AppColors.inkMuted,
+                            weight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: AppColors.moss,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.schedule_rounded,
-                      size: 12,
-                      color: AppColors.inkMuted,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      timeAgo(announcement.publishAt ?? announcement.createdAt),
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      announcement.authorName ?? 'Barangay',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The staff overflow menu. It sits in the badge row on a text card and on a
+/// white disc over the cover photo, so the three actions never move.
+class _ManageMenu extends StatelessWidget {
+  const _ManageMenu({
+    required this.isPublished,
+    required this.onEdit,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  final bool isPublished;
+  final VoidCallback onEdit;
+  final VoidCallback onToggle;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      icon: const Icon(
+        Icons.more_horiz_rounded,
+        size: 19,
+        color: AppColors.inkMuted,
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            onEdit();
+          case 'toggle':
+            onToggle();
+          case 'delete':
+            onDelete();
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+        PopupMenuItem(
+          value: 'toggle',
+          child: Text(isPublished ? 'Unpublish' : 'Publish'),
+        ),
+        const PopupMenuItem(value: 'delete', child: Text('Delete')),
+      ],
+    );
+  }
+}
+
+/// A translucent pill for a badge sitting on top of a photo.
+class _GlassBadge extends StatelessWidget {
+  const _GlassBadge({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: EcoType.chip(context, color: color, weight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown when a stored cover photo cannot be decoded.
+class _CoverFallback extends StatelessWidget {
+  const _CoverFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 148,
+      width: double.infinity,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFE6F2E7), Color(0xFFF1F8E9)],
+        ),
+      ),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 26,
+            color: AppColors.moss,
+          ),
+          SizedBox(height: 6),
+          Text(
+            'Cover photo unavailable',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.inkMuted,
             ),
           ),
         ],
@@ -461,58 +766,104 @@ class _AnnouncementDetail extends StatelessWidget {
     final image = announcement.imageUrl;
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.72,
+      initialChildSize: 0.78,
       minChildSize: 0.4,
       maxChildSize: 0.94,
-      builder: (context, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
-        children: [
-          StatusBadge(
-            label: announcement.category.label,
-            color: announcement.category.color,
-            icon: announcement.category.icon,
+      builder: (context, controller) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(22, 2, 22, 30),
+            children: [
+              StatusBadge(
+                label: announcement.category.label,
+                color: announcement.category.color,
+                icon: announcement.category.icon,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                announcement.title,
+                style: const TextStyle(
+                  fontSize: 22,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  color: AppColors.darkGreen,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  DeskInitialAvatar(
+                    name: announcement.authorName ?? 'Barangay',
+                    size: 30,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          announcement.authorName ?? 'Barangay staff',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          'Posted '
+                          '${timeAgo(announcement.publishAt ?? announcement.createdAt)}',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (image.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    _bytes(image),
+                    height: 190,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const _CoverFallback(),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Text(
+                announcement.body,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  height: 1.7,
+                  color: AppColors.textDark,
+                ),
+              ),
+              if (canManage) ...[
+                const SizedBox(height: 22),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text(
+                      'Edit announcement',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            announcement.title,
-            style: const TextStyle(
-              fontSize: 21,
-              height: 1.25,
-              fontWeight: FontWeight.w700,
-              color: AppColors.darkGreen,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Posted by ${announcement.authorName ?? 'Barangay staff'} · ${timeAgo(announcement.publishAt ?? announcement.createdAt)}',
-            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
-          ),
-          if (image.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.memory(_bytes(image), fit: BoxFit.cover),
-            ),
-          ],
-          const SizedBox(height: 18),
-          Text(
-            announcement.body,
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1.7,
-              color: AppColors.textDark,
-            ),
-          ),
-          if (canManage) ...[
-            const SizedBox(height: 22),
-            OutlinedButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 17),
-              label: const Text('Edit announcement'),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

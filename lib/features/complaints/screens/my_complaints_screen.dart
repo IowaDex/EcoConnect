@@ -9,6 +9,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -86,33 +87,19 @@ class _MyComplaintsScreenState extends State<MyComplaintsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/user'),
+    return EcoPageScaffold(
+      eyebrow: 'RESIDENT · COMPLAINTS',
+      title: 'My complaints',
+      subtitle: 'Every report you filed, and where it stands.',
+      onBack: () => ecoBack(context, '/user'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.add_rounded,
+          tooltip: 'New complaint',
+          onTap: () => context.push('/complaints/new'),
         ),
-        title: const Text(
-          'My complaints',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () => context.push('/complaints/new'),
-            icon: const Icon(Icons.add_rounded),
-            tooltip: 'New complaint',
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
+      ],
+      fab: FloatingActionButton.extended(
         onPressed: () => context.push('/complaints/new'),
         backgroundColor: AppColors.forest,
         foregroundColor: Colors.white,

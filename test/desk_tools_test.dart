@@ -11,8 +11,8 @@ void main() {
     ) async {
       await tester.pumpWidget(_wrap(const DeskTools(pendingSignatures: 2)));
 
-      expect(find.text('Desk tools'), findsOneWidget);
-      expect(find.text('12 shortcuts'), findsOneWidget);
+      expect(find.text('DESK TOOLS'), findsOneWidget);
+      expect(find.textContaining('12 shortcuts'), findsOneWidget);
       expect(find.byType(EcoCard), findsNWidgets(12));
 
       for (final label in const [

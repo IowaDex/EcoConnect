@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/models/waste_category.dart';
@@ -11,9 +10,9 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../waste/models/waste_submission.dart';
@@ -56,143 +55,138 @@ class _WasteValidationScreenState extends State<WasteValidationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'Waste validation',
-              subtitle: 'Review the waste residents upload before collection.',
-              onBack: () => context.go('/admin-dashboard'),
-              actions: const [NotificationBell()],
+    return EcoPageScaffold(
+      eyebrow: 'BARANGAY STAFF · WASTE DESK',
+      title: 'Waste validation',
+      subtitle: 'Review the waste residents upload before collection.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      actions: const [NotificationBell()],
+      body: Column(
+        children: [
+          StreamBuilder<List<WasteSubmission>>(
+            stream: _service.watchAll(),
+            builder: (context, snapshot) {
+              final all = snapshot.data ?? const <WasteSubmission>[];
+              final pending = all
+                  .where((w) => w.status == WasteStatus.pending)
+                  .length;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                child: Row(
+                  children: [
+                    _stat('$pending', 'Pending', AppColors.warning),
+                    const SizedBox(width: 8),
+                    _stat(
+                      '${all.where((w) => w.status == WasteStatus.approved).length}',
+                      'Approved',
+                      AppColors.primary,
+                    ),
+                    const Spacer(),
+                    FilterChip(
+                      label: const Text('Pending only'),
+                      selected: _pendingOnly,
+                      onSelected: (value) => setState(() {
+                        _pendingOnly = value;
+                        _page = 0;
+                      }),
+                      selectedColor: AppColors.lightGreen,
+                      checkmarkColor: AppColors.primary,
+                      labelStyle: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.darkGreen,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+            child: EcoSearchField(
+              controller: _search,
+              hint: 'Search resident, place or waste type',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
             ),
-            StreamBuilder<List<WasteSubmission>>(
+          ),
+          Expanded(
+            child: StreamBuilder<List<WasteSubmission>>(
               stream: _service.watchAll(),
               builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const LoadingView(label: 'Loading submissions');
+                }
+                if (snapshot.hasError) {
+                  return ErrorView(
+                    message: AppFeedback.describe(snapshot.error!),
+                  );
+                }
                 final all = snapshot.data ?? const <WasteSubmission>[];
-                final pending = all
-                    .where((w) => w.status == WasteStatus.pending)
-                    .length;
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                  child: Row(
-                    children: [
-                      _stat('$pending', 'Pending', AppColors.warning),
-                      const SizedBox(width: 8),
-                      _stat(
-                        '${all.where((w) => w.status == WasteStatus.approved).length}',
-                        'Approved',
-                        AppColors.primary,
+                var items = all;
+                if (_pendingOnly) {
+                  items = items
+                      .where((w) => w.status == WasteStatus.pending)
+                      .toList(growable: false);
+                }
+                items = _filter(items);
+                if (items.isEmpty) {
+                  return const EmptyState(
+                    icon: Icons.inventory_2_outlined,
+                    title: 'Nothing to validate',
+                    message:
+                        'New waste photos appear here as soon as residents upload them.',
+                  );
+                }
+                final page = clampPage(_page, items.length, _pageSize);
+                final visible = pageSlice(items, page, _pageSize);
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+                      child: EcoResultCount(
+                        shown: items.length,
+                        total: all.length,
+                        singular: 'submission',
+                        plural: 'submissions',
                       ),
-                      const Spacer(),
-                      FilterChip(
-                        label: const Text('Pending only'),
-                        selected: _pendingOnly,
-                        onSelected: (value) => setState(() {
-                          _pendingOnly = value;
+                    ),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final item = visible[i];
+                          return _WasteCard(
+                            submission: item,
+                            onTap: () => _openDetail(context, item),
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                      child: EcoPaginationBar(
+                        page: page,
+                        pageSize: _pageSize,
+                        total: items.length,
+                        onPageChanged: (next) => setState(() => _page = next),
+                        onPageSizeChanged: (size) => setState(() {
+                          _pageSize = size;
                           _page = 0;
                         }),
-                        selectedColor: AppColors.lightGreen,
-                        checkmarkColor: AppColors.primary,
-                        labelStyle: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.darkGreen,
-                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 );
               },
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-              child: EcoSearchField(
-                controller: _search,
-                hint: 'Search resident, place or waste type',
-                onChanged: (value) => setState(() {
-                  _query = value;
-                  _page = 0;
-                }),
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<WasteSubmission>>(
-                stream: _service.watchAll(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading submissions');
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  final all = snapshot.data ?? const <WasteSubmission>[];
-                  var items = all;
-                  if (_pendingOnly) {
-                    items = items
-                        .where((w) => w.status == WasteStatus.pending)
-                        .toList(growable: false);
-                  }
-                  items = _filter(items);
-                  if (items.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.inventory_2_outlined,
-                      title: 'Nothing to validate',
-                      message:
-                          'New waste photos appear here as soon as residents upload them.',
-                    );
-                  }
-                  final page = clampPage(_page, items.length, _pageSize);
-                  final visible = pageSlice(items, page, _pageSize);
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
-                        child: EcoResultCount(
-                          shown: items.length,
-                          total: all.length,
-                          singular: 'submission',
-                          plural: 'submissions',
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
-                          itemCount: visible.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, i) {
-                            final item = visible[i];
-                            return _WasteCard(
-                              submission: item,
-                              onTap: () => _openDetail(context, item),
-                            );
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                        child: EcoPaginationBar(
-                          page: page,
-                          pageSize: _pageSize,
-                          total: items.length,
-                          onPageChanged: (next) => setState(() => _page = next),
-                          onPageSizeChanged: (size) => setState(() {
-                            _pageSize = size;
-                            _page = 0;
-                          }),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

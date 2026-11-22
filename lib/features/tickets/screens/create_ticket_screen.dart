@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
@@ -169,25 +170,11 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     final truck = _truck;
     final driver = _driverForTruck;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/iswim'),
-        ),
-        title: const Text(
-          'New trip ticket',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'ISWIM · TRIP TICKET',
+      title: 'New trip ticket',
+      subtitle: 'Pick the truck — its permanent driver is included.',
+      onBack: () => ecoBack(context, '/iswim'),
       body: Form(
         key: _formKey,
         child: ListView(

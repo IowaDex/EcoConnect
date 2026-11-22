@@ -94,7 +94,7 @@ void main() {
     );
     expect(approve.onPressed, isNull);
     expect(
-      find.text('You can approve once the resident confirms their email.'),
+      find.text('Approve unlocks once the resident confirms their email.'),
       findsOneWidget,
     );
   });

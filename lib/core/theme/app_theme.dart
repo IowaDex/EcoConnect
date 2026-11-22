@@ -39,6 +39,74 @@ abstract final class AppTheme {
 
     final radius = BorderRadius.circular(14);
 
+    /// Hover feedback for the filled buttons: a light wash plus a soft green
+    /// lift, so a pointer resting on the primary action is obvious without
+    /// changing the button's colour.
+    final filledButton = FilledButton.styleFrom(
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      minimumSize: const Size.fromHeight(52),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(
+        fontSize: 14.5,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.2,
+      ),
+    ).copyWith(
+      overlayColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.pressed)) {
+          return Colors.white.withValues(alpha: 0.24);
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return Colors.white.withValues(alpha: 0.15);
+        }
+        return null;
+      }),
+      elevation: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.hovered) ? 3 : 0,
+      ),
+      shadowColor: WidgetStatePropertyAll(
+        scheme.primary.withValues(alpha: 0.45),
+      ),
+    );
+
+    final outlinedButton = OutlinedButton.styleFrom(
+      foregroundColor: AppColors.primary,
+      side: const BorderSide(color: AppColors.primary, width: 1.2),
+      minimumSize: const Size.fromHeight(50),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    ).copyWith(
+      overlayColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.pressed)) {
+          return scheme.primary.withValues(alpha: 0.16);
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return scheme.primary.withValues(alpha: 0.08);
+        }
+        return null;
+      }),
+    );
+
+    final textButton = TextButton.styleFrom(
+      foregroundColor: scheme.primary,
+      textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+    ).copyWith(
+      overlayColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.pressed)) {
+          return scheme.primary.withValues(alpha: 0.14);
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return scheme.primary.withValues(alpha: 0.08);
+        }
+        return null;
+      }),
+    );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -46,6 +114,10 @@ abstract final class AppTheme {
       textTheme: text,
       splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.comfortable,
+      // Every InkWell in the app gets the same mint wash under the pointer,
+      // so a tappable label or row never looks inert on hover.
+      hoverColor: scheme.primary.withValues(alpha: 0.06),
+      focusColor: scheme.primary.withValues(alpha: 0.08),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: EcoPageTransitionsBuilder(),
@@ -112,41 +184,9 @@ abstract final class AppTheme {
         ),
         errorStyle: TextStyle(fontSize: 11, color: scheme.error),
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: scheme.primary,
-          foregroundColor: scheme.onPrimary,
-          minimumSize: const Size.fromHeight(52),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 14.5,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.2,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.primary, width: 1.2),
-          minimumSize: const Size.fromHeight(50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: scheme.primary,
-          textStyle: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+      filledButtonTheme: FilledButtonThemeData(style: filledButton),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: outlinedButton),
+      textButtonTheme: TextButtonThemeData(style: textButton),
       cardTheme: CardThemeData(
         color: Colors.white,
         surfaceTintColor: Colors.transparent,
@@ -183,11 +223,22 @@ abstract final class AppTheme {
         minVerticalPadding: 12,
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          minimumSize: const Size(40, 40),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
+          shape: const WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
           ),
+          overlayColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return scheme.primary.withValues(alpha: 0.16);
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return scheme.primary.withValues(alpha: 0.09);
+            }
+            return null;
+          }),
         ),
       ),
       dialogTheme: DialogThemeData(

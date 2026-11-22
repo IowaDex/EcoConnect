@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../models/audit_entry.dart';
@@ -79,24 +81,24 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      appBar: AppBar(
-        backgroundColor: AppColors.creamBright,
-        title: const Text('Audit log'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          IconButton(
-            tooltip: 'Log out',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'AUDIT · READ ONLY',
+      title: 'Audit log',
+      subtitle:
+          'Every change recorded against a Firestore document, newest first.',
+      onBack: () => ecoBack(context, '/admin-dashboard'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.refresh_rounded,
+          tooltip: 'Refresh',
+          onTap: _refresh,
+        ),
+        EcoIconAction(
+          icon: Icons.logout_rounded,
+          tooltip: 'Log out',
+          onTap: _logout,
+        ),
+      ],
       body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
         future: _firstPage,
         builder: (context, snapshot) {
@@ -119,7 +121,7 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
             itemCount: entries.length + 1,
             itemBuilder: (context, index) {
               if (index < entries.length) {
@@ -180,47 +182,84 @@ class _AuditCard extends StatelessWidget {
         : entry.changedFields.join(', ');
     final timestamp = entry.at?.toLocal().toString() ?? 'Time unavailable';
 
-    return Card(
-      color: Colors.white,
+    return EcoCard(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${entry.action.toUpperCase()} · ${entry.outcome}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.forest,
-                    ),
-                  ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                height: 7,
+                width: 7,
+                decoration: BoxDecoration(
+                  color: entry.outcome.toLowerCase().contains('fail')
+                      ? AppColors.error
+                      : AppColors.primary,
+                  shape: BoxShape.circle,
                 ),
-                Text(
-                  timestamp,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${entry.action.toUpperCase()} · ${entry.outcome}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10,
-                    color: AppColors.inkMuted,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: AppColors.forest,
                   ),
                 ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                timestamp,
+                style: const TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            'Record: ${entry.documentPath}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.5,
+              height: 1.45,
+              color: AppColors.textDark,
             ),
-            const SizedBox(height: 7),
-            Text('Record: ${entry.documentPath}'),
-            Text(
-              'Actor: ${entry.actorUid ?? 'System / unknown'} '
-              '(${entry.actorType})',
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Actor: ${entry.actorUid ?? 'System / unknown'} '
+            '(${entry.actorType})',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1.45,
+              color: AppColors.inkMuted,
             ),
-            const SizedBox(height: 5),
-            Text(
-              'Changed fields: $changedFields',
-              style: const TextStyle(color: AppColors.inkMuted),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Changed fields: $changedFields',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1.45,
+              color: AppColors.inkMuted,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
-import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -13,7 +13,6 @@ import '../../requests/services/collection_request_service.dart';
 import '../../route/models/route_plan.dart';
 import '../../route/services/route_service.dart';
 import '../widgets/driver_nav_bar.dart';
-import '../../notifications/widgets/notification_bell.dart';
 
 /// History tab: finished runs and completed pickups, newest first.
 class DriverCompletedScreen extends StatelessWidget {
@@ -26,99 +25,68 @@ class DriverCompletedScreen extends StatelessWidget {
       return const Scaffold(body: LoadingView(label: 'Loading completed runs'));
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Row(
-                children: [
-                  BrandWordmark(fontSize: 10.5),
-                  Spacer(),
-                  NotificationBell(iconSize: 19, color: AppColors.inkMuted),
-                ],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 0, 22, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Completed',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<RoutePlan>>(
-                stream: RouteService().watchCompletedPlans(user.uid),
-                builder: (context, snapshot) {
-                  final plans = snapshot.data ?? const <RoutePlan>[];
-                  return StreamBuilder<List<CollectionRequest>>(
-                    stream: CollectionRequestService().watchForDriver(user.uid),
-                    builder: (context, requestSnapshot) {
-                      final done =
-                          (requestSnapshot.data ?? const <CollectionRequest>[])
-                              .where(
-                                (r) =>
-                                    r.status == RequestStatus.collected ||
-                                    r.status == RequestStatus.completed,
-                              )
-                              .toList(growable: false);
+    return EcoPageScaffold(
+      eyebrow: 'DRIVER · HISTORY',
+      title: 'Completed',
+      subtitle: 'Finished runs and the pickups you collected.',
+      onBack: () => ecoBack(context, '/driver'),
+      bottomBar: const DriverNavBar(currentIndex: 2),
+      body: StreamBuilder<List<RoutePlan>>(
+        stream: RouteService().watchCompletedPlans(user.uid),
+        builder: (context, snapshot) {
+          final plans = snapshot.data ?? const <RoutePlan>[];
+          return StreamBuilder<List<CollectionRequest>>(
+            stream: CollectionRequestService().watchForDriver(user.uid),
+            builder: (context, requestSnapshot) {
+              final done = (requestSnapshot.data ?? const <CollectionRequest>[])
+                  .where(
+                    (r) =>
+                        r.status == RequestStatus.collected ||
+                        r.status == RequestStatus.completed,
+                  )
+                  .toList(growable: false);
 
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          plans.isEmpty) {
-                        return const Center(
-                          child: LoadingView(label: 'Loading completed runs'),
-                        );
-                      }
-                      if (plans.isEmpty && done.isEmpty) {
-                        return const EmptyState(
-                          icon: Icons.check_circle_outline_rounded,
-                          title: 'Nothing completed yet',
-                          message:
-                              'Finished collection runs and pickups will be '
-                              'listed here.',
-                        );
-                      }
-                      return ListView(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                        children: [
-                          if (plans.isNotEmpty) ...[
-                            const _Label('FINISHED RUNS'),
-                            const SizedBox(height: 8),
-                            for (final plan in plans) ...[
-                              _PlanTile(plan: plan),
-                              const SizedBox(height: 10),
-                            ],
-                          ],
-                          if (done.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            const _Label('COLLECTED REQUESTS'),
-                            const SizedBox(height: 8),
-                            for (final request in done) ...[
-                              _RequestTile(request: request),
-                              const SizedBox(height: 10),
-                            ],
-                          ],
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  plans.isEmpty) {
+                return const Center(
+                  child: LoadingView(label: 'Loading completed runs'),
+                );
+              }
+              if (plans.isEmpty && done.isEmpty) {
+                return const EmptyState(
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Nothing completed yet',
+                  message:
+                      'Finished collection runs and pickups will be '
+                      'listed here.',
+                );
+              }
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                children: [
+                  if (plans.isNotEmpty) ...[
+                    const _Label('FINISHED RUNS'),
+                    const SizedBox(height: 8),
+                    for (final plan in plans) ...[
+                      _PlanTile(plan: plan),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                  if (done.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    const _Label('COLLECTED REQUESTS'),
+                    const SizedBox(height: 8),
+                    for (final request in done) ...[
+                      _RequestTile(request: request),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                ],
+              );
+            },
+          );
+        },
       ),
-      bottomNavigationBar: const DriverNavBar(currentIndex: 2),
     );
   }
 }

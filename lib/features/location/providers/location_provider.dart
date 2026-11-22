@@ -107,9 +107,13 @@ class LocationProvider extends ChangeNotifier {
       }
 
       // A granted permission or a fresh fix clears the old "blocked" text.
-      if (_error != null) _error = null;
+      final hadError = _error != null;
+      _error = null;
       _setIssue(LocationIssue.none);
-      notifyListeners();
+      // Only the cleared error still needs announcing: _setIssue already
+      // notified when the issue itself changed. This runs on every heartbeat,
+      // and an unconditional notify rebuilt every listening screen.
+      if (hadError) notifyListeners();
     } catch (error) {
       AppLogger.error('Location health check failed', error);
       _setIssue(LocationIssue.unavailable);
@@ -139,15 +143,19 @@ class LocationProvider extends ChangeNotifier {
 
     try {
       _currentPosition = await _locationService.getCurrentPosition();
-      await _queueLocationOperation(_currentPosition!);
-      _clearError();
-      _setLoading(false);
-      return true;
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
       return false;
     }
+
+    // A fix is a fix even when it cannot be queued locally (the web build has
+    // no local database). Persisting is best effort, so a storage failure must
+    // never turn a working position into an error on the dashboard.
+    unawaited(_queueLocationOperation(_currentPosition!).catchError((_) {}));
+    _clearError();
+    _setLoading(false);
+    return true;
   }
 
   /// [background] keeps GPS running with the app minimised (driver runs).
@@ -211,8 +219,9 @@ class LocationProvider extends ChangeNotifier {
       notifyListeners();
     } catch (error) {
       AppLogger.error('Saving location failed', error);
+      // Storage trouble is not a location problem: saying the permission is
+      // blocked would be wrong. The sync state carries this instead.
       _syncState = LocationSyncState.failed;
-      _error = 'Could not save your location on this phone.';
       notifyListeners();
       return;
     }
