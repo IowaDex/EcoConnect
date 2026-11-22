@@ -49,7 +49,7 @@ class AuthProvider extends ChangeNotifier {
         final blocked =
             user != null &&
             ((user.isPendingApproval && user.role != UserRole.user) ||
-                (!user.emailVerified && user.role == UserRole.user));
+                !user.emailGateCleared);
         _currentUser = blocked ? null : user;
         _isInitialized = true;
         // A login claims its own session first; login() starts the watch then.
@@ -218,24 +218,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // Staff-facing account lists, so screens never talk to AuthService directly.
-  /// The resident accepts or declines the barangay's registration approval.
-  /// Returns an error message, or null on success.
-  Future<String?> answerRegistration({required bool accepted}) async {
-    final user = _currentUser;
-    if (user == null) return 'You are not signed in.';
-    try {
-      await _authService.answerRegistration(uid: user.uid, accepted: accepted);
-      _currentUser = user.copyWith(
-        registrationStatus: accepted ? 'accepted' : 'declined',
-      );
-      notifyListeners();
-      return null;
-    } catch (e) {
-      AppLogger.error('Registration answer failed', e);
-      return e is StateError ? e.message : 'Could not save your answer.';
-    }
-  }
-
   Future<List<Map<String, dynamic>>> getAllUsers() =>
       _authService.getAllUsers();
 
@@ -250,13 +232,6 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> updateUserRole(String uid, UserRole role) =>
       _authService.updateUserRole(uid, role);
-
-  /// [deleteLocationData] is supplied by the caller because the location
-  /// feature owns that data and auth must not import it.
-  Future<void> deleteUser(
-    String uid, {
-    required Future<void> Function() deleteLocationData,
-  }) => _authService.deleteUser(uid, deleteLocationData: deleteLocationData);
 
   /// Re-reads the profile so verification changes appear without a sign-out.
   Future<void> refreshUser() async {
@@ -319,6 +294,7 @@ class AuthProvider extends ChangeNotifier {
   /// screen (staff views) still reads.
   Future<bool> updateProfile({
     String? phone,
+    String? subdivision,
     String? houseStreet,
     String? photoUrl,
     String? barangay,
@@ -328,6 +304,7 @@ class AuthProvider extends ChangeNotifier {
 
     final data = <String, dynamic>{
       if (phone != null) 'phone': phone,
+      if (subdivision != null) 'subdivision': subdivision,
       if (houseStreet != null) 'houseStreet': houseStreet,
       if (photoUrl != null) 'photoUrl': photoUrl,
       if (barangay != null) 'barangay': barangay,
@@ -339,6 +316,7 @@ class AuthProvider extends ChangeNotifier {
       await _authService.updateUserProfile(user.uid, data);
       _currentUser = user.copyWith(
         phone: phone,
+        subdivision: subdivision,
         houseStreet: houseStreet,
         photoUrl: photoUrl,
         barangay: barangay,

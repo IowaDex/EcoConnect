@@ -6,12 +6,19 @@ import 'package:provider/provider.dart';
 import '../models/account_type.dart';
 import '../providers/auth_provider.dart';
 import '../../../core/constants/service_area.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/constants/resident_areas.dart';
 import '../utils/phone.dart';
+import '../utils/type_only_formatter.dart';
 import '../utils/validators.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/area_field.dart';
+import '../widgets/auth_chrome.dart';
+import '../widgets/auth_type.dart';
 import '../widgets/password_strength.dart';
+import '../widgets/social_button.dart';
 import '../../../core/widgets/brand_wordmark.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/image_picker_field.dart';
@@ -34,13 +41,26 @@ class _SignupScreenState extends State<SignupScreen> {
   final _confirmPassword = TextEditingController();
   final _birthdateText = TextEditingController();
   final _phone = TextEditingController();
+  final _areaText = TextEditingController();
+  final _areaOther = TextEditingController();
   final _houseStreet = TextEditingController();
 
   int _step = 0;
+
+  /// +1 when moving forward, -1 when moving back. The step transition slides
+  /// in from the side the visitor is travelling towards.
+  int _direction = 1;
+
+  final _scroll = ScrollController();
+
   bool _obscure = true;
   bool _confirmObscure = true;
 
   DateTime? _birthdate;
+
+  /// The subdivision / area / sitio picked from the list, before the "Other"
+  /// free-text fallback is applied.
+  String? _area;
 
   /// The resident's valid ID, checked by the barangay before they can sign in.
   UploadPayload? _idDocument;
@@ -54,16 +74,23 @@ class _SignupScreenState extends State<SignupScreen> {
       _name,
       _birthdateText,
       _phone,
+      _areaText,
+      _areaOther,
       _houseStreet,
     ]) {
       c.dispose();
     }
+    _scroll.dispose();
     super.dispose();
   }
 
   void _next() {
     FocusScope.of(context).unfocus();
-    setState(() => _step++);
+    setState(() {
+      _direction = 1;
+      _step++;
+    });
+    _scrollToTop();
   }
 
   void _back() {
@@ -72,9 +99,19 @@ class _SignupScreenState extends State<SignupScreen> {
       // Leaving signup always returns to the landing page, never straight to
       // the login form: the visitor may still want the overview.
       context.go('/welcome');
-    } else {
-      setState(() => _step--);
+      return;
     }
+    setState(() {
+      _direction = -1;
+      _step--;
+    });
+    _scrollToTop();
+  }
+
+  /// A new step starts at its own top. Without this, going back from the
+  /// bottom of the profile step lands the visitor halfway down the first one.
+  void _scrollToTop() {
+    if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
   void _toProfile() {
@@ -137,6 +174,24 @@ class _SignupScreenState extends State<SignupScreen> {
     });
   }
 
+  Future<void> _pickArea() async {
+    final picked = await showAreaPicker(context, selected: _area);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _area = picked;
+      _areaText.text = picked;
+      // Switching away from "Other" drops the typed area so it is not saved
+      // by mistake.
+      if (!ResidentAreas.isOther(picked)) _areaOther.clear();
+    });
+  }
+
+  /// The area as it is stored: the picked option, or the typed one when the
+  /// resident chose "Other / Not Listed".
+  String get _resolvedArea => ResidentAreas.isOther(_area)
+      ? _areaOther.text.trim()
+      : (_area ?? '');
+
   Future<void> _submit() async {
     if (_idDocument == null) {
       _toast('Please upload a valid ID first');
@@ -155,6 +210,7 @@ class _SignupScreenState extends State<SignupScreen> {
         if (_birthdate != null) 'birthdate': _birthdate!.toIso8601String(),
         if (_birthdate != null) 'age': _ageFromBirthdate(_birthdate!),
         'phone': Phone.toE164(_phone.text),
+        'subdivision': _resolvedArea,
         'houseStreet': _houseStreet.text.trim(),
         'barangay': ServiceArea.barangay,
         'city': ServiceArea.city,
@@ -182,7 +238,12 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final gutter = formGutter(MediaQuery.sizeOf(context).width);
+    final metrics = ScreenMetrics.of(context);
+    final gutter = formGutter(metrics.size.width);
+
+    // A band, not a hero: the two steps are long forms, so the artwork gets a
+    // strip that carries the brand and gives the fields the rest of the page.
+    final bandHeight = (metrics.size.height * 0.23).clamp(150.0, 215.0);
 
     return PopScope(
       // System / browser back on the first step would close the app, so send
@@ -192,43 +253,69 @@ class _SignupScreenState extends State<SignupScreen> {
         if (!didPop) _back();
       },
       child: Scaffold(
-        backgroundColor: AppColors.cream,
-        body: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 16,
-                        color: AppColors.forest,
-                      ),
-                      onPressed: _back,
-                    ),
-                    const SizedBox(width: 8),
-                    const BrandWordmark(fontSize: 12),
-                  ],
-                ),
+        backgroundColor: AppColors.creamBright,
+        body: Stack(
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: bandHeight,
+              child: _SignupBand(
+                topInset: metrics.padding.top + 8,
+                onBack: _back,
               ),
-              Expanded(
+            ),
+            Positioned.fill(
+              top: bandHeight - 24,
+              child: AuthSheet(
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 32),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    child: switch (_step) {
-                      0 => _credentialsStep(auth),
-                      _ => _profileStep(auth),
-                    },
+                  controller: _scroll,
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    22,
+                    gutter,
+                    28 + metrics.padding.bottom,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _StepBar(step: _step),
+                      const SizedBox(height: 20),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 280),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final slide = Tween<Offset>(
+                            begin: Offset(0.06 * _direction, 0),
+                            end: Offset.zero,
+                          ).animate(animation);
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: slide,
+                              child: child,
+                            ),
+                          );
+                        },
+                        // The two steps are both plain Forms, so without a key
+                        // of their own the switcher would update in place
+                        // instead of sliding one out and the next in.
+                        child: KeyedSubtree(
+                          key: ValueKey(_step),
+                          child: switch (_step) {
+                            0 => _credentialsStep(auth),
+                            _ => _profileStep(auth),
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -241,25 +328,14 @@ class _SignupScreenState extends State<SignupScreen> {
         key: const ValueKey('credentials'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Sign up Account',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-              color: AppColors.forest,
-            ),
+          const AuthHeading(
+            eyebrow: 'NEW RESIDENT',
+            title: 'Create your account',
+            subtitle:
+                'Start tracking your collection schedule with Barangay '
+                'Batasan Hills.',
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Create an account to start tracking your collection schedule.',
-            style: TextStyle(
-              fontSize: 11,
-              height: 1.5,
-              color: AppColors.inkMuted,
-            ),
-          ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 24),
           AppTextField(
             label: 'Name',
             hint: 'Full name',
@@ -286,6 +362,9 @@ class _SignupScreenState extends State<SignupScreen> {
             controller: _password,
             obscureText: _obscure,
             textInputAction: TextInputAction.next,
+            // The password cannot be selected or copied out, so the
+            // confirmation below can only be typed by hand.
+            enableInteractiveSelection: false,
             onChanged: (_) => setState(() {}),
             validator: Validators.validatePasswordStrength,
             suffix: IconButton(
@@ -311,6 +390,11 @@ class _SignupScreenState extends State<SignupScreen> {
             controller: _confirmPassword,
             obscureText: _confirmObscure,
             textInputAction: TextInputAction.done,
+            // No copy, no paste, no autofill: the resident has to type the
+            // password a second time, so a typo in the first field cannot be
+            // duplicated by pasting it back in.
+            enableInteractiveSelection: false,
+            inputFormatters: const [TypeOnlyFormatter()],
             validator: (v) =>
                 Validators.validateConfirmPassword(v, _password.text),
             onFieldSubmitted: (_) => _toProfile(),
@@ -336,53 +420,30 @@ class _SignupScreenState extends State<SignupScreen> {
             onPressed: _toProfile,
           ),
           const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text(
-                'Already have an account?',
-                style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
-              ),
-              TextButton(
-                onPressed: () => context.go('/login'),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text(
-                  'Login',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
+          AuthAltAction(
+            prompt: 'Already have an account?',
+            action: 'Log in',
+            onTap: () => context.go('/login'),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              const Expanded(child: Divider()),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'continue with',
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    letterSpacing: 0.4,
-                    color: AppColors.inkMuted.withValues(alpha: 0.9),
-                  ),
-                ),
-              ),
-              const Expanded(child: Divider()),
-            ],
-          ),
+          const AuthOrDivider(),
           const SizedBox(height: 14),
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _social(Icons.g_mobiledata_rounded, const Color(0xFFDB4437)),
-              const SizedBox(width: 14),
-              _social(Icons.facebook, const Color(0xFF1877F2)),
+              SocialSignInButton(
+                mark: GoogleMark(),
+                tooltip: 'Continue with Google',
+              ),
+              SizedBox(width: 14),
+              SocialSignInButton(
+                mark: Icon(
+                  Icons.facebook,
+                  size: 19,
+                  color: Color(0xFF1877F2),
+                ),
+                tooltip: 'Continue with Facebook',
+              ),
             ],
           ),
         ],
@@ -397,16 +458,19 @@ class _SignupScreenState extends State<SignupScreen> {
         key: const ValueKey('profile'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Create your\nProfile with us',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              height: 1.15,
-              color: AppColors.forest,
-            ),
+          const AuthHeading(
+            eyebrow: 'RESIDENT PROFILE',
+            title: 'Where do we collect?',
+            subtitle:
+                'The barangay uses this to match you to the right collection '
+                'route.',
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
+          const _SectionHeader(
+            icon: Icons.person_outline_rounded,
+            label: 'PERSONAL DETAILS',
+          ),
+          const SizedBox(height: 12),
           AppTextField(
             label: 'Birthdate',
             hint: 'Select your birthdate',
@@ -439,8 +503,37 @@ class _SignupScreenState extends State<SignupScreen> {
             ],
             validator: Phone.validate,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
+          const _SectionHeader(
+            icon: Icons.home_outlined,
+            label: 'HOME ADDRESS',
+          ),
+          const SizedBox(height: 12),
           const _ServiceAreaCard(),
+          const SizedBox(height: 14),
+          AreaField(
+            label: 'Subdivision / Area / Sitio',
+            hint: 'Select your subdivision, area or sitio',
+            controller: _areaText,
+            onTap: _pickArea,
+            validator: (_) =>
+                _area == null ? 'Please select your area' : null,
+          ),
+          // "Other / Not Listed" is the only option that needs typing, so the
+          // extra field appears only when it is picked.
+          if (ResidentAreas.isOther(_area)) ...[
+            const SizedBox(height: 14),
+            AppTextField(
+              label: 'Specify your area',
+              hint: 'Subdivision, area or sitio',
+              controller: _areaOther,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? 'Please enter your area'
+                  : null,
+            ),
+          ],
           const SizedBox(height: 14),
           AppTextField(
             label: 'House no/Unit/street',
@@ -452,35 +545,18 @@ class _SignupScreenState extends State<SignupScreen> {
                 ? 'Please enter your street address'
                 : null,
           ),
-          const SizedBox(height: 22),
-          const Divider(height: 1),
-          const SizedBox(height: 20),
-          const Row(
-            children: [
-              Icon(
-                Icons.badge_outlined,
-                size: 17,
-                color: AppColors.primary,
-              ),
-              SizedBox(width: 7),
-              Text(
-                'UPLOAD YOUR VALID ID',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: AppColors.forest,
-                ),
-              ),
-            ],
+          const SizedBox(height: 24),
+          const _SectionHeader(
+            icon: Icons.badge_outlined,
+            label: 'VERIFY YOUR IDENTITY',
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           const Text(
             'Barangay Batasan Hills checks your ID before activating your '
             'account. Take or choose a clear photo of a government-issued ID '
             'that shows your name and address.',
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               height: 1.5,
               color: AppColors.inkMuted,
             ),
@@ -508,50 +584,12 @@ class _SignupScreenState extends State<SignupScreen> {
             style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text(
-                'Already have an account?',
-                style: TextStyle(fontSize: 11, color: AppColors.inkMuted),
-              ),
-              TextButton(
-                onPressed: () => context.go('/login'),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text(
-                  'Login',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
+          AuthAltAction(
+            prompt: 'Already have an account?',
+            action: 'Log in',
+            onTap: () => context.go('/login'),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _social(IconData icon, Color color) {
-    return InkWell(
-      onTap: () => ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('Social sign-in is coming soon')),
-        ),
-      customBorder: const CircleBorder(),
-      child: Container(
-        height: 34,
-        width: 34,
-        decoration: BoxDecoration(
-          color: AppColors.creamBright,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.sage),
-        ),
-        child: Icon(icon, size: 19, color: color),
       ),
     );
   }
@@ -607,6 +645,150 @@ class _ServiceAreaCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The branded strip above the form: scene, wordmark and the step the visitor
+/// is on. Shorter than the login hero because both sign-up steps are long
+/// forms and the fields need the page.
+class _SignupBand extends StatelessWidget {
+  const _SignupBand({required this.topInset, required this.onBack});
+
+  final double topInset;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const AuthScene(),
+        // A pale wash over the top half only: the brand row needs a clean
+        // field, the road and the truck below it are the point of the strip.
+        const IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0, 0.55],
+                colors: [Color(0xF2EAF5EA), Color(0x00EAF5EA)],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(18, topInset, 18, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  AuthBackButton(onTap: onBack),
+                  const SizedBox(width: 12),
+                  // Expanded, not Flexible: the row divides evenly, so the pill
+                  // lands exactly on the right margin.
+                  const Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: BrandLockup(fontSize: 20, letterSpacing: 1.2),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: AuthAreaPill(compact: true),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Two segments that fill in as the visitor advances, with the count spelled
+/// out beside them so the visitor knows how much is left.
+class _StepBar extends StatelessWidget {
+  const _StepBar({required this.step});
+
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < 2; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: AnimatedContainer(
+              duration: EcoMotion.base,
+              curve: EcoMotion.enter,
+              height: 4,
+              decoration: BoxDecoration(
+                color: i <= step
+                    ? AppColors.primary
+                    : AppColors.sage.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(width: 10),
+        Text(
+          'STEP ${step + 1} OF 2',
+          style: authSans(
+            size: 8.5,
+            weight: FontWeight.w800,
+            letterSpacing: 1.1,
+            color: AppColors.inkMuted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A titled rule that opens a group of fields, e.g. `HOME ADDRESS`.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          height: 26,
+          width: 26,
+          decoration: BoxDecoration(
+            color: AppColors.lightGreen,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.sage.withValues(alpha: 0.6)),
+          ),
+          child: Icon(icon, size: 15, color: AppColors.primary),
+        ),
+        const SizedBox(width: 9),
+        Text(
+          label,
+          style: authSans(
+            size: 9.5,
+            weight: FontWeight.w800,
+            letterSpacing: 1.2,
+            color: AppColors.forest,
+          ),
+        ),
+        const SizedBox(width: 10),
+        const Expanded(child: Divider()),
+      ],
     );
   }
 }

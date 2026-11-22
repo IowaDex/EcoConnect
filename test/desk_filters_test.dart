@@ -67,12 +67,27 @@ void main() {
         ),
       );
 
-      expect(find.text('Awaiting Signature'), findsOneWidget);
-      expect(find.text('Returned for Revision'), findsOneWidget);
+      expect(find.text('Awaiting'), findsOneWidget);
+      expect(find.text('Returned'), findsOneWidget);
 
       await tester.tap(find.text('Signed'));
       await tester.pump();
       expect(selected, SignatureFilter.signed);
+    });
+
+    testWidgets('the status chips share one row at desk width', (tester) async {
+      await tester.pumpWidget(_sized(460, _signatureBar()));
+
+      expect(_chipRows(tester), hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a narrow window falls back to two columns', (tester) async {
+      await tester.pumpWidget(_sized(360, _signatureBar()));
+
+      // Two even rows, never one cell left alone on a third row.
+      expect(_chipRows(tester), hasLength(2));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('shared search field reports typing and clears', (
@@ -135,6 +150,37 @@ void main() {
       expect(cleared, isTrue);
     });
   });
+}
+
+/// The distinct row positions of the chips on screen.
+Set<double> _chipRows(WidgetTester tester) {
+  final chips = find.byType(DeskFilterChip);
+  return {
+    for (var i = 0; i < chips.evaluate().length; i++)
+      tester.getTopLeft(chips.at(i)).dy,
+  };
+}
+
+Widget _sized(double width, Widget child) {
+  return MaterialApp(
+    theme: ThemeData(useMaterial3: true),
+    home: Scaffold(
+      body: Center(child: SizedBox(width: width, child: child)),
+    ),
+  );
+}
+
+Widget _signatureBar() {
+  return DeskSignatureBar(
+    selected: SignatureFilter.awaiting,
+    counts: const {
+      SignatureFilter.awaiting: 2,
+      SignatureFilter.signed: 6,
+      SignatureFilter.rejected: 0,
+      SignatureFilter.returned: 0,
+    },
+    onChanged: (_) {},
+  );
 }
 
 Widget _wrap(Widget child) {

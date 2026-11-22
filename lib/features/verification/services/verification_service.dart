@@ -220,8 +220,15 @@ class VerificationService {
       'verifiedBy': reviewerId,
       'verificationDate': FieldValue.serverTimestamp(),
       'rejectionReason': rejected ? reason : null,
+      // The desk has seen the resident's ID, which is stronger proof than an
+      // emailed link — and the default Firebase mail often never arrives. So
+      // an approved ID also stands as the email confirmation; without this the
+      // resident would be stuck at "Email not verified" forever.
+      if (approved) 'emailVerified': true,
       if (approved && (openDecision || reopening)) ...{
-        'registrationStatus': 'approved',
+        // The desk's approval is final: there is no second "accept or decline"
+        // step for the resident, so the registration is accepted here.
+        'registrationStatus': 'accepted',
         'registrationApprovedAt': FieldValue.serverTimestamp(),
         'accountStatus': 'active',
       },
@@ -251,7 +258,7 @@ class VerificationService {
             ? 'Barangay approved your registration'
             : 'Barangay reopened your account',
         body:
-            'Your ID was checked and your account is active. Sign in, then accept or decline the approval on your dashboard.',
+            'Your ID was checked and your account is active. You can sign in now.',
         type: AppNotificationType.account,
       );
       return;

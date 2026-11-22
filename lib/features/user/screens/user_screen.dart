@@ -107,24 +107,13 @@ class _UserScreenState extends State<UserScreen> {
                             _showLocked(context, action.lockedNote),
                       ),
                     ] else ...[
-                      if (user?.needsRegistrationDecision == true) ...[
-                        const SizedBox(height: EcoSpace.md),
-                        const _RegistrationDecisionCard(),
-                      ] else if (user?.registrationPending == true) ...[
+                      if (user?.registrationPending == true) ...[
                         const SizedBox(height: EcoSpace.md),
                         const EcoBanner(
                           message:
                               'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
                           icon: Icons.hourglass_top_rounded,
                           color: AppColors.warning,
-                        ),
-                      ] else if (user?.registrationDeclined == true) ...[
-                        const SizedBox(height: EcoSpace.md),
-                        const EcoBanner(
-                          message:
-                              'You declined the barangay approval, so your registration is withdrawn. Contact barangay staff if this was a mistake.',
-                          icon: Icons.info_outline_rounded,
-                          color: AppColors.inkMuted,
                         ),
                       ],
                       if (user?.isGovernment == true &&
@@ -696,139 +685,6 @@ class _VerificationGateCardState extends State<_VerificationGateCard> {
                 : 'Submit ID for review',
             loading: _busy,
             onPressed: _submit,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The resident's answer to the barangay's registration approval.
-///
-/// The answer is stored with the date and time, and the barangay desk is told
-/// so a declined registration can be closed in the records.
-class _RegistrationDecisionCard extends StatefulWidget {
-  const _RegistrationDecisionCard();
-
-  @override
-  State<_RegistrationDecisionCard> createState() =>
-      _RegistrationDecisionCardState();
-}
-
-class _RegistrationDecisionCardState extends State<_RegistrationDecisionCard> {
-  bool _busy = false;
-
-  Future<void> _answer(bool accepted) async {
-    if (!accepted) {
-      final ok = await AppFeedback.confirm(
-        context,
-        title: 'Decline the approval?',
-        message:
-            'Your registration will be withdrawn and barangay staff '
-            'will be told. Contact them if you want to restart it.',
-        confirmLabel: 'Decline',
-        icon: Icons.info_outline_rounded,
-      );
-      if (!ok || !mounted) return;
-    }
-    setState(() => _busy = true);
-    final error = await context.read<AuthProvider>().answerRegistration(
-      accepted: accepted,
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (error != null) {
-      AppFeedback.error(context, error);
-      return;
-    }
-    AppFeedback.success(
-      context,
-      accepted ? 'Registration accepted' : 'Registration declined',
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return EcoCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                height: 36,
-                width: 36,
-                decoration: const BoxDecoration(
-                  color: AppColors.mint,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.how_to_reg_rounded,
-                  size: 18,
-                  color: AppColors.forest,
-                ),
-              ),
-              const SizedBox(width: 11),
-              const Expanded(
-                child: Text(
-                  'Barangay approved your registration',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Accept to confirm you are a resident of this barangay. Decline if '
-            'the approval was sent to the wrong person or you are not a '
-            'resident. Your answer is recorded with the date and time.',
-            style: TextStyle(
-              fontSize: 10,
-              height: 1.5,
-              color: AppColors.inkMuted,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: OutlinedButton(
-                    onPressed: _busy ? null : () => _answer(false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
-                    ),
-                    child: const Text('Decline'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: FilledButton(
-                    onPressed: _busy ? null : () => _answer(true),
-                    child: _busy
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Accept'),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),

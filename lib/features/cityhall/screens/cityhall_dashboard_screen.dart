@@ -257,7 +257,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
 
   Widget _tabs(CityHallDocuments documents) {
     return Container(
-      height: 50,
+      height: 54,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -323,54 +323,60 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
 
   Widget _tabSegment(int index, String label, int count, IconData icon) {
     final selected = _tab == index;
-    final foreground = selected ? Colors.white : AppColors.inkMuted;
+    final foreground = selected ? Colors.white : AppColors.textDark;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _tab = index),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: foreground),
-            const SizedBox(width: 6),
-            Flexible(
-              child: AnimatedDefaultTextStyle(
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: () => setState(() => _tab = index),
+        customBorder: const StadiumBorder(),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: foreground),
+              const SizedBox(width: 6),
+              Flexible(
+                child: AnimatedDefaultTextStyle(
+                  duration: EcoMotion.fast,
+                  curve: EcoMotion.enter,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              AnimatedContainer(
                 duration: EcoMotion.fast,
                 curve: EcoMotion.enter,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: foreground,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.24)
+                      : AppColors.cream,
+                  borderRadius: BorderRadius.circular(EcoRadius.pill),
                 ),
                 child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? Colors.white : AppColors.forest,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            AnimatedContainer(
-              duration: EcoMotion.fast,
-              curve: EcoMotion.enter,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: selected
-                    ? Colors.white.withValues(alpha: 0.24)
-                    : AppColors.cream,
-                borderRadius: BorderRadius.circular(EcoRadius.pill),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  color: selected ? Colors.white : AppColors.forest,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -635,7 +641,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         Text(
           _dayLabel(date),
           style: const TextStyle(
-            fontSize: 9.5,
+            fontSize: 10.5,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.8,
             color: AppColors.inkMuted,
@@ -703,7 +709,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
+                        horizontal: 8,
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
@@ -713,7 +719,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
                       child: Text(
                         '$count',
                         style: const TextStyle(
-                          fontSize: 9,
+                          fontSize: 10,
                           fontWeight: FontWeight.w800,
                           color: AppColors.forest,
                         ),
@@ -722,12 +728,13 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
                   ],
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 subtitle,
                 style: const TextStyle(
-                  fontSize: 10.5,
-                  height: 1.5,
+                  fontSize: 11.5,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
                   color: AppColors.inkMuted,
                 ),
               ),
@@ -772,26 +779,36 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         : _countLabel(total, noun);
     return Row(
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.1,
-            color: AppColors.inkMuted,
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.1,
+              color: AppColors.inkMuted,
+            ),
           ),
         ),
-        const Spacer(),
         if (filtered)
-          GestureDetector(
-            onTap: _tab == 0 ? _clearSignatureFilters : _clearReceivedFilters,
-            child: const Text(
-              'Clear filters',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
+          OutlinedButton.icon(
+            onPressed: _tab == 0 ? _clearSignatureFilters : _clearReceivedFilters,
+            icon: const Icon(Icons.filter_alt_off_rounded, size: 14),
+            label: const Text('Clear filters'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: BorderSide(
+                color: AppColors.primary.withValues(alpha: 0.4),
               ),
+              minimumSize: const Size(0, 30),
+              padding: const EdgeInsets.symmetric(horizontal: 11),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+              shape: const StadiumBorder(),
             ),
           ),
       ],

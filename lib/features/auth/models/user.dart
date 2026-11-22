@@ -49,6 +49,9 @@ class AppUser {
   /// Avatar. Either an http(s) URL or an inline data:image/...;base64,
   /// string when the picture was uploaded from the device.
   final String? photoUrl;
+
+  /// Subdivision / area / sitio inside the barangay, picked at sign-up.
+  final String? subdivision;
   final String? houseStreet;
   final String? barangay;
   final String? city;
@@ -92,6 +95,7 @@ class AppUser {
     this.age,
     this.phone,
     this.photoUrl,
+    this.subdivision,
     this.houseStreet,
     this.barangay,
     this.city,
@@ -118,6 +122,21 @@ class AppUser {
       role == UserRole.user &&
       verificationStatus != VerificationStatus.verified;
 
+  /// Whether this account has cleared the email confirmation step.
+  ///
+  /// Residents confirm their email, but the barangay's ID check is the
+  /// stronger proof of who they are, and Firebase's default mail does not
+  /// reliably arrive. Once the desk has decided on the ID, that decision
+  /// stands in for the confirmation: an approval also records
+  /// `emailVerified` (see `VerificationService.setUserVerification`), and a
+  /// rejection has to stay reachable so the resident can resubmit. This also
+  /// covers residents approved before that write existed.
+  bool get emailGateCleared =>
+      emailVerified ||
+      role != UserRole.user ||
+      verificationStatus == VerificationStatus.verified ||
+      verificationStatus == VerificationStatus.rejected;
+
   /// Only an active account may claim `sessions/{uid}`: the rules require
   /// `accountStatus == 'active'`, so a pending, declined or suspended account
   /// waits instead of being signed out by a refused claim.
@@ -135,14 +154,6 @@ class AppUser {
     }
     return years < 0 ? 0 : years;
   }
-
-  /// The barangay approved this resident and is waiting for them to accept.
-  bool get needsRegistrationDecision =>
-      role == UserRole.user && registrationStatus == 'approved';
-
-  /// The resident refused the barangay's approval.
-  bool get registrationDeclined =>
-      role == UserRole.user && registrationStatus == 'declined';
 
   /// Barangay staff have not finished reviewing this resident yet.
   bool get registrationPending =>
@@ -167,6 +178,7 @@ class AppUser {
     int? age,
     String? phone,
     String? photoUrl,
+    String? subdivision,
     String? houseStreet,
     String? barangay,
     String? city,
@@ -189,6 +201,7 @@ class AppUser {
       age: age ?? this.age,
       phone: phone ?? this.phone,
       photoUrl: photoUrl ?? this.photoUrl,
+      subdivision: subdivision ?? this.subdivision,
       houseStreet: houseStreet ?? this.houseStreet,
       barangay: barangay ?? this.barangay,
       city: city ?? this.city,
@@ -218,6 +231,7 @@ class AppUser {
     // Street first, province last, the way a Philippine address is written.
     final parts = [
       houseStreet,
+      subdivision,
       barangay,
       city,
       province,
@@ -229,6 +243,7 @@ class AppUser {
     if (birthdate != null) 'birthdate': birthdate!.toIso8601String(),
     if (age != null) 'age': age,
     if (phone != null) 'phone': phone,
+    if (subdivision != null) 'subdivision': subdivision,
     if (houseStreet != null) 'houseStreet': houseStreet,
     if (barangay != null) 'barangay': barangay,
     if (city != null) 'city': city,

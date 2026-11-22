@@ -89,7 +89,7 @@ void main() {
     // The old "Users" desk is gone from the barangay for good.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/admin'), '/admin-dashboard');
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/pending-accounts'), '/admin-dashboard');
-    // The fleet register is City Hall / Iswim business, not the barangay's.
+    // The fleet register is Iswim business, not the barangay's.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/fleet'), '/admin-dashboard');
     // The recycling station and its points wallet are gone.
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/dropoff'), '/admin-dashboard');
@@ -98,9 +98,9 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/staff-requests'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/wave2/pass'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/memos/barangay'), isNull);
-    // City Hall keeps the incidents desk and the fleet.
+    // City Hall keeps the incidents desk; the fleet page is Iswim's alone.
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/incidents'), isNull);
-    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), '/cityhall');
     // Iswim runs the account desk now, not City Hall.
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/accounts'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/accounts'), '/cityhall');
@@ -174,9 +174,9 @@ void main() {
     ), '/driver');
   });
 
-  test('city hall keeps the fleet; Iswim runs the account desk', () {
-    // City Hall registers the trucks and keeps the incidents desk.
-    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), isNull);
+  test('Iswim owns the fleet and the account desk', () {
+    // City Hall keeps the incidents desk; the fleet is Iswim's to manage.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/fleet'), '/cityhall');
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/incidents'), isNull);
     // Iswim provisions its own colleagues and the crew logins.
     expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/fleet'), isNull);

@@ -19,6 +19,7 @@ import '../../dashboard/widgets/role_hero.dart';
 import '../../notifications/widgets/notification_bell.dart';
 import '../../verification/models/verification_request.dart';
 import '../../verification/services/verification_service.dart';
+import '../widgets/remove_resident.dart';
 import '../widgets/resident_review_sheet.dart';
 
 /// Resident validation desk: the barangay checks residents only. Drivers,
@@ -54,11 +55,14 @@ enum _ResidentAction {
   verify,
   reject,
   reset,
+  remove,
 }
 
 String _registrationLabel(String status) => switch (status) {
   'pending' => 'Registration pending',
-  'approved' => 'Awaiting resident',
+  // Approvals are accepted on the spot now; 'approved' only survives on
+  // records created before the resident's second answer was removed.
+  'approved' => 'Registration approved',
   'declined' => 'Resident declined',
   'rejected' => 'Registration rejected',
   _ => 'Registration accepted',
@@ -185,6 +189,21 @@ class _ResidentsTabState extends State<_ResidentsTab> {
   Future<void> _viewId(Map<String, dynamic> user) async {
     // The list is live, so the decision shows up without a manual reload.
     await showResidentReview(context, user);
+  }
+
+  /// Deletes an account that no longer belongs to the barangay. The list is
+  /// live, so the card disappears on its own once the profile is gone.
+  Future<void> _removeResident(Map<String, dynamic> user) async {
+    final name = (user['name'] as String?)?.trim();
+    if (!await confirmRemoveResident(context, name)) return;
+    if (!mounted) return;
+    try {
+      await deleteResidentAccount(user['uid'] as String);
+      if (!mounted) return;
+      AppFeedback.success(context, '${name ?? 'Resident'} removed.');
+    } catch (e) {
+      if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
+    }
   }
 
   Future<void> _set(
@@ -413,7 +432,8 @@ class _ResidentsTabState extends State<_ResidentsTab> {
     );
     final accountType = AccountTypeX.fromName(user['accountType'] as String?);
     final registration = (user['registrationStatus'] as String?) ?? 'accepted';
-    // A new sign-up must confirm their email before the barangay can approve it.
+    // A sign-up whose email never arrived can still be approved: the ID check
+    // is the stronger proof, and approving it also records the confirmation.
     final awaitingEmail =
         user['accountStatus'] == 'pending' && user['emailVerified'] != true;
     final hasId = idRequest?.document != null;
@@ -424,7 +444,10 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         ? 'Unnamed resident'
         : name;
     final email = (user['email'] as String?)?.trim() ?? '';
-    final street = (user['houseStreet'] as String?)?.trim() ?? '';
+    final street = [
+      (user['houseStreet'] as String?)?.trim(),
+      (user['subdivision'] as String?)?.trim(),
+    ].whereType<String>().where((p) => p.isNotEmpty).join(' · ');
 
     return FadeSlideIn(
       index: index,
@@ -527,18 +550,14 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             ),
             const SizedBox(width: 2),
             if (pending) _OpenBadge(onTap: () => _viewId(user)),
-            _menu(user, registration, awaitingEmail),
+            _menu(user, registration),
           ],
         ),
       ),
     );
   }
 
-  Widget _menu(
-    Map<String, dynamic> user,
-    String registration,
-    bool awaitingEmail,
-  ) {
+  Widget _menu(Map<String, dynamic> user, String registration) {
     return PopupMenuButton<_ResidentAction>(
       padding: EdgeInsets.zero,
       icon: const Icon(
@@ -559,13 +578,14 @@ class _ResidentsTabState extends State<_ResidentsTab> {
         _ResidentAction.verify => _set(user, VerificationStatus.verified),
         _ResidentAction.reject => _set(user, VerificationStatus.rejected),
         _ResidentAction.reset => _set(user, VerificationStatus.unverified),
+        _ResidentAction.remove => _removeResident(user),
       },
       itemBuilder: (_) => [
         const PopupMenuItem(
           value: _ResidentAction.viewId,
           child: Text('View ID'),
         ),
-        if (registration == 'pending' && !awaitingEmail) ...[
+        if (registration == 'pending') ...[
           const PopupMenuItem(
             value: _ResidentAction.approveRegistration,
             child: Text('Approve registration'),
@@ -588,6 +608,14 @@ class _ResidentsTabState extends State<_ResidentsTab> {
             child: Text('Reset to unverified'),
           ),
         ],
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _ResidentAction.remove,
+          child: Text(
+            'Remove resident',
+            style: TextStyle(color: AppColors.danger),
+          ),
+        ),
       ],
     );
   }

@@ -46,11 +46,12 @@ class _EcoSearchFieldState extends State<EcoSearchField> {
             controller: widget.controller,
             onChanged: widget.onChanged,
             textInputAction: TextInputAction.search,
-            style: const TextStyle(fontSize: 12, color: AppColors.forest),
+            style: const TextStyle(fontSize: 13, color: AppColors.forest),
             decoration: InputDecoration(
               hintText: widget.hint,
               hintStyle: const TextStyle(
-                fontSize: 11,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
                 color: AppColors.inkMuted,
               ),
               prefixIcon: Icon(

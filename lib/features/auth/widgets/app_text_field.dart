@@ -26,6 +26,7 @@ class AppTextField extends StatelessWidget {
     this.textCapitalization = TextCapitalization.none,
     this.readOnly = false,
     this.onTap,
+    this.enableInteractiveSelection = true,
   });
 
   final String label;
@@ -46,6 +47,10 @@ class AppTextField extends StatelessWidget {
   final TextCapitalization textCapitalization;
   final bool readOnly;
   final VoidCallback? onTap;
+
+  /// False hides the selection handles and the copy/paste menu. Used on the
+  /// sign-up password fields so the confirmation has to be typed by hand.
+  final bool enableInteractiveSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +82,7 @@ class AppTextField extends StatelessWidget {
           textCapitalization: textCapitalization,
           readOnly: readOnly,
           onTap: onTap,
+          enableInteractiveSelection: enableInteractiveSelection,
           style: const TextStyle(fontSize: 13, color: AppColors.forest),
           cursorColor: AppColors.forest,
           decoration: InputDecoration(

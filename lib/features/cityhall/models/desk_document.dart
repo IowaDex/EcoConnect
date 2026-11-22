@@ -131,6 +131,15 @@ extension SignatureFilterX on SignatureFilter {
     SignatureFilter.returned => 'Returned for Revision',
   };
 
+  /// The one-word form for the filter bar, where four options share one row
+  /// and the section heading above already names the full status.
+  String get shortLabel => switch (this) {
+    SignatureFilter.awaiting => 'Awaiting',
+    SignatureFilter.signed => 'Signed',
+    SignatureFilter.rejected => 'Rejected',
+    SignatureFilter.returned => 'Returned',
+  };
+
   DeskDocumentStatus get status => switch (this) {
     SignatureFilter.awaiting => DeskDocumentStatus.awaitingSignature,
     SignatureFilter.signed => DeskDocumentStatus.signed,

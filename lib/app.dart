@@ -150,7 +150,8 @@ const _cityHallRoutes = {
   '/cityhall',
   '/tickets',
   '/trucks',
-  '/fleet',
+  // The fleet is Iswim's to manage: City Hall reads the trucks it dispatches
+  // through the ticket desk, never the fleet page.
   '/delays',
   '/memos',
   '/memo',

@@ -76,7 +76,7 @@ void main() {
     expect(find.text('This resident did not upload an ID.'), findsOneWidget);
   });
 
-  testWidgets('approve waits for a new sign-up to confirm their email',
+  testWidgets('approve works even when the confirmation email never arrived',
       (tester) async {
     await _pump(
       tester,
@@ -92,10 +92,43 @@ void main() {
     final approve = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Approve'),
     );
-    expect(approve.onPressed, isNull);
+    expect(approve.onPressed, isNotNull);
     expect(
       find.text('Approve unlocks once the resident confirms their email.'),
-      findsOneWidget,
+      findsNothing,
     );
+  });
+
+  testWidgets('an approved resident has no Approve button left',
+      (tester) async {
+    await _pump(
+      tester,
+      _FakeVerification(null),
+      account: {
+        'uid': 'ana',
+        'name': 'Ana',
+        'accountStatus': 'active',
+        'verificationStatus': 'verified',
+        'emailVerified': true,
+      },
+    );
+
+    expect(find.text('Approve'), findsNothing);
+    expect(find.text('Reject'), findsOneWidget);
+  });
+
+  testWidgets('removing asks for confirmation before deleting anything',
+      (tester) async {
+    await _pump(tester, _FakeVerification(null));
+
+    await tester.tap(find.text('Remove resident'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove this resident?'), findsOneWidget);
+    expect(find.text('Remove account'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove this resident?'), findsNothing);
   });
 }

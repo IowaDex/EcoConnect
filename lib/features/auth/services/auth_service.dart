@@ -94,6 +94,7 @@ class AuthService {
       age: rawAge is num ? rawAge.toInt() : int.tryParse('${rawAge ?? ''}'),
       phone: data['phone'] as String?,
       photoUrl: data['photoUrl'] as String?,
+      subdivision: data['subdivision'] as String?,
       houseStreet: data['houseStreet'] as String?,
       barangay: data['barangay'] as String?,
       city: data['city'] as String?,
@@ -293,7 +294,7 @@ class AuthService {
       // link since signing up and it is recorded now, before the pending
       // message below.
       if (appUser.role == UserRole.user && appUser.isPendingApproval) {
-        if (!credential.user!.emailVerified) {
+        if (!appUser.emailVerified) {
           throw const AuthException(AuthErrorType.needsEmailVerification);
         }
         await credential.user!.getIdToken(true);
@@ -329,9 +330,13 @@ class AuthService {
         throw const AuthException(AuthErrorType.outOfArea);
       }
 
-      // Residents must verify their email. Drivers and staff are provisioned
-      // by the barangay, so staff approval (accountStatus) is the gate instead.
-      if (!appUser.emailVerified && appUser.role == UserRole.user) {
+      // Residents confirm their email, but the barangay's ID check is the
+      // stronger proof of identity, and the default Firebase mail often never
+      // arrives. Once the desk has decided on the ID, that decision stands in
+      // for the confirmation: an approval records `emailVerified` too, and a
+      // rejection must stay reachable so the resident can resubmit. Only a
+      // resident the desk has not looked at yet waits for the email.
+      if (!appUser.emailGateCleared) {
         await _auth.signOut();
         throw const AuthException(AuthErrorType.emailNotVerified);
       }
@@ -434,42 +439,6 @@ class AuthService {
               (u['verificationStatus'] ?? 'unverified') != 'rejected',
         )
         .toList();
-  }
-
-  /// The resident answers the barangay's registration approval.
-  ///
-  /// Only an `approved` registration can be answered; the rules enforce the
-  /// same transition server-side. Accepting keeps the account as-is, declining
-  /// records the withdrawal and alerts the barangay desk.
-  Future<void> answerRegistration({
-    required String uid,
-    required bool accepted,
-  }) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    final data = doc.data();
-    if (data == null) throw StateError('This account no longer exists.');
-    if (data['registrationStatus'] != 'approved') {
-      throw StateError('There is no approval waiting for your answer.');
-    }
-
-    await _firestore.collection('users').doc(uid).update({
-      'registrationStatus': accepted ? 'accepted' : 'declined',
-      'registrationDecidedAt': FieldValue.serverTimestamp(),
-    });
-
-    final name = (data['name'] as String?)?.trim();
-    await NotificationService().notifyStaff(
-      title: accepted
-          ? 'Resident accepted registration'
-          : 'Resident declined registration',
-      body: accepted
-          ? '${name ?? 'A resident'} accepted the barangay approval.'
-          : '${name ?? 'A resident'} declined the barangay approval. '
-                'The registration is withdrawn.',
-      type: AppNotificationType.account,
-      data: {'uid': uid},
-      dedupeKey: 'registration_${uid}_${accepted ? 'accepted' : 'declined'}',
-    );
   }
 
   /// Active driver accounts, used when staff assign a collection request.

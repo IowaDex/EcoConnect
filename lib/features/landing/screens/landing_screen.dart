@@ -241,10 +241,13 @@ class _LandingScreenState extends State<LandingScreen>
                       child: AnimatedPadding(
                         duration: _artGrow,
                         curve: Curves.easeOutCubic,
-                        // Clears the notch / status bar on every device.
+                        // Clears the notch / status bar on every device, plus
+                        // a breath of sky so the wordmark never sits on the
+                        // very top edge.
                         padding: EdgeInsets.only(
                           top:
-                              (ready ? 6 : height * 0.11) + metrics.padding.top,
+                              (ready ? metrics.scale(34, 56) : height * 0.11) +
+                              metrics.padding.top,
                         ),
                         child: _Header(intro: _intro, metrics: metrics),
                       ),

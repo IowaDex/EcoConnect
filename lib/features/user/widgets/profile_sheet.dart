@@ -10,9 +10,11 @@ import 'package:provider/provider.dart';
 import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
+import '../../../core/constants/resident_areas.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/confirm_logout.dart';
 import '../../auth/utils/phone.dart';
+import '../../auth/widgets/area_field.dart';
 import 'user_avatar.dart';
 
 /// Opens the editable profile sheet: avatar, address and mobile number.
@@ -43,7 +45,9 @@ class _ProfileSheet extends StatefulWidget {
 class _ProfileSheetState extends State<_ProfileSheet> {
   late final TextEditingController _addressController;
   late final TextEditingController _phoneController;
+  late final TextEditingController _areaOtherController;
   String? _photoUrl;
+  String? _area;
   bool _saving = false;
 
   @override
@@ -55,13 +59,37 @@ class _ProfileSheetState extends State<_ProfileSheet> {
       text: Phone.localDigits(user?.phone),
     );
     _photoUrl = user?.photoUrl;
+
+    // A stored area that is not on the list came from "Other / Not Listed",
+    // so it reopens as that option with the typed text filled in.
+    final stored = user?.subdivision?.trim() ?? '';
+    if (stored.isEmpty) {
+      _area = null;
+      _areaOtherController = TextEditingController();
+    } else if (ResidentAreas.all.contains(stored)) {
+      _area = stored;
+      _areaOtherController = TextEditingController();
+    } else {
+      _area = ResidentAreas.other;
+      _areaOtherController = TextEditingController(text: stored);
+    }
   }
 
   @override
   void dispose() {
     _addressController.dispose();
     _phoneController.dispose();
+    _areaOtherController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickArea() async {
+    final picked = await showAreaPicker(context, selected: _area);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _area = picked;
+      if (!ResidentAreas.isOther(picked)) _areaOtherController.clear();
+    });
   }
 
   Future<void> _pickPhoto() async {
@@ -98,9 +126,18 @@ class _ProfileSheetState extends State<_ProfileSheet> {
       }
     }
 
+    final area = ResidentAreas.isOther(_area)
+        ? _areaOtherController.text.trim()
+        : _area;
+    if (ResidentAreas.isOther(_area) && (area == null || area.isEmpty)) {
+      _toast('Please enter your area');
+      return;
+    }
+
     setState(() => _saving = true);
     final ok = await widget.auth.updateProfile(
       phone: digits.isEmpty ? null : Phone.toE164(digits),
+      subdivision: area,
       houseStreet: _addressController.text.trim(),
       photoUrl: _photoUrl,
     );
@@ -252,6 +289,22 @@ class _ProfileSheetState extends State<_ProfileSheet> {
               ),
             ),
             const SizedBox(height: 16),
+            _ProfilePicker(
+              label: 'Subdivision / Area / Sitio',
+              value: _area,
+              hint: 'Select your area',
+              onTap: _pickArea,
+            ),
+            if (ResidentAreas.isOther(_area)) ...[
+              const SizedBox(height: 12),
+              _ProfileField(
+                label: 'Specify your area',
+                hint: 'Subdivision, area or sitio',
+                controller: _areaOtherController,
+                textCapitalization: TextCapitalization.words,
+              ),
+            ],
+            const SizedBox(height: 12),
             _ProfileField(
               label: 'Address',
               hint: 'Add your address',
@@ -317,6 +370,73 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tappable row in the profile-sheet style that opens a picker.
+class _ProfilePicker extends StatelessWidget {
+  const _ProfilePicker({
+    required this.label,
+    required this.value,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final String label;
+  final String? value;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = value != null && value!.trim().isNotEmpty;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        decoration: BoxDecoration(
+          color: AppColors.creamBright,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.inkMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    filled ? value! : hint,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: filled ? AppColors.forest : AppColors.inkMuted,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: AppColors.forest,
+                ),
+              ],
             ),
           ],
         ),

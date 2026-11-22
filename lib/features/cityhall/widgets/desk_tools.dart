@@ -72,11 +72,6 @@ class DeskTools extends StatelessWidget {
       icon: Icons.campaign_outlined,
       route: '/announcements',
     ),
-    const QuickAction(
-      label: 'Fleet',
-      icon: Icons.local_shipping_outlined,
-      route: '/fleet',
-    ),
     QuickAction(
       label: 'Signatures',
       icon: Icons.draw_outlined,

@@ -13,6 +13,7 @@ import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../dashboard/widgets/role_hero.dart';
 import '../../verification/services/verification_service.dart';
+import 'remove_resident.dart';
 
 /// Opens the resident's details and ID. Returns true once a decision was
 /// saved, so the caller can refresh its list.
@@ -146,6 +147,33 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
     }
   }
 
+  /// Deletes the account. Only for a resident who no longer belongs to the
+  /// barangay (moved out, or signed up with an address outside Batasan Hills).
+  Future<void> _remove() async {
+    final uid = _a['uid'] as String;
+    final name = (_a['name'] as String?)?.trim() ?? 'this resident';
+    if (!await confirmRemoveResident(context, name)) return;
+    if (!mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await deleteResidentAccount(uid);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop(true);
+      messenger.showSnackBar(SnackBar(content: Text('$name removed.')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not remove the account: $e'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
   /// The reason shown to the resident at login, or null when cancelled.
   Future<String?> _askReason() async {
     final controller = TextEditingController();
@@ -196,12 +224,10 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
   @override
   Widget build(BuildContext context) {
     final emailConfirmed = _a['emailVerified'] == true;
-    final isPending = _a['accountStatus'] == 'pending';
-    // Only a new, still-pending sign-up waits for the email confirmation.
-    final canApprove = emailConfirmed || !isPending;
     final status = _status();
     final address = [
       _a['houseStreet'],
+      _a['subdivision'],
       _a['barangay'],
       _a['city'],
       _a['province'],
@@ -250,9 +276,12 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
           ),
           _DecisionBar(
             busy: _busy,
-            canApprove: canApprove,
+            // An approved resident has nothing left to approve; Reject stays
+            // so the desk can still revoke the verification.
+            showApprove: status != VerificationStatus.verified,
             onReject: () => _decide(approve: false),
             onApprove: () => _decide(approve: true),
+            onRemove: _remove,
           ),
         ],
       ),
@@ -417,6 +446,11 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
             value: _ageFromBirthdate()?.toString(),
           ),
           _InfoRow(
+            icon: Icons.holiday_village_outlined,
+            label: 'Area',
+            value: (_a['subdivision'] as String?)?.trim(),
+          ),
+          _InfoRow(
             icon: Icons.place_outlined,
             label: 'Address',
             value: address.isEmpty ? null : address,
@@ -570,15 +604,17 @@ class _HeaderChip extends StatelessWidget {
 class _DecisionBar extends StatelessWidget {
   const _DecisionBar({
     required this.busy,
-    required this.canApprove,
+    required this.showApprove,
     required this.onReject,
     required this.onApprove,
+    required this.onRemove,
   });
 
   final bool busy;
-  final bool canApprove;
+  final bool showApprove;
   final VoidCallback onReject;
   final VoidCallback onApprove;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -605,28 +641,6 @@ class _DecisionBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!canApprove) ...[
-            const Row(
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 13,
-                  color: AppColors.warning,
-                ),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Approve unlocks once the resident confirms their email.',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      color: AppColors.warning,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 9),
-          ],
           Row(
             children: [
               Expanded(
@@ -643,28 +657,43 @@ class _DecisionBar extends StatelessWidget {
                   label: const Text('Reject'),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: (busy || !canApprove) ? null : onApprove,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(46),
+              if (showApprove) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: busy ? null : onApprove,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                    icon: busy
+                        ? const SizedBox(
+                            height: 15,
+                            width: 15,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_rounded, size: 17),
+                    label: Text(busy ? 'Saving' : 'Approve'),
                   ),
-                  icon: busy
-                      ? const SizedBox(
-                          height: 15,
-                          width: 15,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.check_rounded, size: 17),
-                  label: Text(busy ? 'Saving' : 'Approve'),
                 ),
-              ),
+              ],
             ],
+          ),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: busy ? null : onRemove,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.inkMuted,
+              minimumSize: const Size.fromHeight(34),
+            ),
+            icon: const Icon(Icons.person_remove_outlined, size: 15),
+            label: const Text(
+              'Remove resident',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
