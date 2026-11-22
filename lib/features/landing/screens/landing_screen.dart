@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/boot/boot_progress.dart';
+import '../../../core/constants/service_area.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/hex_leaf_logo.dart';
@@ -23,9 +25,10 @@ const Color _panelGreen = Color(0xFF3E8E41);
 const Color _panelGreenTop = Color(0xFF5DA45F);
 const Color _panelGreenBottom = Color(0xFF2E6B32);
 
-/// Top corners of the entry panel. Rounded so the sheet meets the illustration
-/// with a soft edge rather than a hard seam.
-const Radius _panelRadius = Radius.circular(30);
+/// The sheet is deliberately square. Every edge — the fade into the scene and
+/// the bottom that meets the screen — is a straight, full-bleed line, so no
+/// page background can peek through a corner and read as a white notch.
+const BorderRadius _panelCorners = BorderRadius.zero;
 
 /// How long the panel takes to fade and lift into place.
 const Duration _panelEntrance = Duration(milliseconds: 700);
@@ -152,6 +155,9 @@ class _LandingScreenState extends State<LandingScreen>
                         // is always anchored above it.
                         Expanded(
                           child: Stack(
+                            // The fade deliberately spills a hair past this
+                            // box; see below.
+                            clipBehavior: Clip.none,
                             children: [
                               Positioned.fill(
                                 child: _Illustration(
@@ -165,12 +171,21 @@ class _LandingScreenState extends State<LandingScreen>
                               // the artwork dissolves into the panel colour
                               // before the panel starts, so the two surfaces
                               // meet as one gradient instead of a seam.
+                              //
+                              // The band runs two points past this box so its
+                              // bottom row sits *under* the panel instead of
+                              // butting against it. Two edges meeting on the
+                              // same fractional pixel each cover only part of
+                              // that row, and the artwork underneath shows
+                              // through as a hairline. The overlap is the same
+                              // colour on both sides, so it costs nothing to
+                              // look at.
                               if (ready)
                                 Positioned(
                                   left: 0,
                                   right: 0,
-                                  bottom: 0,
-                                  height: metrics.scale(44, 70),
+                                  bottom: -2,
+                                  height: metrics.scale(44, 70) + 2,
                                   child: const _PanelFade(),
                                 ),
                             ],
@@ -536,8 +551,9 @@ class _Illustration extends StatelessWidget {
 }
 
 /// Soft top edge for the sheet: opaque panel green at the bottom, fully clear
-/// at the top, with the same corner radius as the panel underneath. It sits on
-/// the last few points of the artwork, so the scene fades into the sheet.
+/// at the top. It spans the full width with square corners, so the scene fades
+/// into the sheet along one straight horizontal line — no curve at either end
+/// and no gap for the page background to show through.
 class _PanelFade extends StatelessWidget {
   const _PanelFade();
 
@@ -551,14 +567,18 @@ class _PanelFade extends StatelessWidget {
             end: Alignment.bottomCenter,
             colors: [Color(0x005DA45F), _panelGreenTop],
           ),
-          borderRadius: BorderRadius.vertical(top: _panelRadius),
+          borderRadius: _panelCorners,
         ),
       ),
     );
   }
 }
 
-/// Green panel with the value proposition and the two entry points.
+/// Green sheet with the value proposition and the two entry points.
+///
+/// Square on every side: the bottom edge sits flush with the screen and the
+/// top edge is a straight line under the illustration's fade, so the sheet
+/// reads as one flat block of green rather than a floating rounded card.
 class _EntryPanel extends StatelessWidget {
   const _EntryPanel({required this.intro, required this.metrics});
 
@@ -595,7 +615,7 @@ class _EntryPanel extends StatelessWidget {
             colors: [_panelGreenTop, _panelGreen, _panelGreenBottom],
             stops: [0.0, 0.45, 1.0],
           ),
-          borderRadius: BorderRadius.vertical(top: _panelRadius),
+          borderRadius: _panelCorners,
         ),
         padding: EdgeInsets.fromLTRB(
           hPad,
@@ -622,16 +642,20 @@ class _EntryPanel extends StatelessWidget {
                       intro: intro,
                       start: 0.46,
                       end: 0.78,
-                      child: Text(
-                        'Smarter waste collection\nfor every barangay',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: compact
-                              ? metrics.scale(16, 18)
-                              : metrics.scale(25, 31),
-                          height: 1.15,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Smarter waste collection\n'
+                          'for Barangay ${ServiceArea.barangay}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: compact
+                                ? metrics.scale(16, 18)
+                                : metrics.scale(25, 31),
+                            height: 1.15,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -664,54 +688,91 @@ class _EntryPanel extends StatelessWidget {
                     ),
                     SizedBox(height: compact ? 12 : metrics.scale(20, 26)),
                     SizedBox(
-                      height: compact ? 42 : metrics.scale(58, 66),
-                      child: FilledButton(
-                        onPressed: () => context.go('/signup'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF1B5E20),
-                          elevation: 0,
-                          shape: const StadiumBorder(),
-                          textStyle: TextStyle(
-                            fontSize: compact
-                                ? metrics.scale(12, 13)
-                                : metrics.scale(13.5, 15.5),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('Get Started'),
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              size: compact ? 16 : metrics.scale(18, 20),
+                      height: compact ? 44 : metrics.scale(58, 66),
+                      child: _PressScale(
+                        child: FilledButton(
+                          onPressed: () => context.go('/signup'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF14501C),
+                            elevation: 3,
+                            // A green shadow instead of the default grey: the
+                            // button reads as lifted off the sheet rather than
+                            // pasted onto it.
+                            shadowColor: const Color(0x40143A1A),
+                            overlayColor: const Color(0x1414501C),
+                            shape: const StadiumBorder(),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: metrics.scale(20, 26),
                             ),
-                          ],
+                            textStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: compact
+                                  ? metrics.scale(12.5, 13.5)
+                                  : metrics.scale(14, 16),
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.15,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Get Started'),
+                              SizedBox(width: compact ? 8 : 10),
+                              // The arrow rides in its own pale-green disc, so
+                              // it sits on the button's centre line instead of
+                              // floating beside the label.
+                              Container(
+                                width: compact ? 20 : metrics.scale(24, 26),
+                                height: compact ? 20 : metrics.scale(24, 26),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE7F3E4),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: compact
+                                      ? 12
+                                      : metrics.scale(13, 14),
+                                  color: const Color(0xFF14501C),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    SizedBox(height: compact ? 8 : 12),
+                    SizedBox(height: compact ? 10 : 14),
                     SizedBox(
-                      height: compact ? 40 : metrics.scale(54, 62),
-                      child: OutlinedButton(
-                        onPressed: () => context.go('/login'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(
-                            color: Colors.white,
-                            width: 1.4,
+                      height: compact ? 42 : metrics.scale(54, 62),
+                      child: _PressScale(
+                        child: OutlinedButton(
+                          onPressed: () => context.go('/login'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            // A wash of white rather than nothing: the outlined
+                            // button reads as a surface on the green sheet
+                            // instead of a floating rectangle of text.
+                            backgroundColor: const Color(0x1AFFFFFF),
+                            side: const BorderSide(
+                              color: Color(0x8CFFFFFF),
+                              width: 1.2,
+                            ),
+                            overlayColor: const Color(0x26FFFFFF),
+                            shape: const StadiumBorder(),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: metrics.scale(18, 24),
+                            ),
+                            textStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: compact
+                                  ? metrics.scale(11.5, 12.5)
+                                  : metrics.scale(12.5, 14.5),
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.2,
+                            ),
                           ),
-                          shape: const StadiumBorder(),
-                          textStyle: TextStyle(
-                            fontSize: compact
-                                ? metrics.scale(11, 12.5)
-                                : metrics.scale(12.5, 14.5),
-                            fontWeight: FontWeight.w600,
-                          ),
+                          child: const Text('I already have an account'),
                         ),
-                        child: const Text('I already have an account'),
                       ),
                     ),
                   ],
@@ -773,6 +834,44 @@ class _Reveal extends StatelessWidget {
         );
       },
       child: child,
+    );
+  }
+}
+
+/// Shrinks its child a hair while a finger is held on it, then springs back.
+///
+/// A [Listener] rather than a gesture recogniser on purpose: it only observes
+/// the pointer, so the button keeps the tap, its ripple and its semantics, and
+/// the press effect can never swallow a press or leave it stuck on.
+class _PressScale extends StatefulWidget {
+  const _PressScale({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.975 : 1.0,
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOutCubic,
+        child: widget.child,
+      ),
     );
   }
 }

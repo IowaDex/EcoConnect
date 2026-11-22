@@ -1006,7 +1006,8 @@ class _AnnouncementEditorState extends State<_AnnouncementEditor> {
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   labelText: 'Title',
-                  hintText: 'e.g. Collection schedule for Barangay San Isidro',
+                  hintText:
+                      'e.g. Collection schedule for Barangay Batasan Hills',
                 ),
                 validator: (value) => (value == null || value.trim().length < 4)
                     ? 'Please enter a clear title'

@@ -28,6 +28,8 @@ abstract final class AppTheme {
           onTertiary: AppColors.textDark,
         );
 
+    // Body copy, headings and the brand stay on Poppins. Only buttons and
+    // labels switch to Plus Jakarta Sans — see [_labelFont] below.
     return _base(scheme, GoogleFonts.poppinsTextTheme());
   }
 
@@ -49,9 +51,8 @@ abstract final class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
       ),
-      textStyle: const TextStyle(
+      textStyle: _labelFont(
         fontSize: 14.5,
-        fontWeight: FontWeight.w600,
         letterSpacing: 0.2,
       ),
     ).copyWith(
@@ -79,7 +80,7 @@ abstract final class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
       ),
-      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      textStyle: _labelFont(fontSize: 14),
     ).copyWith(
       overlayColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.pressed)) {
@@ -94,7 +95,7 @@ abstract final class AppTheme {
 
     final textButton = TextButton.styleFrom(
       foregroundColor: scheme.primary,
-      textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+      textStyle: _labelFont(fontSize: 12.5),
     ).copyWith(
       overlayColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.pressed)) {
@@ -198,14 +199,12 @@ abstract final class AppTheme {
         backgroundColor: AppColors.lightGreen,
         selectedColor: AppColors.primary,
         side: BorderSide(color: AppColors.sage.withValues(alpha: 0.8)),
-        labelStyle: const TextStyle(
+        labelStyle: _labelFont(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
           color: AppColors.darkGreen,
         ),
-        secondaryLabelStyle: const TextStyle(
+        secondaryLabelStyle: _labelFont(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -275,6 +274,26 @@ abstract final class AppTheme {
       ),
     );
   }
+}
+
+/// The face used for button text and small labels.
+///
+/// Plus Jakarta Sans is a contemporary corporate grotesque: even stroke widths
+/// and a tall x-height keep 9–14 pt labels crisp, where Poppins' geometric
+/// letterforms read as decorative. Body copy, headings and the wordmark keep
+/// Poppins, so the app's voice does not change — only its controls do.
+TextStyle _labelFont({
+  required double fontSize,
+  FontWeight fontWeight = FontWeight.w600,
+  double? letterSpacing,
+  Color? color,
+}) {
+  return GoogleFonts.plusJakartaSans(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    letterSpacing: letterSpacing,
+    color: color,
+  );
 }
 
 /// Route transition shared by every platform: the new page fades in while

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Layout, motion and type constants shared by the redesigned screens.
 ///
@@ -48,6 +49,10 @@ abstract final class EcoMotion {
 /// widget sits somewhere the default text style is not inherited — a dialog, a
 /// bottom sheet, a map overlay.
 ///
+/// Labels and controls are the exception: they take [Plus Jakarta Sans][_label],
+/// a corporate grotesque that holds its shape at 8–11 pt. Headings and reading
+/// copy keep Poppins, so only the chrome of a desk changes.
+///
 /// Sizes follow one scale: 8 / 9 / 9.5 / 10 / 11 / 11.5 / 13.5 / 14.5 / 20.
 abstract final class EcoType {
   const EcoType._();
@@ -71,8 +76,26 @@ abstract final class EcoType {
     );
   }
 
+  /// The label face: buttons, eyebrows, chips, badges and small actions.
+  static TextStyle _label(
+    BuildContext context, {
+    required double size,
+    required FontWeight weight,
+    double? height,
+    double? letterSpacing,
+    Color? color,
+  }) {
+    return GoogleFonts.plusJakartaSans(
+      fontSize: size,
+      fontWeight: weight,
+      height: height,
+      letterSpacing: letterSpacing,
+      color: color ?? Theme.of(context).colorScheme.onSurface,
+    );
+  }
+
   /// The small uppercase line above a title, e.g. `CITY HALL · DOCUMENT DESK`.
-  static TextStyle eyebrow(BuildContext context, {Color? color}) => _style(
+  static TextStyle eyebrow(BuildContext context, {Color? color}) => _label(
     context,
     size: 9,
     weight: FontWeight.w800,
@@ -91,7 +114,7 @@ abstract final class EcoType {
   );
 
   /// The caption under a metric value, always uppercased by the caller.
-  static TextStyle metricLabel(BuildContext context, {Color? color}) => _style(
+  static TextStyle metricLabel(BuildContext context, {Color? color}) => _label(
     context,
     size: 8,
     weight: FontWeight.w800,
@@ -189,14 +212,14 @@ abstract final class EcoType {
 
   /// A number or unit inside a badge.
   static TextStyle micro(BuildContext context, {Color? color}) =>
-      _style(context, size: 8, weight: FontWeight.w800, color: color);
+      _label(context, size: 8, weight: FontWeight.w800, color: color);
 
   /// A small label that carries an action, e.g. "Clear filters".
   static TextStyle label(
     BuildContext context, {
     Color? color,
     FontWeight? weight,
-  }) => _style(
+  }) => _label(
     context,
     size: 10,
     weight: weight ?? FontWeight.w700,
@@ -222,9 +245,9 @@ abstract final class EcoType {
     Color? color,
     FontWeight? weight,
   }) =>
-      _style(context, size: 9, weight: weight ?? FontWeight.w700, color: color);
+      _label(context, size: 9, weight: weight ?? FontWeight.w700, color: color);
 
   /// A button label on a compact desk action.
   static TextStyle action(BuildContext context, {Color? color}) =>
-      _style(context, size: 11.5, weight: FontWeight.w700, color: color);
+      _label(context, size: 11.5, weight: FontWeight.w700, color: color);
 }
