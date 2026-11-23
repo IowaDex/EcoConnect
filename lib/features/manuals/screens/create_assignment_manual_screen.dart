@@ -1,18 +1,22 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../../tickets/models/trip_ticket.dart';
+import '../data/manual_areas.dart';
+import '../models/manual_assignment.dart';
 import '../services/assignment_manual_service.dart';
 import '../services/manual_pdf.dart';
-import 'manual_route_picker_screen.dart';
+import '../widgets/manual_route_map.dart';
 
 /// A driver account Iswim can put on a manual.
 class _DriverOption {
@@ -25,11 +29,84 @@ class _DriverOption {
   String get key => uid.isNotEmpty ? 'uid:$uid' : 'name:$name';
 }
 
+/// One row Iswim has built but not submitted yet.
+class _DraftAssignment {
+  _DraftAssignment({
+    required this.driverId,
+    required this.driverName,
+    required this.truck,
+    required this.routes,
+    required this.days,
+    required this.startTime,
+    required this.recurrence,
+  });
+
+  final String driverId;
+  final String driverName;
+  final GarbageTruck truck;
+  final List<ManualArea> routes;
+  final Set<int> days;
+  final TimeOfDay startTime;
+  final ManualRecurrence recurrence;
+
+  int get maxRoutes => maxRoutesForWheelers(truck.wheelers);
+
+  String get startLabel =>
+      '${startTime.hour.toString().padLeft(2, '0')}:'
+      '${startTime.minute.toString().padLeft(2, '0')}';
+
+  String get daysLabel => ([...days]..sort()).map(manualDayLabel).join(' · ');
+
+  List<String> get routeNames => [for (final area in routes) area.name];
+
+  ManualAssignment toManualAssignment() => ManualAssignment(
+    driverId: driverId,
+    driverName: driverName,
+    truckId: truck.id,
+    plateNumber: truck.plateNumber,
+    wheelers: truck.wheelers,
+    routes: routeNames,
+    routePoints: [
+      for (final area in routes)
+        ManualRoutePoint(
+          name: area.name,
+          latitude: area.center.latitude,
+          longitude: area.center.longitude,
+        ),
+    ],
+    days: [...days]..sort(),
+    startTime: startLabel,
+    recurrence: recurrence,
+  );
+}
+
+class _SheetResult {
+  const _SheetResult({required this.draft, required this.addAnother});
+
+  final _DraftAssignment draft;
+  final bool addAnother;
+}
+
+const _letterColors = <Color>[
+  Color(0xFF2E7D32),
+  Color(0xFF1E88E5),
+  Color(0xFF00897B),
+  Color(0xFF8E24AA),
+  Color(0xFFF9A825),
+  Color(0xFF6D4C41),
+];
+
+Color _letterColor(int index) => _letterColors[index % _letterColors.length];
+
+String _letter(int index) =>
+    String.fromCharCode('A'.codeUnitAt(0) + (index % 26));
+
 /// Iswim builds the collection manual City Hall asked for.
 ///
-/// One driver, the truck that comes with him, up to three routes, the days he
-/// runs and a single start time. Submitting it generates the trip ticket that
-/// City Hall signs; until then the schedule is not valid.
+/// The manual is a bulk assignment: the officer adds one row per driver, each
+/// with the truck that comes with the account, the areas the truck covers, the
+/// days, the start time and how long the schedule repeats. The review step
+/// sends the whole roster to City Hall, which signs one trip ticket per row.
 class CreateAssignmentManualScreen extends StatefulWidget {
   const CreateAssignmentManualScreen({
     super.key,
@@ -47,30 +124,38 @@ class CreateAssignmentManualScreen extends StatefulWidget {
 
 class _CreateAssignmentManualScreenState
     extends State<CreateAssignmentManualScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
-
-  /// The streets picked on the map, in tap order.
-  final List<ManualRoutePoint> _routes = [];
+  final List<_DraftAssignment> _assignments = [];
 
   List<_DriverOption> _accounts = const [];
   List<GarbageTruck> _trucks = const [];
-  String? _driverKey;
-  final Set<int> _days = {1, 3, 5};
-  TimeOfDay _startTime = const TimeOfDay(hour: 6, minute: 0);
-  ManualRecurrence _recurrence = ManualRecurrence.weekly;
+  StreamSubscription<List<GarbageTruck>>? _truckSub;
   bool _busy = false;
   bool _loadingDrivers = true;
+
+  /// 0 = drivers & routes, 1 = review.
+  int _step = 0;
 
   @override
   void initState() {
     super.initState();
-    _title.text = widget.requestTitle.trim();
+    _title.text = widget.requestTitle.trim().isEmpty
+        ? 'Collection manual'
+        : widget.requestTitle.trim();
+    _truckSub = FleetService().watchTrucks().listen(
+      (trucks) {
+        if (mounted) setState(() => _trucks = trucks);
+      },
+      // Offline or rules blocked: the add sheet still opens and explains that
+      // the fleet is empty instead of throwing into the zone.
+      onError: (_) {},
+    );
     _loadDrivers();
   }
 
   @override
   void dispose() {
+    _truckSub?.cancel();
     _title.dispose();
     super.dispose();
   }
@@ -124,99 +209,85 @@ class _CreateAssignmentManualScreenState
     return options;
   }
 
-  _DriverOption? get _selected {
-    final key = _driverKey;
-    if (key == null) return null;
-    for (final option in _options()) {
-      if (option.key == key) return option;
+  void _handleBack() {
+    if (_step == 1) {
+      setState(() => _step = 0);
+      return;
     }
-    return null;
-  }
-
-  GarbageTruck? get _truck {
-    final driver = _selected;
-    if (driver == null) return null;
-    for (final truck in _trucks) {
-      if (driver.truckId != null && truck.id == driver.truckId) return truck;
-      if (truck.driverName.trim().toLowerCase() ==
-          driver.name.trim().toLowerCase()) {
-        return truck;
-      }
-    }
-    return null;
-  }
-
-  int get _maxRoutes {
-    final truck = _truck;
-    return maxRoutesForWheelers(truck?.wheelers ?? 6);
-  }
-
-  void _syncRouteFields() {
-    if (_routes.length > _maxRoutes) {
-      _routes.removeRange(_maxRoutes, _routes.length);
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/iswim');
     }
   }
 
-  /// Opens the map so the streets can be tapped instead of typed. The picked
-  /// list replaces whatever was there, which is also how a route is changed.
-  Future<void> _pickRoutes() async {
-    final truck = _truck;
-    if (truck == null) {
+  Future<void> _openEditor({int? index}) async {
+    final options = _options();
+    if (options.isEmpty) {
       AppFeedback.error(
         context,
-        'Pick a driver with an assigned truck first — the truck size sets how '
-        'many routes fit.',
+        'No drivers yet. Pair a driver account, or save a truck with a named '
+        'driver, then try again.',
       );
       return;
     }
-    final picked = await Navigator.of(context).push<List<ManualRoutePoint>>(
-      MaterialPageRoute(
-        builder: (_) => ManualRoutePickerScreen(
-          maxRoutes: maxRoutesForWheelers(truck.wheelers),
-        ),
-      ),
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      _routes
-        ..clear()
-        ..addAll(picked.take(maxRoutesForWheelers(truck.wheelers)));
-    });
-  }
-
-  String get _startLabel =>
-      '${_startTime.hour.toString().padLeft(2, '0')}:'
-      '${_startTime.minute.toString().padLeft(2, '0')}';
-
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _startTime,
-    );
-    if (picked != null) setState(() => _startTime = picked);
-  }
-
-  List<String> get _routeValues =>
-      List<String>.unmodifiable(_routes.map((point) => point.name));
-
-  Future<void> _exportPdf() async {
-    final driver = _selected;
-    final truck = _truck;
-    if (driver == null || truck == null) {
-      AppFeedback.error(context, 'Pick a driver with an assigned truck first.');
+    if (_trucks.isEmpty) {
+      AppFeedback.error(
+        context,
+        'The fleet is empty. Add a truck before assigning a driver.',
+      );
       return;
     }
+
+    final result = await showModalBottomSheet<_SheetResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AssignmentSheet(
+        accounts: options,
+        trucks: _trucks,
+        existing: index == null ? null : _assignments[index],
+        others: [
+          for (var i = 0; i < _assignments.length; i++)
+            if (i != index) _assignments[i],
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      if (index == null) {
+        _assignments.add(result.draft);
+      } else {
+        _assignments[index] = result.draft;
+      }
+    });
+
+    if (result.addAnother) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openEditor();
+      });
+    }
+  }
+
+  void _remove(int index) => setState(() => _assignments.removeAt(index));
+
+  Future<void> _exportPdf() async {
+    final first = _assignments.first;
     final saved = await exportAssignmentManualPdf(
       title: _title.text,
-      driverName: driver.name,
-      plateNumber: truck.plateNumber,
-      wheelers: truck.wheelers,
-      routes: _routeValues,
-      days: [..._days]..sort(),
-      startTime: _startLabel,
-      recurrence: _recurrence,
+      driverName: first.driverName,
+      plateNumber: first.truck.plateNumber,
+      wheelers: first.truck.wheelers,
+      routes: first.routeNames,
+      days: [...first.days]..sort(),
+      startTime: first.startLabel,
+      recurrence: first.recurrence,
       status: 'Waiting for City Hall approval',
       requestTitle: widget.requestTitle,
+      assignments: [
+        for (final assignment in _assignments) assignment.toManualAssignment(),
+      ],
     );
     if (!mounted) return;
     if (saved) {
@@ -230,31 +301,16 @@ class _CreateAssignmentManualScreenState
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    final driver = _selected;
-    final truck = _truck;
-    if (driver == null) {
-      AppFeedback.error(context, 'Select the driver for this manual.');
+    if (_assignments.isEmpty) {
+      AppFeedback.error(context, 'Add at least one driver to this manual.');
       return;
     }
-    if (truck == null) {
-      AppFeedback.error(
-        context,
-        'That driver has no truck assigned. Pair a plate in Fleet first.',
-      );
-      return;
-    }
-    if (_days.isEmpty) {
-      AppFeedback.error(context, 'Pick at least one collection day.');
-      return;
-    }
-    final routes = _routeValues;
-    if (routes.isEmpty) {
-      AppFeedback.error(context, 'Pick at least one route on the map.');
+    if (_title.text.trim().isEmpty) {
+      AppFeedback.error(context, 'Give this manual a title.');
       return;
     }
 
-    final confirmed = await _confirm(driver, truck, routes);
+    final confirmed = await _confirm();
     if (!confirmed || !mounted) return;
 
     final user = context.read<AuthProvider>().currentUser;
@@ -262,25 +318,22 @@ class _CreateAssignmentManualScreenState
 
     setState(() => _busy = true);
     try {
-      final manual = await AssignmentManualService().submit(
+      final manual = await AssignmentManualService().submitBatch(
         title: _title.text,
-        driverId: driver.uid,
-        driverName: driver.name,
-        truckId: truck.id,
-        plateNumber: truck.plateNumber,
-        wheelers: truck.wheelers,
-        routes: routes,
-        routePoints: List<ManualRoutePoint>.unmodifiable(_routes),
-        days: [..._days]..sort(),
-        startTime: _startLabel,
-        recurrence: _recurrence,
+        assignments: [
+          for (final assignment in _assignments)
+            assignment.toManualAssignment(),
+        ],
         byId: user.uid,
         byName: user.displayName ?? 'Iswim',
         requestId: widget.requestId,
       );
       if (!mounted) return;
-      if (manual.ticketId != null) {
-        context.go('/tickets/${manual.ticketId}');
+      final firstTicket = manual.ticketIds.isNotEmpty
+          ? manual.ticketIds.first
+          : manual.ticketId;
+      if (firstTicket != null && firstTicket.isNotEmpty) {
+        context.go('/tickets/$firstTicket');
       } else {
         context.go('/iswim');
       }
@@ -303,34 +356,52 @@ class _CreateAssignmentManualScreenState
     }
   }
 
-  Future<bool> _confirm(
-    _DriverOption driver,
-    GarbageTruck truck,
-    List<String> routes,
-  ) async {
-    final days = ([..._days]..sort()).map(manualDayLabel).join(', ');
+  Future<bool> _confirm() async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('All credentials are correct?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _confirmRow('Driver', driver.name),
-            _confirmRow('Plate number', truck.plateNumber),
-            _confirmRow('Truck', truck.wheelerLabel),
-            _confirmRow('Routes', routes.join(' · ')),
-            _confirmRow('Schedule', days),
-            _confirmRow('Start time', _startLabel),
-            _confirmRow('Recurrence', _recurrence.label),
-            const SizedBox(height: 10),
-            const Text(
-              'Submitting generates a trip ticket that still needs the City '
-              'Hall signature before it becomes valid.',
-              style: TextStyle(fontSize: 10.5, height: 1.45),
+        title: Text(
+          'Send ${_assignments.length} '
+          '${_assignments.length == 1 ? 'assignment' : 'assignments'} to City '
+          'Hall?',
+        ),
+        content: SizedBox(
+          width: 380,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _confirmRow('Manual', _title.text.trim()),
+                for (var i = 0; i < _assignments.length; i++) ...[
+                  const SizedBox(height: 7),
+                  Text(
+                    '${_letter(i)} · ${_assignments[i].driverName}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                  _confirmRow('Plate', _assignments[i].truck.plateNumber),
+                  _confirmRow('Areas', _assignments[i].routeNames.join(' · ')),
+                  _confirmRow(
+                    'Schedule',
+                    '${_assignments[i].daysLabel} · '
+                        '${_assignments[i].startLabel} · '
+                        '${_assignments[i].recurrence.label}',
+                  ),
+                ],
+                const SizedBox(height: 10),
+                const Text(
+                  'Submitting generates one trip ticket per driver. They stay '
+                  'covered by a "waiting for City Hall approval" screen until '
+                  'the DSQC signs them.',
+                  style: TextStyle(fontSize: 10.5, height: 1.45),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -350,22 +421,22 @@ class _CreateAssignmentManualScreenState
 
   Widget _confirmRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.only(bottom: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 92,
+            width: 70,
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 10.5,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
                 color: AppColors.inkMuted,
               ),
             ),
           ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 10.5))),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 10))),
         ],
       ),
     );
@@ -373,420 +444,815 @@ class _CreateAssignmentManualScreenState
 
   @override
   Widget build(BuildContext context) {
-    return EcoPageScaffold(
-      eyebrow: 'ISWIM · MANUAL',
-      title: 'Create collection manual',
-      subtitle: widget.requestTitle.trim().isEmpty
-          ? 'Build the schedule, then send it to City Hall for approval.'
-          : 'Answering: ${widget.requestTitle.trim()}',
-      onBack: () => ecoBack(context, '/manual-requests'),
-      body: StreamBuilder<List<GarbageTruck>>(
-        stream: FleetService().watchTrucks(),
-        builder: (context, snapshot) {
-          _trucks = snapshot.data ?? _trucks;
-          // The fleet stream can land after a driver is picked; trim any route
-          // fields the smaller truck cannot take after this frame.
-          if (_routes.length > _maxRoutes) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _routes.length > _maxRoutes) {
-                setState(_syncRouteFields);
-              }
-            });
-          }
-          final driver = _selected;
-          final truck = _truck;
-
-          return Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
               children: [
-                const _SectionLabel('MANUAL TITLE'),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _title,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    hintText: 'e.g. Zone 3 weekly collection schedule',
-                    isDense: true,
-                  ),
-                  validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Give this manual a title'
-                      : null,
+                _buildHeader(),
+                Expanded(
+                  child: _step == 0 ? _buildAssignStep() : _buildReviewStep(),
                 ),
-                const SizedBox(height: 18),
-                const _SectionLabel('DRIVER AND TRUCK'),
-                const SizedBox(height: 8),
-                if (_loadingDrivers && _accounts.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: LinearProgressIndicator(minHeight: 2),
-                  )
-                else
-                  DropdownButtonFormField<String>(
-                    initialValue: _driverKey,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Driver',
-                      isDense: true,
-                    ),
-                    items: [
-                      for (final option in _options())
-                        DropdownMenuItem(
-                          value: option.key,
-                          child: Text(
-                            option.name,
-                            style: const TextStyle(fontSize: 11.5),
-                          ),
-                        ),
-                    ],
-                    onChanged: (value) => setState(() {
-                      _driverKey = value;
-                      _syncRouteFields();
-                    }),
-                    validator: (value) =>
-                        value == null ? 'Select the driver' : null,
+                _buildBottomBar(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 20, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: _handleBack,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  height: 38,
+                  width: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.sage),
                   ),
-                if (driver != null) ...[
-                  const SizedBox(height: 9),
-                  Container(
-                    padding: const EdgeInsets.all(11),
-                    decoration: BoxDecoration(
-                      color: truck == null ? AppColors.cream : AppColors.mint,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: truck == null
-                            ? AppColors.warning
-                            : AppColors.sage,
+                  child: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 15,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ISWIM · MANUAL',
+                      style: EcoType.eyebrow(
+                        context,
+                        color: AppColors.inkMuted,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          truck == null
-                              ? Icons.warning_amber_rounded
-                              : Icons.local_shipping_rounded,
-                          size: 16,
-                          color: truck == null
-                              ? AppColors.warning
-                              : AppColors.forest,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            truck == null
-                                ? '${driver.name} has no truck assigned yet.'
-                                : '${truck.plateNumber} · ${truck.wheelerLabel} · '
-                                      '${truck.bodyType} · ${truck.zone}',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: truck == null
-                                  ? AppColors.textDark
-                                  : AppColors.forest,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    const _SectionLabel('ROUTES'),
-                    const Spacer(),
+                    const SizedBox(height: 1),
                     Text(
-                      '${_routes.length}/$_maxRoutes max',
+                      _step == 0 ? 'Assign drivers' : 'Review manual',
+                      style: EcoType.cardTitleLarge(
+                        context,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _StepBar(step: _step),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssignStep() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      children: [
+        const _SectionLabel('MANUAL TITLE'),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _title,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Title',
+            hintText: 'e.g. Zone 3 weekly collection schedule',
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 18),
+        const _SectionLabel('THIS WEEK AT A GLANCE'),
+        const SizedBox(height: 8),
+        _WeekGlance(assignments: _assignments),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            const _SectionLabel('ASSIGNMENTS'),
+            const Spacer(),
+            Text(
+              '${_assignments.length} added',
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_assignments.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.mint,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.sage),
+            ),
+            child: const Text(
+              'No drivers yet. Add an assignment and its letter lands on the '
+              'week above.',
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.5,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          )
+        else
+          for (var i = 0; i < _assignments.length; i++) ...[
+            _AssignmentCard(
+              index: i,
+              assignment: _assignments[i],
+              onTap: () => _openEditor(index: i),
+              onRemove: () => _remove(i),
+            ),
+            if (i < _assignments.length - 1) const SizedBox(height: 8),
+          ],
+        const SizedBox(height: 10),
+        _AddAssignmentButton(
+          onTap: _loadingDrivers ? null : () => _openEditor(),
+        ),
+        if (_loadingDrivers) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(minHeight: 2),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildReviewStep() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      children: [
+        const _SectionLabel('MANUAL TITLE'),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Text(
+            _title.text.trim().isEmpty ? 'Collection manual' : _title.text,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.darkGreen,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            const _SectionLabel('ASSIGNMENTS'),
+            const Spacer(),
+            Text(
+              '${_assignments.length} '
+              '${_assignments.length == 1 ? 'driver' : 'drivers'}',
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < _assignments.length; i++) ...[
+          _ReviewAssignmentCard(index: i, assignment: _assignments[i]),
+          if (i < _assignments.length - 1) const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 18),
+        const _SectionLabel('ROUTE MAP'),
+        const SizedBox(height: 8),
+        ManualRouteMap(
+          height: 220,
+          groups: [
+            for (var i = 0; i < _assignments.length; i++)
+              ManualRouteGroup(
+                areas: _assignments[i].routes,
+                color: _letterColor(i),
+                label: _letter(i),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 44,
+          child: OutlinedButton.icon(
+            onPressed: _busy ? null : _exportPdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 17),
+            label: const Text(
+              'Generate mock manual (PDF)',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.forest,
+              side: const BorderSide(color: AppColors.sage),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Submitting generates one trip ticket per driver. The schedule stays '
+          'covered by a "waiting for City Hall approval" screen until the DSQC '
+          'signs every ticket.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 10,
+            height: 1.5,
+            color: AppColors.inkMuted,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar() {
+    final review = _step == 0;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: AppColors.sage)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 46,
+              child: OutlinedButton(
+                onPressed: _busy ? null : _handleBack,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.forest,
+                  side: const BorderSide(color: AppColors.sage),
+                ),
+                child: const Text(
+                  'Back',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: SizedBox(
+              height: 46,
+              child: FilledButton(
+                onPressed: _busy
+                    ? null
+                    : review
+                    ? (_assignments.isEmpty
+                          ? null
+                          : () => setState(() => _step = 1))
+                    : _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.forest,
+                ),
+                child: _busy
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        review
+                            ? (_assignments.isEmpty
+                                  ? 'Review assignments'
+                                  : 'Review ${_assignments.length} '
+                                        '${_assignments.length == 1 ? 'assignment' : 'assignments'}')
+                            : 'Submit manual',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Step bar
+// -----------------------------------------------------------------------------
+
+class _StepBar extends StatelessWidget {
+  const _StepBar({required this.step});
+
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _StepDot(number: 1, label: 'Drivers & routes', active: step >= 0),
+        Expanded(
+          child: Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: step >= 1 ? AppColors.primary : AppColors.sage,
+          ),
+        ),
+        _StepDot(number: 2, label: 'Review', active: step >= 1),
+      ],
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  const _StepDot({
+    required this.number,
+    required this.label,
+    required this.active,
+  });
+
+  final int number;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppColors.primary : AppColors.inkMuted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          height: 20,
+          width: 20,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: active ? AppColors.primary : Colors.transparent,
+            border: Border.all(color: color),
+          ),
+          child: Text(
+            '$number',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              color: active ? Colors.white : color,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Week at a glance
+// -----------------------------------------------------------------------------
+
+class _WeekGlance extends StatelessWidget {
+  const _WeekGlance({required this.assignments});
+
+  final List<_DraftAssignment> assignments;
+
+  @override
+  Widget build(BuildContext context) {
+    final cells = <String, int>{};
+    for (var i = 0; i < assignments.length; i++) {
+      final row = assignments[i].startTime.hour < 12 ? 8 : 18;
+      for (final day in assignments[i].days) {
+        cells.putIfAbsent('$day-$row', () => i);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 38),
+              for (var day = 1; day <= 7; day++)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      manualDayLabel(day),
                       style: const TextStyle(
-                        fontSize: 9.5,
+                        fontSize: 9,
                         fontWeight: FontWeight.w700,
                         color: AppColors.inkMuted,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_routes.isEmpty)
-                  InkWell(
-                    onTap: _pickRoutes,
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(13, 12, 11, 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.mint,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.sage),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.map_outlined,
-                            size: 18,
-                            color: AppColors.forest,
-                          ),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Pick the routes on the map',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.forest,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Tap the streets the truck covers — the names '
-                                  'are filled in for you.',
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    height: 1.4,
-                                    color: AppColors.inkMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            size: 18,
-                            color: AppColors.forest,
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else ...[
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (var i = 0; i < _routes.length; i++)
-                        Container(
-                          padding: const EdgeInsets.only(left: 9, right: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.mint,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.sage),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${i + 1}. ${_routes[i].name}',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.forest,
-                                ),
-                              ),
-                              InkWell(
-                                onTap: () =>
-                                    setState(() => _routes.removeAt(i)),
-                                customBorder: const CircleBorder(),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(4),
-                                  child: Icon(
-                                    Icons.close_rounded,
-                                    size: 13,
-                                    color: AppColors.inkMuted,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
                   ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _pickRoutes,
-                      icon: const Icon(Icons.map_outlined, size: 15),
-                      label: const Text(
-                        'Change routes on the map',
-                        style: TextStyle(fontSize: 10.5),
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                const _SectionLabel('SCHEDULE'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (var day = 1; day <= 7; day++)
-                      FilterChip(
-                        label: Text(
-                          manualDayLabel(day),
-                          style: const TextStyle(fontSize: 10.5),
-                        ),
-                        selected: _days.contains(day),
-                        onSelected: (selected) => setState(() {
-                          if (selected) {
-                            _days.add(day);
-                          } else {
-                            _days.remove(day);
-                          }
-                        }),
-                      ),
-                  ],
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: _pickTime,
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 13,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.sage),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.schedule_rounded,
-                                size: 17,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 9),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Start time',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      color: AppColors.inkMuted,
-                                    ),
-                                  ),
-                                  Text(
-                                    _startLabel,
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textDark,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Spacer(),
-                              const Icon(
-                                Icons.edit_outlined,
-                                size: 15,
-                                color: AppColors.inkMuted,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<ManualRecurrence>(
-                        initialValue: _recurrence,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Repeats',
-                          isDense: true,
-                        ),
-                        items: [
-                          for (final value in ManualRecurrence.values)
-                            DropdownMenuItem(
-                              value: value,
-                              child: Text(
-                                value.label,
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _recurrence = value ?? _recurrence),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'No end time: the driver marks each run as completed.',
-                  style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
-                ),
-                const SizedBox(height: 22),
+            ],
+          ),
+          for (final row in const [8, 18]) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : _exportPdf,
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 17),
-                    label: const Text(
-                      'Generate mock manual (PDF)',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.forest,
-                      side: const BorderSide(color: AppColors.sage),
+                  width: 38,
+                  child: Text(
+                    row == 8 ? '8 AM' : '6 PM',
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkMuted,
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 48,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _submit,
-                    icon: _busy
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.send_rounded, size: 17),
-                    label: const Text(
-                      'Submit manual',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
+                for (var day = 1; day <= 7; day++)
+                  Expanded(
+                    child: Center(
+                      child: _GlanceCell(index: cells['$day-$row']),
                     ),
                   ),
-                ),
-                const SizedBox(height: 9),
-                const Text(
-                  'Submitting generates a trip ticket. It stays covered by a '
-                  '"waiting for City Hall approval" screen until the DSQC signs '
-                  'it.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 10,
-                    height: 1.5,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
               ],
             ),
-          );
-        },
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GlanceCell extends StatelessWidget {
+  const _GlanceCell({this.index});
+
+  final int? index;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = index;
+    if (value == null) {
+      return Container(
+        height: 24,
+        width: 24,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.sage,
+            width: 1,
+            style: BorderStyle.solid,
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 24,
+      width: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _letterColor(value),
+      ),
+      child: Text(
+        _letter(value),
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Assignment cards
+// -----------------------------------------------------------------------------
+
+class _AssignmentCard extends StatelessWidget {
+  const _AssignmentCard({
+    required this.index,
+    required this.assignment,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _DraftAssignment assignment;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 11, 6, 11),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Row(
+            children: [
+              _LetterBadge(index: index),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            assignment.driverName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.darkGreen,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _PlateBadge(plate: assignment.truck.plateNumber),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${assignment.daysLabel} · ${assignment.startLabel}',
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${assignment.routes.length}/${assignment.maxRoutes} '
+                      'areas · ${assignment.routeNames.join(', ')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        height: 1.4,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                tooltip: 'Remove assignment',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewAssignmentCard extends StatelessWidget {
+  const _ReviewAssignmentCard({required this.index, required this.assignment});
+
+  final int index;
+  final _DraftAssignment assignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _LetterBadge(index: index),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  assignment.driverName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkGreen,
+                  ),
+                ),
+              ),
+              _PlateBadge(plate: assignment.truck.plateNumber),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 5,
+            runSpacing: 5,
+            children: [
+              for (final area in assignment.routes)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.mint,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.sage),
+                  ),
+                  child: Text(
+                    area.name,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.forest,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${assignment.daysLabel} · ${assignment.startLabel} · '
+            '${assignment.recurrence.label}',
+            style: const TextStyle(
+              fontSize: 10,
+              height: 1.4,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${assignment.truck.wheelerLabel} · '
+            '${assignment.truck.bodyType} · '
+            '${assignment.routes.length}/${assignment.maxRoutes} areas',
+            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LetterBadge extends StatelessWidget {
+  const _LetterBadge({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      width: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _letterColor(index),
+      ),
+      child: Text(
+        _letter(index),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _NewTag extends StatelessWidget {
+  const _NewTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+      ),
+      child: const Text(
+        'NEW',
+        style: TextStyle(
+          fontSize: 7.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.3,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _PlateBadge extends StatelessWidget {
+  const _PlateBadge({required this.plate});
+
+  final String plate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        plate,
+        style: const TextStyle(
+          fontSize: 8.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+          color: AppColors.forest,
+        ),
+      ),
+    );
+  }
+}
+
+class _AddAssignmentButton extends StatelessWidget {
+  const _AddAssignmentButton({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.add_rounded, size: 17, color: AppColors.forest),
+              const SizedBox(width: 6),
+              Text(
+                'Add assignment',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: onTap == null ? AppColors.inkMuted : AppColors.forest,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -806,6 +1272,1097 @@ class _SectionLabel extends StatelessWidget {
         fontWeight: FontWeight.w800,
         letterSpacing: 0.7,
         color: AppColors.inkMuted,
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Add / edit assignment sheet
+// -----------------------------------------------------------------------------
+
+class _AssignmentSheet extends StatefulWidget {
+  const _AssignmentSheet({
+    required this.accounts,
+    required this.trucks,
+    required this.others,
+    this.existing,
+  });
+
+  final List<_DriverOption> accounts;
+  final List<GarbageTruck> trucks;
+  final List<_DraftAssignment> others;
+  final _DraftAssignment? existing;
+
+  @override
+  State<_AssignmentSheet> createState() => _AssignmentSheetState();
+}
+
+class _AssignmentSheetState extends State<_AssignmentSheet> {
+  String? _driverKey;
+  String? _truckId;
+  final Set<String> _routes = {};
+  final Set<int> _days = {1, 3, 5};
+  TimeOfDay _start = const TimeOfDay(hour: 8, minute: 0);
+  ManualRecurrence _recurrence = ManualRecurrence.weekly;
+  bool _routesOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    if (existing == null) return;
+    _driverKey = existing.driverId.isNotEmpty
+        ? 'uid:${existing.driverId}'
+        : 'name:${existing.driverName}';
+    _routes.addAll(existing.routeNames);
+    _days
+      ..clear()
+      ..addAll(existing.days);
+    _start = existing.startTime;
+    _recurrence = existing.recurrence;
+    _truckId = existing.truck.id;
+  }
+
+  /// The sheet's own option list, with the edited row kept even when its
+  /// account or roster name is no longer in the live list.
+  List<_DriverOption> get _options {
+    final options = [...widget.accounts];
+    final key = _driverKey;
+    final existing = widget.existing;
+    if (key != null && !options.any((option) => option.key == key)) {
+      if (existing != null) {
+        options.add(
+          _DriverOption(
+            uid: existing.driverId,
+            name: existing.driverName,
+            truckId: existing.truck.id,
+          ),
+        );
+      }
+    }
+    return options;
+  }
+
+  _DriverOption? get _selected {
+    final key = _driverKey;
+    if (key == null) return null;
+    for (final option in _options) {
+      if (option.key == key) return option;
+    }
+    return null;
+  }
+
+  GarbageTruck? get _truck {
+    final id = _truckId;
+    if (id == null) return null;
+    for (final truck in widget.trucks) {
+      if (truck.id == id) return truck;
+    }
+    final existing = widget.existing;
+    if (existing != null && existing.truck.id == id) return existing.truck;
+    return null;
+  }
+
+  /// Every plate ISWIM can put this driver on. A newly added truck is listed
+  /// here with a NEW tag, so the manual is where the pairing happens.
+  List<GarbageTruck> get _truckOptions {
+    final options = [...widget.trucks];
+    final existing = widget.existing;
+    if (existing != null && !options.any((t) => t.id == existing.truck.id)) {
+      options.add(existing.truck);
+    }
+    options.sort((a, b) => a.plateNumber.compareTo(b.plateNumber));
+    return options;
+  }
+
+  /// The plate already linked to a driver account, if there is one.
+  GarbageTruck? _linkedTruck(_DriverOption option) {
+    for (final truck in widget.trucks) {
+      if (option.truckId != null && truck.id == option.truckId) return truck;
+    }
+    final name = option.name.trim().toLowerCase();
+    for (final truck in widget.trucks) {
+      if (truck.driverName.trim().toLowerCase() == name) return truck;
+    }
+    return null;
+  }
+
+  int get _maxRoutes {
+    final truck = _truck;
+    return truck == null ? 0 : maxRoutesForWheelers(truck.wheelers);
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _toggleRoute(String name) {
+    if (_routes.contains(name)) {
+      setState(() => _routes.remove(name));
+      return;
+    }
+    if (_maxRoutes == 0) {
+      _toast('Pick a truck first.');
+      return;
+    }
+    if (_routes.length >= _maxRoutes) {
+      setState(() => _routesOpen = true);
+      _toast('Limit reached. Remove one route to pick another.');
+      return;
+    }
+    setState(() => _routes.add(name));
+  }
+
+  void _selectDriver(String? value) {
+    if (value == null) return;
+    setState(() {
+      _driverKey = value;
+      final option = _selected;
+      final linked = option == null ? null : _linkedTruck(option);
+      // A driver who already holds a plate keeps it; a new driver starts on
+      // the plate ISWIM picks next.
+      if (linked != null) _truckId = linked.id;
+      _trimRoutes();
+    });
+  }
+
+  void _selectTruck(String? value) {
+    if (value == null) return;
+    setState(() {
+      _truckId = value;
+      _trimRoutes();
+    });
+  }
+
+  /// Keeps the picked areas inside the new truck's limit.
+  void _trimRoutes() {
+    final max = _maxRoutes;
+    while (_routes.length > max) {
+      _routes.remove(_routes.last);
+    }
+  }
+
+  bool _sameDays(Set<int> days) =>
+      _days.length == days.length && _days.containsAll(days);
+
+  String? get _conflict {
+    final option = _selected;
+    final truck = _truck;
+    if (option == null || truck == null || _days.isEmpty) return null;
+    final start = _startLabel(_start);
+    for (final other in widget.others) {
+      if (!other.days.any(_days.contains)) continue;
+      final sameDriver = manualSameDriver(
+        driverId: option.uid,
+        driverName: option.name,
+        otherDriverId: other.driverId,
+        otherDriverName: other.driverName,
+      );
+      final sameTruck = other.truck.id == truck.id;
+      if (!sameDriver && !sameTruck) continue;
+      // A driver needs six hours between shifts; a plate cannot be on two
+      // routes at the same moment.
+      final clash = sameDriver
+          ? manualSlotsClash(other.startLabel, start)
+          : other.startLabel == start;
+      if (!clash) continue;
+      final shared = ([
+        ..._days,
+      ]..sort()).where(other.days.contains).map(manualDayLabel).join(', ');
+      if (sameDriver) {
+        return '${other.driverName} already starts on $shared at '
+            '${other.startLabel}. Leave 6 hours between shifts.';
+      }
+      return 'Plate ${other.truck.plateNumber} is already out on $shared at '
+          '${other.startLabel}.';
+    }
+    return null;
+  }
+
+  static String _startLabel(TimeOfDay time) =>
+      '${time.hour.toString().padLeft(2, '0')}:'
+      '${time.minute.toString().padLeft(2, '0')}';
+
+  static String _prettyTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${time.period == DayPeriod.am ? 'AM' : 'PM'}';
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _start);
+    if (picked != null) setState(() => _start = picked);
+  }
+
+  void _save({required bool addAnother}) {
+    final option = _selected;
+    final truck = _truck;
+    if (option == null) {
+      _toast('Pick the driver for this assignment.');
+      return;
+    }
+    if (truck == null) {
+      _toast('Pick a truck for this driver.');
+      return;
+    }
+    if (_routes.isEmpty) {
+      _toast('Pick at least one area.');
+      return;
+    }
+    if (_days.isEmpty) {
+      _toast('Pick at least one collection day.');
+      return;
+    }
+    final conflict = _conflict;
+    if (conflict != null) {
+      _toast(conflict);
+      return;
+    }
+
+    final draft = _DraftAssignment(
+      driverId: option.uid,
+      driverName: option.name,
+      truck: truck,
+      routes: manualAreasFor(_routes),
+      days: {..._days},
+      startTime: _start,
+      recurrence: _recurrence,
+    );
+    Navigator.of(
+      context,
+    ).pop(_SheetResult(draft: draft, addAnother: addAnother));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final truck = _truck;
+    final conflict = _conflict;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+        ),
+        decoration: const BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: AppColors.sage,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.existing == null
+                              ? 'Add assignment'
+                              : 'Edit assignment',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.darkGreen,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'One driver per row. Add as many rows as the manual '
+                          'needs.',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 20,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionLabel('QUICK FILL DAYS'),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _QuickFill(
+                          label: 'Mon · Wed · Fri',
+                          selected: _sameDays(const {1, 3, 5}),
+                          onTap: () => setState(
+                            () => _days
+                              ..clear()
+                              ..addAll(const {1, 3, 5}),
+                          ),
+                        ),
+                        _QuickFill(
+                          label: 'Tue · Thu · Sat',
+                          selected: _sameDays(const {2, 4, 6}),
+                          onTap: () => setState(
+                            () => _days
+                              ..clear()
+                              ..addAll(const {2, 4, 6}),
+                          ),
+                        ),
+                        _QuickFill(
+                          label: 'Weekdays',
+                          selected: _sameDays(const {1, 2, 3, 4, 5}),
+                          onTap: () => setState(
+                            () => _days
+                              ..clear()
+                              ..addAll(const {1, 2, 3, 4, 5}),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: _driverKey,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Driver',
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final option in _options)
+                          DropdownMenuItem(
+                            value: option.key,
+                            child: Row(
+                              children: [
+                                _DriverDot(name: option.name),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    option.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                      onChanged: _selectDriver,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            key: ValueKey<String?>(_truckId),
+                            initialValue: _truckId,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Truck',
+                              hintText: 'Assign a plate',
+                              isDense: true,
+                            ),
+                            items: [
+                              for (final option in _truckOptions)
+                                DropdownMenuItem(
+                                  value: option.id,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          '${option.plateNumber} · '
+                                          '${option.wheelerLabel}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                      if (option.isNew) ...[
+                                        const SizedBox(width: 5),
+                                        const _NewTag(),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                            ],
+                            onChanged: _selectTruck,
+                          ),
+                        ),
+                        if (truck != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.mint,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.sage),
+                            ),
+                            child: Text(
+                              'max $_maxRoutes routes',
+                              style: const TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Submitting the manual pairs this driver with the plate.',
+                      style: TextStyle(
+                        fontSize: 9,
+                        height: 1.4,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_routes.isNotEmpty) ...[
+                      ManualRouteMap(
+                        height: 160,
+                        groups: [
+                          ManualRouteGroup(
+                            areas: manualAreasFor(_routes),
+                            color: AppColors.forest,
+                            label: 'R',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _routesOpen
+                              ? AppColors.primary
+                              : AppColors.sage,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          InkWell(
+                            onTap: () =>
+                                setState(() => _routesOpen = !_routesOpen),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                11,
+                                10,
+                                11,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text(
+                                    'Routes',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.inkMuted,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '${_routes.length} of $_maxRoutes selected',
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                  Icon(
+                                    _routesOpen
+                                        ? Icons.keyboard_arrow_up_rounded
+                                        : Icons.keyboard_arrow_down_rounded,
+                                    size: 20,
+                                    color: AppColors.inkMuted,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (_routes.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final name in _routes)
+                                      _SelectedAreaChip(
+                                        name: name,
+                                        onRemove: () => setState(
+                                          () => _routes.remove(name),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (_routesOpen) ...[
+                            const Divider(height: 1),
+                            Container(
+                              color: AppColors.mint.withValues(alpha: 0.55),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Choose up to $_maxRoutes areas for a '
+                                      '${truck?.wheelerLabel ?? 'truck'}',
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        color: AppColors.inkMuted,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${_routes.length}/$_maxRoutes',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.forest,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              height: 250,
+                              child: ListView.builder(
+                                itemCount: kManualAreas.length,
+                                itemBuilder: (context, index) {
+                                  final area = kManualAreas[index];
+                                  final selected = _routes.contains(area.name);
+                                  final disabled =
+                                      !selected && _routes.length >= _maxRoutes;
+                                  return _AreaCheckRow(
+                                    name: area.name,
+                                    selected: selected,
+                                    disabled: disabled,
+                                    onTap: () => _toggleRoute(area.name),
+                                  );
+                                },
+                              ),
+                            ),
+                            if (_routes.length >= _maxRoutes)
+                              Container(
+                                width: double.infinity,
+                                color: AppColors.cream,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline_rounded,
+                                      size: 13,
+                                      color: AppColors.warning,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Limit reached. Remove one route to '
+                                        'pick another.',
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          color: AppColors.warning.withValues(
+                                            alpha: 0.95,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 44,
+                          child: Text(
+                            'Days',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                        for (var day = 1; day <= 7; day++) ...[
+                          _DayToggle(
+                            day: day,
+                            selected: _days.contains(day),
+                            onTap: () => setState(() {
+                              if (!_days.remove(day)) _days.add(day);
+                            }),
+                          ),
+                          if (day < 7) const SizedBox(width: 4),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 44,
+                          child: Text(
+                            'Start',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                        ),
+                        _TimePill(
+                          label: '8:00 AM',
+                          selected:
+                              _start == const TimeOfDay(hour: 8, minute: 0),
+                          onTap: () => setState(
+                            () => _start = const TimeOfDay(hour: 8, minute: 0),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _TimePill(
+                          label: '6:00 PM',
+                          selected:
+                              _start == const TimeOfDay(hour: 18, minute: 0),
+                          onTap: () => setState(
+                            () => _start = const TimeOfDay(hour: 18, minute: 0),
+                          ),
+                        ),
+                        if (_start != const TimeOfDay(hour: 8, minute: 0) &&
+                            _start != const TimeOfDay(hour: 18, minute: 0)) ...[
+                          const SizedBox(width: 6),
+                          _TimePill(
+                            label: _prettyTime(_start),
+                            selected: true,
+                            onTap: _pickTime,
+                          ),
+                        ],
+                        const Spacer(),
+                        IconButton(
+                          onPressed: _pickTime,
+                          tooltip: 'Pick another time',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            size: 16,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'A driver can take a second area on the same day only '
+                      'with 6 hours between starts — 8:00 AM and 6:00 PM are '
+                      'fine, 8:00 AM and 10:00 AM are not.',
+                      style: TextStyle(
+                        fontSize: 9,
+                        height: 1.4,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<ManualRecurrence>(
+                      initialValue: _recurrence,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Repeats',
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final value in ManualRecurrence.values)
+                          DropdownMenuItem(
+                            value: value,
+                            child: Text(
+                              value.label,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _recurrence = value ?? _recurrence),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Weekly keeps running until cancelled · monthly lasts '
+                      'one month · yearly lasts one year.',
+                      style: TextStyle(
+                        fontSize: 9,
+                        height: 1.4,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: conflict == null
+                            ? AppColors.mint
+                            : AppColors.cream,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: conflict == null
+                              ? AppColors.sage
+                              : AppColors.warning.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            conflict == null
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.warning_amber_rounded,
+                            size: 14,
+                            color: conflict == null
+                                ? AppColors.primary
+                                : AppColors.warning,
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              conflict ?? 'No conflicts with other assignments',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: conflict == null
+                                    ? AppColors.forest
+                                    : AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+              decoration: const BoxDecoration(
+                color: AppColors.background,
+                border: Border(top: BorderSide(color: AppColors.sage)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.existing == null) ...[
+                    SizedBox(
+                      height: 42,
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => _save(addAnother: true),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.forest,
+                          side: const BorderSide(color: AppColors.sage),
+                        ),
+                        child: const Text(
+                          'Save & add another',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => _save(addAnother: false),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.forest,
+                      ),
+                      child: Text(
+                        widget.existing == null
+                            ? 'Save assignment'
+                            : 'Save changes',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickFill extends StatelessWidget {
+  const _QuickFill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label, style: const TextStyle(fontSize: 9.5)),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: AppColors.mint,
+      side: BorderSide(color: selected ? AppColors.primary : AppColors.sage),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    );
+  }
+}
+
+class _DriverDot extends StatelessWidget {
+  const _DriverDot({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final letter = trimmed.isEmpty
+        ? '?'
+        : trimmed.substring(0, 1).toUpperCase();
+    return Container(
+      height: 22,
+      width: 22,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.forest,
+      ),
+      child: Text(
+        letter,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedAreaChip extends StatelessWidget {
+  const _SelectedAreaChip({required this.name, required this.onRemove});
+
+  final String name;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: 9, right: 2),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            name,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.forest,
+            ),
+          ),
+          InkWell(
+            onTap: onRemove,
+            customBorder: const CircleBorder(),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(
+                Icons.close_rounded,
+                size: 13,
+                color: AppColors.inkMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AreaCheckRow extends StatelessWidget {
+  const _AreaCheckRow({
+    required this.name,
+    required this.selected,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final String name;
+  final bool selected;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: disabled ? null : onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: disabled ? null : (_) => onTap(),
+              activeColor: AppColors.forest,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            Expanded(
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: disabled ? AppColors.inkMuted : AppColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DayToggle extends StatelessWidget {
+  const _DayToggle({
+    required this.day,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final int day;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 30,
+        width: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.forest : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppColors.forest : AppColors.sage,
+          ),
+        ),
+        child: Text(
+          manualDayLabel(day),
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.inkMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimePill extends StatelessWidget {
+  const _TimePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.mint : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.sage,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: selected ? AppColors.forest : AppColors.inkMuted,
+          ),
+        ),
       ),
     );
   }

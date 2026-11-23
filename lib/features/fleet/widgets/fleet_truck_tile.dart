@@ -61,29 +61,14 @@ class FleetTruckTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 7),
+                    if (truck.isNew) ...[
+                      const _NewBadge(),
+                      const SizedBox(width: 4),
+                    ],
                     _LoginBadge(paired: _hasLogin),
                   ],
                 ),
                 const SizedBox(height: 5),
-                Row(
-                  children: [
-                    DeskInitialAvatar(name: truck.driverName, size: 19),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        truck.driverName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: EcoType.bodySmall(
-                          context,
-                          color: AppColors.textDark,
-                          weight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
                 Row(
                   children: [
                     const Icon(
@@ -94,7 +79,7 @@ class FleetTruckTile extends StatelessWidget {
                     const SizedBox(width: 3),
                     Expanded(
                       child: Text(
-                        '${truck.description} · ${truck.zone}',
+                        truck.description,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: EcoType.meta(context, color: AppColors.inkMuted),
@@ -112,6 +97,29 @@ class FleetTruckTile extends StatelessWidget {
             color: AppColors.moss,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NewBadge extends StatelessWidget {
+  const _NewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        'NEW',
+        style: EcoType.micro(
+          context,
+          color: AppColors.primary,
+        ).copyWith(letterSpacing: 0.4),
       ),
     );
   }

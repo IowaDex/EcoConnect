@@ -42,4 +42,29 @@ void main() {
       expect(truckMatchesQuery(truck, 'zone 9'), isFalse);
     });
   });
+
+  group('new truck marker', () {
+    GarbageTruck plate({String driver = 'Unassigned', String? account}) =>
+        GarbageTruck(
+          id: 'sk-9999',
+          plateNumber: 'SK 9999',
+          wheelers: 6,
+          bodyType: 'Compactor',
+          barangay: 'Batasan Hills',
+          zone: '',
+          centerLatitude: 14.6792,
+          centerLongitude: 121.0961,
+          driverName: driver,
+          driverAccountId: account,
+        );
+
+    test('a plate with no driver is new', () {
+      expect(plate().isNew, isTrue);
+    });
+
+    test('a named or paired plate is no longer new', () {
+      expect(plate(driver: 'Ramon Dela Cruz').isNew, isFalse);
+      expect(plate(driver: 'Ramon Dela Cruz', account: 'd1').isNew, isFalse);
+    });
+  });
 }

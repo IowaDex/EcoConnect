@@ -49,16 +49,62 @@ class FleetService {
 
   /// Creates or updates a truck. The document id comes from the plate, so the
   /// same plate can never be registered twice.
+  ///
+  /// Saving a plate that already exists never wipes the driver already paired
+  /// with it: the form no longer edits drivers, so an existing link is kept.
   Future<void> saveTruck(GarbageTruck truck) async {
     final id = truck.id.isEmpty ? _idForPlate(truck.plateNumber) : truck.id;
-    await _col.doc(id).set({
+    final existing = await _col.doc(id).get();
+    final data = <String, dynamic>{
       ...truck.toMap(),
       'id': id,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (existing.exists && !truck.hasDriver) {
+      data.remove('driverName');
+      data.remove('driverAccountId');
+    }
+    await _col.doc(id).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> deleteTruck(String id) => _col.doc(id).delete();
+
+  /// Pairs a plate with the driver a collection manual put on it.
+  ///
+  /// The manual is the assignment record; this mirror is what the fleet row
+  /// and the driver's dashboard read. A roster name with no login still gets
+  /// stamped on the truck, just without a driver account id.
+  Future<void> assignDriver({
+    required String truckId,
+    required String driverId,
+    required String driverName,
+  }) async {
+    if (truckId.isEmpty) return;
+    await _col.doc(truckId).set({
+      'driverName': driverName.trim(),
+      'driverAccountId': driverId,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
-  Future<void> deleteTruck(String id) => _col.doc(id).delete();
+  /// The plate linked to this driver account, for a crew whose
+  /// `assignedTruckId` was never written (for example when Iswim paired them
+  /// through a manual instead of the accounts desk).
+  Future<GarbageTruck?> findTruckForDriver(String uid) async {
+    if (uid.isEmpty) return null;
+    try {
+      final snap = await _col
+          .where('driverAccountId', isEqualTo: uid)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final doc = snap.docs.first;
+      return GarbageTruck.fromMap({...doc.data(), 'id': doc.id});
+    } catch (_) {
+      // Offline or rules blocked: the caller falls back to the roster.
+      return null;
+    }
+  }
 
   /// False while the collection is still empty, so the screen can offer to
   /// copy the ten seeded trucks in one tap instead of one by one.

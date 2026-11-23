@@ -89,7 +89,8 @@ class _FleetScreenState extends State<FleetScreen> {
                     AppPageHeader(
                       title: 'Fleet registry',
                       subtitle:
-                          'Every plate, its body and the driver who runs it.',
+                          'Every plate and its body. Drivers are assigned in '
+                          'a collection manual.',
                       onBack: () => context.canPop()
                           ? context.pop()
                           : context.go('/iswim'),
@@ -135,14 +136,15 @@ class _FleetScreenState extends State<FleetScreen> {
                           message:
                               '${trucks.length - paired} '
                               '${trucks.length - paired == 1 ? 'truck has' : 'trucks have'} '
-                              'no driver login yet. Pair the account from the '
-                              'accounts desk so the crew can start a trip.',
+                              'no driver login yet. Assign a driver in a '
+                              'collection manual, or pair the account from the '
+                              'accounts desk.',
                           icon: Icons.key_off_outlined,
                         ),
                       ),
                     EcoSearchField(
                       controller: _search,
-                      hint: 'Search plate, driver or zone',
+                      hint: 'Search plate or body',
                       onChanged: (value) => setState(() => _query = value),
                     ),
                     AnimatedSize(
@@ -185,8 +187,8 @@ class _FleetScreenState extends State<FleetScreen> {
                         icon: Icons.local_shipping_outlined,
                         title: 'No trucks registered',
                         message:
-                            'Add the first plate so a crew can be paired with '
-                            'it before a trip ticket is issued.',
+                            'Add the first plate so it can be assigned to a '
+                            'driver in a collection manual.',
                         actionLabel: 'Add a truck',
                         onAction: () => _openForm(context),
                         compact: true,
@@ -375,10 +377,6 @@ class _TruckForm extends StatefulWidget {
 class _TruckFormState extends State<_TruckForm> {
   final _formKey = GlobalKey<FormState>();
   late final _plate = TextEditingController(text: widget.truck?.plateNumber);
-  late final _driver = TextEditingController(text: widget.truck?.driverName);
-  late final _zone = TextEditingController(
-    text: widget.truck?.zone ?? 'Zone 1',
-  );
 
   late int _wheelers = widget.truck?.wheelers ?? 4;
   late String _body = widget.truck?.bodyType ?? 'Compactor';
@@ -387,24 +385,27 @@ class _TruckFormState extends State<_TruckForm> {
   @override
   void dispose() {
     _plate.dispose();
-    _driver.dispose();
-    _zone.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final existing = widget.truck;
+    final existingDriver = existing?.driverName.trim() ?? '';
     final truck = GarbageTruck(
       id: existing?.id ?? '',
       plateNumber: _plate.text.trim().toUpperCase(),
       wheelers: _wheelers,
       bodyType: _body,
       barangay: existing?.barangay ?? 'Batasan Hills',
-      zone: _zone.text.trim(),
+      // Drivers and zones are no longer part of the truck record: a driver is
+      // put on a plate per manual, and a manual covers named areas. The
+      // placeholder keeps the deployed Firestore rule (which still asks for a
+      // non-empty driverName) happy until the updated rule is deployed.
+      zone: existing?.zone ?? '',
       centerLatitude: existing?.centerLatitude ?? 14.6792,
       centerLongitude: existing?.centerLongitude ?? 121.0961,
-      driverName: _driver.text.trim(),
+      driverName: existingDriver.isEmpty ? 'Unassigned' : existingDriver,
       driverAccountId: existing?.driverAccountId,
     );
 
@@ -497,6 +498,7 @@ class _TruckFormState extends State<_TruckForm> {
                         DropdownMenuItem(value: 4, child: Text('4-wheeler')),
                         DropdownMenuItem(value: 6, child: Text('6-wheeler')),
                         DropdownMenuItem(value: 8, child: Text('8-wheeler')),
+                        DropdownMenuItem(value: 10, child: Text('10-wheeler')),
                       ],
                       onChanged: (value) =>
                           setState(() => _wheelers = value ?? _wheelers),
@@ -531,29 +533,14 @@ class _TruckFormState extends State<_TruckForm> {
                 ],
               ),
               const SizedBox(height: EcoSpace.sm + 2),
-              TextFormField(
-                controller: _zone,
-                decoration: const InputDecoration(
-                  labelText: 'Zone',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: EcoSpace.sm + 2),
-              TextFormField(
-                controller: _driver,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Driver (name)',
-                  isDense: true,
-                ),
-                validator: (value) => (value ?? '').trim().isEmpty
-                    ? 'Driver cannot be empty'
-                    : null,
-              ),
-              const SizedBox(height: EcoSpace.xs),
               const Text(
-                'Iswim creates the driver login from the accounts desk.',
-                style: TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+                'Drivers and collection areas are set per manual, not on the '
+                'truck. Pair the driver login from the accounts desk.',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  height: 1.5,
+                  color: AppColors.inkMuted,
+                ),
               ),
               const SizedBox(height: EcoSpace.lg),
               SizedBox(

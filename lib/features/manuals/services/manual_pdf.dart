@@ -2,12 +2,14 @@ import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/simple_pdf.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../models/assignment_manual.dart';
+import '../models/manual_assignment.dart';
 
 /// Writes the one-page manual PDF for a record that already exists.
 ///
 /// The creation form, the trip ticket a manual generates and the manuals list
 /// all print the same sheet, so the export never depends on the screen that
-/// happens to be open. Returns false when the build has no browser download.
+/// happens to be open. A bulk manual prints every driver row under the title.
+/// Returns false when the build has no browser download.
 Future<bool> exportAssignmentManualPdf({
   required String title,
   required String driverName,
@@ -19,19 +21,36 @@ Future<bool> exportAssignmentManualPdf({
   required ManualRecurrence recurrence,
   required String status,
   String? requestTitle,
+  List<ManualAssignment> assignments = const [],
 }) async {
   final lines = <String>[
     'Collection manual',
     if (title.trim().isNotEmpty) 'Title: ${title.trim()}',
     '',
-    'Driver: $driverName',
-    'Plate number: $plateNumber',
-    if (wheelers > 0) 'Truck: $wheelers-wheeler',
-    'Routes: ${routes.isEmpty ? '—' : routes.join(' / ')}',
-    'Schedule: ${([...days]..sort()).map(manualDayLabel).join(', ')}',
-    'Start time: $startTime',
-    'Recurrence: ${recurrence.label}',
-    '',
+    if (assignments.length > 1) ...[
+      'Bulk assignment · ${assignments.length} drivers',
+      '',
+      for (var i = 0; i < assignments.length; i++) ...[
+        '${i + 1}. ${assignments[i].driverName} · '
+            '${assignments[i].plateNumber} · '
+            '${assignments[i].wheelers}-wheeler',
+        '   Routes: ${assignments[i].routes.isEmpty ? '—' : assignments[i].routes.join(' / ')}',
+        '   Schedule: '
+            '${([...assignments[i].days]..sort()).map(manualDayLabel).join(', ')}',
+        '   Start time: ${assignments[i].startTime}',
+        '   Recurrence: ${assignments[i].recurrence.label}',
+        '',
+      ],
+    ] else ...[
+      'Driver: $driverName',
+      'Plate number: $plateNumber',
+      if (wheelers > 0) 'Truck: $wheelers-wheeler',
+      'Routes: ${routes.isEmpty ? '—' : routes.join(' / ')}',
+      'Schedule: ${([...days]..sort()).map(manualDayLabel).join(', ')}',
+      'Start time: $startTime',
+      'Recurrence: ${recurrence.label}',
+      '',
+    ],
     'Status: $status',
     if (requestTitle != null && requestTitle.trim().isNotEmpty)
       'Request: ${requestTitle.trim()}',
@@ -71,4 +90,5 @@ Future<bool> exportManualPdfFromRecord(AssignmentManual manual) =>
       startTime: manual.startTime,
       recurrence: manual.recurrence,
       status: manual.status.label,
+      assignments: manual.assignments,
     );

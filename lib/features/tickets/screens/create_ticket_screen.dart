@@ -231,7 +231,9 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     Expanded(
                       child: Text(
                         driver == null
-                            ? '${truck.driverName} · no login account yet'
+                            ? (truck.driverName.trim().isEmpty
+                                  ? 'No driver account linked yet'
+                                  : '${truck.driverName} · no login account yet')
                             : '${driver.name} · linked account',
                         style: const TextStyle(
                           fontSize: 10,

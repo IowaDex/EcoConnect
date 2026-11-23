@@ -628,6 +628,9 @@ class TicketService {
   /// Mirrors City Hall's approval onto the assignment manual and closes the
   /// manual request that started it. Best effort: the ticket is already valid,
   /// so a failed mirror must not surface as a signing error.
+  ///
+  /// A bulk manual has one ticket per driver. The manual only turns approved
+  /// once every one of those tickets carries the City Hall signature.
   Future<void> _approveManual(
     TripTicket ticket, {
     required String byName,
@@ -635,7 +638,35 @@ class TicketService {
     final assignmentId = ticket.assignmentId;
     if (assignmentId == null || assignmentId.isEmpty) return;
     try {
-      await _db.collection('assignment_manuals').doc(assignmentId).update({
+      final manualRef = _db.collection('assignment_manuals').doc(assignmentId);
+      final manualSnap = await manualRef.get();
+      final ticketIds =
+          (manualSnap.data()?['ticketIds'] as List?)
+              ?.whereType<String>()
+              .toList() ??
+          const <String>[];
+      final assignmentCount =
+          (manualSnap.data()?['assignments'] as List?)?.length ?? 1;
+      // A bulk submission is still issuing tickets; do not approve the manual
+      // on the first signature while the rest of the roster is being written.
+      if (ticketIds.length < assignmentCount) return;
+      if (ticketIds.length > 1) {
+        for (final otherId in ticketIds) {
+          if (otherId == ticket.id) continue;
+          final snap = await _col.doc(otherId).get();
+          final other = snap.exists
+              ? TripTicket.fromDoc(snap.id, snap.data()!)
+              : null;
+          if (other == null) continue;
+          if (other.status != TicketStatus.valid &&
+              other.status != TicketStatus.completed) {
+            // City Hall still has another driver row to sign.
+            return;
+          }
+        }
+      }
+
+      await manualRef.update({
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
         'approvedByName': byName,

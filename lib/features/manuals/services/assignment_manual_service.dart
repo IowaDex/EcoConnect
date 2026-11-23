@@ -1,15 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../fleet/services/fleet_service.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
 import '../models/assignment_manual.dart';
+import '../models/manual_assignment.dart';
 
 /// Reads and writes for the collection manual Iswim builds.
 ///
-/// The manual is the roster entry; submitting it generates a trip ticket that
-/// sits in City Hall's signature queue. Nothing here bypasses that approval:
-/// the manual stays [AssignmentManualStatus.pendingApproval] until the City
-/// Hall signature lands on the ticket.
+/// The manual is the bulk roster; submitting it generates one trip ticket per
+/// assignment. Nothing here bypasses City Hall: the manual stays
+/// [AssignmentManualStatus.pendingApproval] until every ticket has a City Hall
+/// signature.
 class AssignmentManualService {
   AssignmentManualService._();
   static final AssignmentManualService instance = AssignmentManualService._();
@@ -59,10 +61,12 @@ class AssignmentManualService {
     return items;
   }
 
-  /// A driver or truck cannot hold two schedules on the same day at the same
-  /// start time. Returns a human explanation, or null when the slot is free.
+  /// A driver needs six hours between shifts, and a plate cannot be on two
+  /// routes at the same moment. Returns a human explanation, or null when the
+  /// slot is free.
   Future<String?> findConflict({
     required String driverId,
+    required String driverName,
     required String truckId,
     required List<int> days,
     required String startTime,
@@ -80,14 +84,31 @@ class AssignmentManualService {
       for (final doc in snap.docs) {
         final other = AssignmentManual.fromDoc(doc.id, doc.data());
         if (other == null) continue;
-        if (other.startTime != startTime) continue;
-        if (!other.days.any(days.contains)) continue;
-        final sameDriver = driverId.isNotEmpty && other.driverId == driverId;
-        final sameTruck = truckId.isNotEmpty && other.truckId == truckId;
-        if (!sameDriver && !sameTruck) continue;
-        return '${other.driverName} is already assigned to '
-            '${other.plateNumber} at $startTime on '
-            '${other.days.where(days.contains).map(manualDayLabel).join(', ')}.';
+        for (final row in other.allAssignments) {
+          if (!row.days.any(days.contains)) continue;
+          final sameDriver = manualSameDriver(
+            driverId: driverId,
+            driverName: driverName,
+            otherDriverId: row.driverId,
+            otherDriverName: row.driverName,
+          );
+          final sameTruck = truckId.isNotEmpty && row.truckId == truckId;
+          if (!sameDriver && !sameTruck) continue;
+          final clash = sameDriver
+              ? manualSlotsClash(row.startTime, startTime)
+              : row.startTime == startTime;
+          if (!clash) continue;
+          final shared = row.days
+              .where(days.contains)
+              .map(manualDayLabel)
+              .join(', ');
+          if (sameDriver) {
+            return '${row.driverName} already starts on $shared at '
+                '${row.startTime}. Leave 6 hours between shifts.';
+          }
+          return 'Plate ${row.plateNumber} is already out on $shared at '
+              '${row.startTime}.';
+        }
       }
       return null;
     } catch (_) {
@@ -97,53 +118,57 @@ class AssignmentManualService {
     }
   }
 
-  /// Saves the manual and generates its trip ticket in one go.
+  /// Saves a bulk manual and generates one trip ticket per assignment.
   ///
-  /// The manual is saved first, then the ticket it generates; the ticket id is
-  /// stamped back onto the manual. A refused manual write therefore leaves no
-  /// orphan ticket and no approval alert behind.
-  Future<AssignmentManual> submit({
+  /// The manual is saved first, then each ticket it generates; every ticket id
+  /// is stamped back as it is issued. A refused manual write therefore leaves
+  /// no orphan tickets behind.
+  Future<AssignmentManual> submitBatch({
     required String title,
-    required String driverId,
-    required String driverName,
-    required String truckId,
-    required String plateNumber,
-    required int wheelers,
-    required List<String> routes,
-    List<ManualRoutePoint> routePoints = const [],
-    required List<int> days,
-    required String startTime,
-    required ManualRecurrence recurrence,
+    required List<ManualAssignment> assignments,
     required String byId,
     required String byName,
     String? requestId,
   }) async {
-    final conflict = await findConflict(
-      driverId: driverId,
-      truckId: truckId,
-      days: days,
-      startTime: startTime,
-    );
-    if (conflict != null) throw AssignmentException(conflict);
+    if (assignments.isEmpty) {
+      throw const AssignmentException(
+        'Add at least one driver to this manual.',
+      );
+    }
 
+    _checkBatchConflicts(assignments);
+
+    for (final assignment in assignments) {
+      final conflict = await findConflict(
+        driverId: assignment.driverId,
+        driverName: assignment.driverName,
+        truckId: assignment.truckId,
+        days: assignment.days,
+        startTime: assignment.startTime,
+      );
+      if (conflict != null) throw AssignmentException(conflict);
+    }
+
+    final first = assignments.first;
     final ref = _col.doc();
     // The manual is written first. If the rules refuse it, nothing else has
-    // happened yet — no trip ticket and no approval alert for City Hall to
-    // chase. The ticket id is stamped on right after it is issued.
+    // happened yet — no trip tickets and no approval alerts for City Hall to
+    // chase. Each ticket id is stamped on right after it is issued.
     await ref.set(
       AssignmentManual(
         id: ref.id,
         title: title.trim().isEmpty ? 'Collection manual' : title.trim(),
-        driverId: driverId,
-        driverName: driverName,
-        truckId: truckId,
-        plateNumber: plateNumber,
-        wheelers: wheelers,
-        routes: routes,
-        routePoints: routePoints,
-        days: days,
-        startTime: startTime,
-        recurrence: recurrence,
+        driverId: first.driverId,
+        driverName: first.driverName,
+        truckId: first.truckId,
+        plateNumber: first.plateNumber,
+        wheelers: first.wheelers,
+        routes: first.routes,
+        routePoints: first.routePoints,
+        assignments: assignments,
+        days: first.days,
+        startTime: first.startTime,
+        recurrence: first.recurrence,
         status: AssignmentManualStatus.pendingApproval,
         requestId: requestId,
         createdBy: byId,
@@ -151,25 +176,45 @@ class AssignmentManualService {
       ).toMap(),
     );
 
-    final ticket = await TicketService().createAssignment(
-      assignmentId: ref.id,
-      truckId: truckId,
-      plateNumber: plateNumber,
-      wheelers: wheelers,
-      driverId: driverId,
-      driverName: driverName,
-      routes: routes,
-      routePoints: routePoints,
-      days: days,
-      startTime: startTime,
-      recurrence: recurrence,
-      createdBy: byId,
-    );
+    final ticketIds = <String>[];
+    for (final assignment in assignments) {
+      final ticket = await TicketService().createAssignment(
+        assignmentId: ref.id,
+        truckId: assignment.truckId,
+        plateNumber: assignment.plateNumber,
+        wheelers: assignment.wheelers,
+        driverId: assignment.driverId,
+        driverName: assignment.driverName,
+        routes: assignment.routes,
+        routePoints: assignment.routePoints,
+        days: assignment.days,
+        startTime: assignment.startTime,
+        recurrence: assignment.recurrence,
+        createdBy: byId,
+      );
+      ticketIds.add(ticket.id);
+      await ref.update({
+        'ticketIds': FieldValue.arrayUnion([ticket.id]),
+        'ticketId': ticketIds.first,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
 
-    await ref.update({
-      'ticketId': ticket.id,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    // The manual is also where the driver meets the plate. Stamp the pairing
+    // on the truck so the fleet row loses its NEW tag and the crew's
+    // dashboard can find the vehicle. Best effort: the manual and tickets
+    // already exist, so a failed mirror must not undo the submission.
+    for (final assignment in assignments) {
+      try {
+        await FleetService().assignDriver(
+          truckId: assignment.truckId,
+          driverId: assignment.driverId,
+          driverName: assignment.driverName,
+        );
+      } catch (_) {
+        // The fleet link can be repaired from the Fleet screen later.
+      }
+    }
 
     final saved = await ref.get();
     final manual = AssignmentManual.fromDoc(ref.id, saved.data()!)!;
@@ -179,17 +224,60 @@ class AssignmentManualService {
         await _db.collection('manual_requests').doc(requestId).update({
           'status': 'fulfilled',
           'assignmentManualId': ref.id,
-          'ticketId': ticket.id,
+          'ticketId': ticketIds.first,
+          'ticketIds': ticketIds,
           'fulfilledAt': FieldValue.serverTimestamp(),
           'fulfilledByName': byName,
         });
       } catch (_) {
-        // The manual and ticket already exist; the request can be linked from
+        // The manual and tickets already exist; the request can be linked from
         // the request desk later.
       }
     }
 
     return manual;
+  }
+
+  /// Catches a driver or plate booked twice inside the same manual before any
+  /// write happens.
+  static void _checkBatchConflicts(List<ManualAssignment> assignments) {
+    for (var i = 0; i < assignments.length; i++) {
+      for (var j = i + 1; j < assignments.length; j++) {
+        final left = assignments[i];
+        final right = assignments[j];
+        if (!left.days.any(right.days.contains)) continue;
+        final sameDriver = manualSameDriver(
+          driverId: left.driverId,
+          driverName: left.driverName,
+          otherDriverId: right.driverId,
+          otherDriverName: right.driverName,
+        );
+        final sameTruck =
+            left.truckId.isNotEmpty && left.truckId == right.truckId;
+        if (!sameDriver && !sameTruck) continue;
+        // Six hours between shifts for a driver; a plate cannot be on two
+        // routes at the same moment.
+        final clash = sameDriver
+            ? manualSlotsClash(left.startTime, right.startTime)
+            : left.startTime == right.startTime;
+        if (!clash) continue;
+        final shared = left.days
+            .where(right.days.contains)
+            .map(manualDayLabel)
+            .join(', ');
+        if (sameDriver) {
+          throw AssignmentException(
+            '${left.driverName} is booked twice on $shared '
+            '(${left.startTime} and ${right.startTime}). Leave 6 hours '
+            'between shifts.',
+          );
+        }
+        throw AssignmentException(
+          'Plate ${left.plateNumber} is on two assignments on $shared at '
+          '${left.startTime}. Move one to another day or time.',
+        );
+      }
+    }
   }
 
   Future<void> cancel(String id) async {

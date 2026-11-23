@@ -105,6 +105,13 @@ class _ScheduleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rows = manual.allAssignments;
+    final title = rows.length > 1
+        ? (showCrew
+              ? '${rows.length} drivers · ${manual.allRoutes.length} areas'
+              : '${manual.allRoutes.length} areas')
+        : (manual.routesLabel.isEmpty ? manual.title : manual.routesLabel);
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
@@ -124,9 +131,7 @@ class _ScheduleCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      manual.routesLabel.isEmpty
-                          ? manual.title
-                          : manual.routesLabel,
+                      title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -145,21 +150,35 @@ class _ScheduleCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 9),
-              _fact(
-                Icons.event_repeat_rounded,
-                '${([...manual.days]..sort()).map(manualDayLabel).join(', ')}'
-                ' · ${manual.recurrence.label}',
-              ),
-              const SizedBox(height: 4),
-              _fact(Icons.schedule_rounded, 'Starts ${manual.startTime}'),
-              if (showCrew) ...[
-                const SizedBox(height: 4),
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                if (rows.length > 1)
+                  Text(
+                    '${rows[i].driverName}'
+                    '${showCrew ? ' · ${rows[i].plateNumber}' : ''}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                if (rows.length > 1) const SizedBox(height: 3),
+                _fact(Icons.place_outlined, rows[i].routesLabel),
+                const SizedBox(height: 3),
                 _fact(
-                  Icons.local_shipping_rounded,
-                  '${manual.plateNumber} · ${manual.wheelers}-wheeler',
+                  Icons.event_repeat_rounded,
+                  '${([...rows[i].days]..sort()).map(manualDayLabel).join(', ')}'
+                  ' · ${rows[i].startTime} · ${rows[i].recurrence.label}',
                 ),
-                const SizedBox(height: 4),
-                _fact(Icons.person_pin_circle_rounded, manual.driverName),
+                if (rows.length == 1 && showCrew) ...[
+                  const SizedBox(height: 3),
+                  _fact(
+                    Icons.local_shipping_rounded,
+                    '${rows[i].plateNumber} · ${rows[i].wheelers}-wheeler',
+                  ),
+                  const SizedBox(height: 3),
+                  _fact(Icons.person_pin_circle_rounded, rows[i].driverName),
+                ],
               ],
               if (manual.approvedAt != null) ...[
                 const SizedBox(height: 7),

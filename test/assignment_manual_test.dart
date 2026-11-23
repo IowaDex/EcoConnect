@@ -1,16 +1,109 @@
 import 'dart:convert';
 
+import 'package:eco_connect/core/constants/resident_areas.dart';
 import 'package:eco_connect/core/utils/simple_pdf.dart';
+import 'package:eco_connect/features/manuals/data/manual_areas.dart';
 import 'package:eco_connect/features/manuals/models/assignment_manual.dart';
 import 'package:eco_connect/features/tickets/models/trip_ticket.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('manual route limits', () {
-    test('a four-wheeler takes two routes and a six-wheeler three', () {
+    test('a truck takes one area for every two wheels', () {
       expect(maxRoutesForWheelers(4), 2);
       expect(maxRoutesForWheelers(6), 3);
-      expect(maxRoutesForWheelers(8), 3);
+      expect(maxRoutesForWheelers(8), 4);
+      expect(maxRoutesForWheelers(10), 5);
+    });
+  });
+
+  group('driver gap', () {
+    test('an HH:mm start becomes minutes since midnight', () {
+      expect(manualMinutes('00:00'), 0);
+      expect(manualMinutes('08:00'), 480);
+      expect(manualMinutes('18:30'), 1110);
+    });
+
+    test('shifts need six hours between them', () {
+      // 8 AM and 6 PM are two shifts.
+      expect(manualSlotsClash('08:00', '18:00'), isFalse);
+      // Exactly six hours apart is allowed.
+      expect(manualSlotsClash('08:00', '14:00'), isFalse);
+      // The same start, or anything closer, is one slot.
+      expect(manualSlotsClash('08:00', '08:00'), isTrue);
+      expect(manualSlotsClash('08:00', '13:59'), isTrue);
+      expect(manualSlotsClash('18:00', '08:00'), isFalse);
+    });
+
+    test('a driver is matched by uid, or by name without one', () {
+      // Two rows from the accounts list.
+      expect(
+        manualSameDriver(
+          driverId: 'd1',
+          driverName: 'Arwin Decena',
+          otherDriverId: 'd1',
+          otherDriverName: 'Arwin D.',
+        ),
+        isTrue,
+      );
+      expect(
+        manualSameDriver(
+          driverId: 'd1',
+          driverName: 'Arwin Decena',
+          otherDriverId: 'd2',
+          otherDriverName: 'Arwin Decena',
+        ),
+        isFalse,
+      );
+      // Roster names carry no uid, so the name decides.
+      expect(
+        manualSameDriver(
+          driverId: '',
+          driverName: ' Ben Cruz ',
+          otherDriverId: '',
+          otherDriverName: 'ben cruz',
+        ),
+        isTrue,
+      );
+      expect(
+        manualSameDriver(
+          driverId: '',
+          driverName: 'Ben Cruz',
+          otherDriverId: '',
+          otherDriverName: 'Ramon Dela Cruz',
+        ),
+        isFalse,
+      );
+      // An unnamed row never matches another unnamed row.
+      expect(
+        manualSameDriver(
+          driverId: '',
+          driverName: '',
+          otherDriverId: '',
+          otherDriverName: '',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('manual areas', () {
+    test('every listed resident area has a pre-made route', () {
+      final expected = [
+        for (final name in ResidentAreas.all)
+          if (!ResidentAreas.isOther(name)) name,
+      ];
+      expect(kManualAreas, hasLength(expected.length));
+      expect([for (final area in kManualAreas) area.name], expected);
+    });
+
+    test('the pre-made loops stay inside Batasan Hills', () {
+      for (final area in kManualAreas) {
+        for (final point in area.route) {
+          expect(point.latitude, inInclusiveRange(14.668, 14.697));
+          expect(point.longitude, inInclusiveRange(121.083, 121.112));
+        }
+      }
     });
   });
 
@@ -37,7 +130,58 @@ void main() {
       expect(manual!.scheduleLabel, 'Mon, Wed, Fri · 06:00 · Weekly');
       expect(manual.ticketId, 'tt1');
       expect(manual.isApproved, isFalse);
-      expect(manual.maxRoutes, 3);
+      expect(manual.maxRoutes, 4);
+      expect(manual.assignmentCount, 1);
+      expect(manual.allRoutes, ['Sampaguita', 'Mabini']);
+    });
+
+    test('reads a bulk roster and keeps every driver row', () {
+      final manual = AssignmentManual.fromDoc('m2', {
+        'title': 'Bulk schedule',
+        'status': 'pendingApproval',
+        'createdBy': 'i1',
+        'createdByName': 'Iswim',
+        'assignments': [
+          {
+            'driverId': 'd1',
+            'driverName': 'Arwin Decena',
+            'truckId': 'truck-06',
+            'plateNumber': 'SH 3372',
+            'wheelers': 4,
+            'routes': ['Filinvest 1', 'Filinvest 2'],
+            'days': [1, 3, 5],
+            'startTime': '08:00',
+            'recurrence': 'weekly',
+          },
+          {
+            'driverId': 'd4',
+            'driverName': 'Ben Cruz',
+            'truckId': 'truck-10',
+            'plateNumber': 'SK 4410',
+            'wheelers': 10,
+            'routes': [
+              'Sampaguita',
+              'Mabini Ave',
+              'Kabihasnan St',
+              'Kaluguran St',
+              'Rizal Ave',
+            ],
+            'days': [2, 4, 6],
+            'startTime': '18:00',
+            'recurrence': 'yearly',
+          },
+        ],
+        'ticketIds': ['tt1', 'tt2'],
+      });
+
+      expect(manual, isNotNull);
+      expect(manual!.assignmentCount, 2);
+      expect(manual.driverName, 'Arwin Decena');
+      expect(manual.ticketIds, ['tt1', 'tt2']);
+      expect(manual.allRoutes, hasLength(7));
+      expect(manual.runsOn(DateTime(2026, 11, 2)), isTrue);
+      expect(manual.runsOn(DateTime(2026, 11, 3)), isTrue);
+      expect(manual.runsOn(DateTime(2026, 11, 8)), isFalse);
     });
   });
 

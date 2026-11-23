@@ -9,6 +9,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../manuals/models/assignment_manual.dart';
+import '../../manuals/models/manual_assignment.dart';
+import '../../manuals/services/assignment_manual_service.dart';
 import '../../manuals/services/manual_pdf.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
@@ -34,10 +37,46 @@ class TicketDetailScreen extends StatefulWidget {
   State<TicketDetailScreen> createState() => _TicketDetailScreenState();
 }
 
-class _TicketDetailScreenState extends State<TicketDetailScreen> {
+class _TicketDetailScreenState extends State<TicketDetailScreen>
+    with WidgetsBindingObserver {
   final _service = TicketService();
+
+  /// One listener for the whole page.
+  ///
+  /// Building the stream inline meant every rebuild tore the Firestore
+  /// listener down and put a new one up, and a new listener answers from the
+  /// local cache before the server. A ticket signed on another desk could
+  /// therefore sit on "waiting for City Hall" while the page kept resetting to
+  /// the cached copy.
+  late Stream<TripTicket?> _stream = _service.watchOne(widget.ticketId);
+
   bool _busy = false;
   bool _autoSignHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A hidden browser tab stops draining the Firestore channel, so a
+    // signature that landed while this page was in the background never
+    // reaches it. Re-reading on resume is what makes the other desk's
+    // approval show up without a page reload.
+    if (state == AppLifecycleState.resumed && mounted) _reload();
+  }
+
+  void _reload() {
+    setState(() => _stream = _service.watchOne(widget.ticketId));
+  }
 
   String _format(DateTime? time) {
     if (time == null) return '—';
@@ -266,9 +305,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       subtitle: 'The paper trail for one collection run.',
       onBack: () => ecoBack(context, '/driver-tickets'),
       body: StreamBuilder<TripTicket?>(
-        stream: _service.watchOne(widget.ticketId),
+        stream: _stream,
         builder: (context, snapshot) {
           final ticket = snapshot.data;
+          if (snapshot.hasError) {
+            return _TicketError(onRetry: _reload);
+          }
           if (ticket == null) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -300,6 +342,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   _Header(ticket: ticket),
                   const SizedBox(height: 14),
                   if (ticket.isAssignment) ...[
+                    _ManualRowCard(ticket: ticket),
                     _AssignmentDetails(ticket: ticket),
                     const SizedBox(height: 10),
                     SizedBox(
@@ -590,6 +633,170 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Which collection manual this row belongs to, and where that manual stands.
+///
+/// A bulk manual generates one trip ticket per driver, so the ticket alone
+/// cannot tell Iswim whether the schedule being looked at is the one City Hall
+/// has already signed. Naming the manual and the row makes a still-pending row
+/// of a different manual obvious instead of looking like a missed approval.
+class _ManualRowCard extends StatefulWidget {
+  const _ManualRowCard({required this.ticket});
+
+  final TripTicket ticket;
+
+  @override
+  State<_ManualRowCard> createState() => _ManualRowCardState();
+}
+
+class _ManualRowCardState extends State<_ManualRowCard> {
+  Stream<AssignmentManual?>? _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.ticket.assignmentId;
+    if (id != null && id.isNotEmpty) {
+      _stream = AssignmentManualService().watchOne(id);
+    }
+  }
+
+  /// The ticket's position in the roster, or -1 when it cannot be matched.
+  int _rowIndex(List<ManualAssignment> rows) {
+    final id = widget.ticket.driverId.trim();
+    if (id.isNotEmpty) {
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].driverId == id) return i;
+      }
+    }
+    final name = widget.ticket.driverName.trim().toLowerCase();
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].driverName.trim().toLowerCase() == name) return i;
+    }
+    return -1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = _stream;
+    if (stream == null) return const SizedBox.shrink();
+
+    return StreamBuilder<AssignmentManual?>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final manual = snapshot.data;
+        // A resident or a crew member may not be allowed to read the roster;
+        // the strip stays out of the way instead of showing an error.
+        if (manual == null) return const SizedBox.shrink();
+
+        final rows = manual.allAssignments;
+        final index = _rowIndex(rows);
+        final approved = manual.isApproved;
+        final position = index >= 0 && rows.length > 1
+            ? 'Row ${index + 1} of ${rows.length} · '
+            : '';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+            decoration: BoxDecoration(
+              color: approved ? AppColors.mint : AppColors.cream,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: approved
+                    ? AppColors.sage
+                    : AppColors.warning.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  approved
+                      ? Icons.assignment_turned_in_outlined
+                      : Icons.assignment_outlined,
+                  size: 15,
+                  color: approved ? AppColors.primary : AppColors.warning,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        manual.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkGreen,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '$position${manual.status.label}',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Shown instead of an endless spinner when the ticket listener fails, so a
+/// dropped connection cannot look like a ticket that is still pending.
+class _TicketError extends StatelessWidget {
+  const _TicketError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 28,
+              color: AppColors.inkMuted,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'This ticket could not be loaded.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkGreen,
+              ),
+            ),
+            const SizedBox(height: 3),
+            const Text(
+              'Check the connection, then try again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
+        ),
       ),
     );
   }

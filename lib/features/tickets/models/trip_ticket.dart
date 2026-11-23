@@ -143,9 +143,50 @@ const kManualDayNames = <String>[
 String manualDayLabel(int day) =>
     day >= 1 && day <= 7 ? kManualDayNames[day - 1] : '—';
 
-/// The most routes a truck may be given. A small 4-wheeler covers two
-/// streets; a six- or eight-wheeler can take three.
-int maxRoutesForWheelers(int wheelers) => wheelers <= 4 ? 2 : 3;
+/// The most areas a truck may be given: one for every two wheels.
+///
+/// A 4-wheeler covers two areas, a 6-wheeler three, an 8-wheeler four and a
+/// 10-wheeler five.
+int maxRoutesForWheelers(int wheelers) => wheelers <= 4 ? 2 : wheelers ~/ 2;
+
+/// The shortest gap between two shifts for the same driver, in minutes.
+///
+/// A crew that starts at 8 AM cannot be sent out again at 10 AM: anything
+/// closer than six hours is the same slot. 8 AM and 6 PM are two shifts.
+const kManualMinGapMinutes = 6 * 60;
+
+/// An `HH:mm` start time as minutes since midnight.
+int manualMinutes(String time) {
+  final parts = time.split(':');
+  final hour = int.tryParse(parts.first) ?? 0;
+  final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+  return hour * 60 + minute;
+}
+
+/// Whether two `HH:mm` starts are too close to be two separate shifts.
+///
+/// Exactly [kManualMinGapMinutes] apart is allowed, so 8 AM and 2 PM pass and
+/// 8 AM and 1 PM do not.
+bool manualSlotsClash(String a, String b) =>
+    (manualMinutes(a) - manualMinutes(b)).abs() < kManualMinGapMinutes;
+
+/// Whether two manual rows are the same driver.
+///
+/// A row taken from the driver accounts carries a uid; a row typed from the
+/// fleet roster only carries a name. The uid decides when both sides have one,
+/// otherwise the name does, so the same crew is never booked twice.
+bool manualSameDriver({
+  required String driverId,
+  required String driverName,
+  required String otherDriverId,
+  required String otherDriverName,
+}) {
+  if (driverId.isNotEmpty && otherDriverId.isNotEmpty) {
+    return driverId == otherDriverId;
+  }
+  final name = driverName.trim().toLowerCase();
+  return name.isNotEmpty && name == otherDriverName.trim().toLowerCase();
+}
 
 /// Whether a manual roster puts the crew on duty on [date].
 ///

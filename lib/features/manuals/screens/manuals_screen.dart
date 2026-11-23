@@ -442,7 +442,9 @@ class _CollectionManualCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${manual.driverName} · ${manual.plateNumber}',
+                      manual.assignmentCount > 1
+                          ? '${manual.assignmentCount} drivers · bulk assignment'
+                          : '${manual.driverName} · ${manual.plateNumber}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -467,7 +469,7 @@ class _CollectionManualCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  manual.routesLabel,
+                  manual.allRoutes.join(' · '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

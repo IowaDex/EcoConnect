@@ -131,10 +131,12 @@ class _DriverScreenState extends State<DriverScreen> {
 
     if (role == TruckCrewRole.driver) {
       // The registry first: Iswim may have added or re-plated the truck since
-      // the app was built. The mock roster is only the seed data.
-      final registered = await FleetService().findTruck(
-        account?.assignedTruckId,
-      );
+      // the app was built. The mock roster is only the seed data. A manual
+      // can pair the crew without writing `assignedTruckId`, so fall back to
+      // the truck that carries this account id.
+      final registered =
+          await FleetService().findTruck(account?.assignedTruckId) ??
+          await FleetService().findTruckForDriver(account?.uid ?? '');
       final designated =
           registered ??
           truckForDriver(

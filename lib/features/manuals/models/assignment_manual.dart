@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../tickets/models/trip_ticket.dart';
+import 'manual_assignment.dart';
 
 /// Where an assignment manual is in the City Hall approval loop.
 ///
 /// [pendingApproval] is set the moment Iswim submits it; [approved] is written
-/// when the City Hall signature lands on the generated trip ticket.
+/// when the City Hall signature lands on every ticket it generated.
 enum AssignmentManualStatus { pendingApproval, approved, cancelled }
 
 extension AssignmentManualStatusX on AssignmentManualStatus {
@@ -26,9 +27,13 @@ DateTime? _date(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
 
 /// The collection manual Iswim builds after City Hall asks for one.
 ///
-/// It is the roster entry: one driver, the truck that comes with the driver,
-/// up to three routes, the days it runs, the start time and how often it
-/// repeats. A [TripTicket] with [TicketKind.assignment] is generated from it.
+/// It is a bulk roster: several [assignments], each with its own driver,
+/// plate, areas, days, start time and recurrence. One trip ticket is generated
+/// per assignment, and the manual is only [AssignmentManualStatus.approved]
+/// once City Hall has signed all of them.
+///
+/// The single-driver fields are kept as the first assignment's copy so older
+/// screens and records written before bulk manuals still read correctly.
 class AssignmentManual {
   const AssignmentManual({
     required this.id,
@@ -46,6 +51,8 @@ class AssignmentManual {
     required this.createdBy,
     required this.createdByName,
     this.routePoints = const [],
+    this.assignments = const [],
+    this.ticketIds = const [],
     this.requestId,
     this.ticketId,
     this.createdAt,
@@ -64,13 +71,20 @@ class AssignmentManual {
   final String plateNumber;
   final int wheelers;
 
-  /// Up to [maxRoutes] streets.
+  /// Up to [maxRoutes] area names for the first assignment.
   final List<String> routes;
 
   /// The map points behind [routes], kept so the driver's map can draw them.
   final List<ManualRoutePoint> routePoints;
 
-  /// Days of the week, 1 = Monday … 7 = Sunday.
+  /// Every driver row in the manual. Empty on records written before bulk
+  /// manuals, in which case [allAssignments] falls back to the legacy fields.
+  final List<ManualAssignment> assignments;
+
+  /// One trip ticket per assignment, in the same order.
+  final List<String> ticketIds;
+
+  /// Days of the week, 1 = Monday … 7 = Sunday (first assignment).
   final List<int> days;
 
   /// `HH:mm`, 24-hour clock. There is no end time: the driver marks the run
@@ -83,7 +97,7 @@ class AssignmentManual {
   /// The City Hall manual request this answers, when it came from one.
   final String? requestId;
 
-  /// The generated trip ticket.
+  /// The first generated trip ticket.
   final String? ticketId;
 
   final String createdBy;
@@ -95,7 +109,38 @@ class AssignmentManual {
 
   int get maxRoutes => maxRoutesForWheelers(wheelers);
 
+  int get assignmentCount => assignments.isEmpty ? 1 : assignments.length;
+
   bool get isApproved => status == AssignmentManualStatus.approved;
+
+  /// The roster, with a one-row fallback for records written before the
+  /// assignments array existed.
+  List<ManualAssignment> get allAssignments {
+    if (assignments.isNotEmpty) return assignments;
+    return [
+      ManualAssignment(
+        driverId: driverId,
+        driverName: driverName,
+        truckId: truckId,
+        plateNumber: plateNumber,
+        wheelers: wheelers,
+        routes: routes,
+        routePoints: routePoints,
+        days: days,
+        startTime: startTime,
+        recurrence: recurrence,
+      ),
+    ];
+  }
+
+  /// Every distinct area the manual covers, in roster order.
+  List<String> get allRoutes {
+    final seen = <String>{};
+    for (final assignment in allAssignments) {
+      seen.addAll(assignment.routes);
+    }
+    return seen.toList(growable: false);
+  }
 
   /// Whether the crew is expected on [date].
   ///
@@ -105,12 +150,17 @@ class AssignmentManual {
   /// year. See [manualRunsOn] for the shared rule.
   bool runsOn(DateTime date) {
     if (status == AssignmentManualStatus.cancelled) return false;
-    return manualRunsOn(
-      days: days,
-      recurrence: recurrence,
-      createdAt: createdAt,
-      date: date,
-    );
+    for (final assignment in allAssignments) {
+      if (manualRunsOn(
+        days: assignment.days,
+        recurrence: assignment.recurrence,
+        createdAt: createdAt,
+        date: date,
+      )) {
+        return true;
+      }
+    }
+    return false;
   }
 
   String get scheduleLabel {
@@ -130,6 +180,8 @@ class AssignmentManual {
     'wheelers': wheelers,
     'routes': routes,
     'routePoints': [for (final point in routePoints) point.toMap()],
+    'assignments': [for (final assignment in assignments) assignment.toMap()],
+    'ticketIds': ticketIds,
     'days': days,
     'startTime': startTime,
     'recurrence': recurrence.name,
@@ -143,38 +195,74 @@ class AssignmentManual {
   };
 
   static AssignmentManual? fromDoc(String id, Map<String, dynamic> data) {
-    final driverName = (data['driverName'] as String?)?.trim() ?? '';
-    if (driverName.isEmpty) return null;
+    final assignments = ManualAssignment.listFromDynamic(data['assignments']);
+
+    final routes =
+        (data['routes'] as List?)?.whereType<String>().toList(
+          growable: false,
+        ) ??
+        const [];
+    final routePoints =
+        (data['routePoints'] as List?)
+            ?.map(ManualRoutePoint.fromDynamic)
+            .whereType<ManualRoutePoint>()
+            .toList(growable: false) ??
+        const [];
+    final days =
+        (data['days'] as List?)
+            ?.whereType<num>()
+            .map((day) => day.toInt())
+            .toList(growable: false) ??
+        const [];
+    final startTime = data['startTime'] as String? ?? '06:00';
+    final recurrence = ManualRecurrenceX.fromName(
+      data['recurrence'] as String?,
+    );
+
+    final first = assignments.isNotEmpty
+        ? assignments.first
+        : ManualAssignment(
+            driverId: data['driverId'] as String? ?? '',
+            driverName: (data['driverName'] as String?)?.trim() ?? '',
+            truckId: data['truckId'] as String? ?? '',
+            plateNumber: (data['plateNumber'] as String?)?.trim() ?? '',
+            wheelers: (data['wheelers'] as num?)?.toInt() ?? 4,
+            routes: routes,
+            routePoints: routePoints,
+            days: days,
+            startTime: startTime,
+            recurrence: recurrence,
+          );
+
+    if (first.driverName.trim().isEmpty) return null;
+
+    final ticketIds =
+        (data['ticketIds'] as List?)?.whereType<String>().toList(
+          growable: false,
+        ) ??
+        const [];
+    final ticketId = data['ticketId'] as String?;
+
     return AssignmentManual(
       id: id,
       title: data['title'] as String? ?? 'Collection manual',
-      driverId: data['driverId'] as String? ?? '',
-      driverName: driverName,
-      truckId: data['truckId'] as String? ?? '',
-      plateNumber: data['plateNumber'] as String? ?? '',
-      wheelers: (data['wheelers'] as num?)?.toInt() ?? 4,
-      routes:
-          (data['routes'] as List?)?.whereType<String>().toList(
-            growable: false,
-          ) ??
-          const [],
-      routePoints:
-          (data['routePoints'] as List?)
-              ?.map(ManualRoutePoint.fromDynamic)
-              .whereType<ManualRoutePoint>()
-              .toList(growable: false) ??
-          const [],
-      days:
-          (data['days'] as List?)
-              ?.whereType<num>()
-              .map((d) => d.toInt())
-              .toList(growable: false) ??
-          const [],
-      startTime: data['startTime'] as String? ?? '06:00',
-      recurrence: ManualRecurrenceX.fromName(data['recurrence'] as String?),
+      driverId: first.driverId,
+      driverName: first.driverName,
+      truckId: first.truckId,
+      plateNumber: first.plateNumber,
+      wheelers: first.wheelers,
+      routes: first.routes,
+      routePoints: first.routePoints,
+      assignments: assignments,
+      ticketIds: ticketIds.isNotEmpty
+          ? ticketIds
+          : [if (ticketId != null) ticketId],
+      days: first.days,
+      startTime: first.startTime,
+      recurrence: first.recurrence,
       status: AssignmentManualStatusX.fromName(data['status'] as String?),
       requestId: data['requestId'] as String?,
-      ticketId: data['ticketId'] as String?,
+      ticketId: ticketId ?? (ticketIds.isEmpty ? null : ticketIds.first),
       createdBy: data['createdBy'] as String? ?? '',
       createdByName: data['createdByName'] as String? ?? 'Iswim',
       createdAt: _date(data['createdAt']),

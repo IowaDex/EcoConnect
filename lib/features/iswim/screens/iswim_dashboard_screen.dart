@@ -40,7 +40,8 @@ class IswimDashboardScreen extends StatefulWidget {
   State<IswimDashboardScreen> createState() => _IswimDashboardScreenState();
 }
 
-class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
+class _IswimDashboardScreenState extends State<IswimDashboardScreen>
+    with WidgetsBindingObserver {
   /// 0 = overview, 1 = tickets, 2 = fleet. The console opens on the overview:
   /// the ticket list is one tap away, not already open.
   int _tab = 0;
@@ -48,6 +49,10 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
   List<TripTicket> _tickets = const [];
   bool _loaded = false;
   StreamSubscription<List<TripTicket>>? _ticketSub;
+
+  /// Consecutive failed subscriptions, so a desk that is genuinely refused
+  /// does not hammer Firestore in a loop.
+  int _retries = 0;
 
   /// One request stream feeds the badge on the shortcut and the section below
   /// it, so a rebuild never resubscribes to Firestore.
@@ -57,23 +62,50 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // One subscription feeds both the hero counters and the ticket list.
+    WidgetsBinding.instance.addObserver(this);
+    _subscribeTickets();
+  }
+
+  /// One subscription feeds both the hero counters and the ticket list.
+  ///
+  /// A dropped listener used to be final: `onError` kept the old list and the
+  /// desk went on showing tickets that had already been signed. Re-subscribing
+  /// keeps the counters honest.
+  void _subscribeTickets() {
+    _ticketSub?.cancel();
     _ticketSub = TicketService().watchAll().listen(
       (tickets) {
         if (!mounted) return;
+        _retries = 0;
         setState(() {
           _tickets = tickets;
           _loaded = true;
         });
       },
       onError: (_) {
-        if (mounted) setState(() => _loaded = true);
+        if (!mounted) return;
+        setState(() => _loaded = true);
+        if (_retries >= 5) return;
+        _retries++;
+        Future<void>.delayed(const Duration(seconds: 3), () {
+          if (mounted) _subscribeTickets();
+        });
       },
     );
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A hidden browser tab stops draining the Firestore channel, so City
+    // Hall's signature would not reach the desk until the page was reloaded.
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    _retries = 0;
+    _subscribeTickets();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticketSub?.cancel();
     super.dispose();
   }
@@ -389,8 +421,8 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen> {
         const SectionLabel('FLEET'),
         const SizedBox(height: EcoSpace.xs),
         const Text(
-          'Every truck has a permanent driver. Tap a plate to see all of the '
-          'trip tickets for that truck.',
+          'Every truck is a plate and a body. Drivers are put on a plate per '
+          'collection manual — tap one to see its trip tickets.',
           style: TextStyle(
             fontSize: 10.5,
             height: 1.5,
@@ -442,8 +474,8 @@ class _FleetList extends StatelessWidget {
             icon: Icons.local_shipping_outlined,
             title: 'No trucks registered',
             message:
-                'Add a truck to the fleet and pair it with its permanent '
-                'driver before issuing a trip ticket.',
+                'Add a truck to the fleet before assigning it to a driver in '
+                'a collection manual.',
           );
         }
 

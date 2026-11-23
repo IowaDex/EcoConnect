@@ -54,6 +54,10 @@ class GarbageTruck {
     return name.isNotEmpty && name.toLowerCase() != 'unassigned';
   }
 
+  /// A plate just added to the registry that no driver holds yet. The fleet
+  /// marks it NEW until a manual (or the accounts desk) pairs it with a crew.
+  bool get isNew => !hasDriver && (driverAccountId ?? '').isEmpty;
+
   /// `8-wheeler compactor` — used in one-line summaries.
   String get description => '$wheelerLabel ${bodyType.toLowerCase()}';
 
