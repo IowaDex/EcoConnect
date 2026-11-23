@@ -365,8 +365,17 @@ class _RequestCard extends StatelessWidget {
             request.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: EcoType.cardTitle(context, color: AppColors.darkGreen),
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
           ),
+          if (request.description.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              request.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -499,16 +508,9 @@ class _MiniChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 10, color: AppColors.inkMuted),
+          Icon(icon, size: 11, color: AppColors.inkMuted),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 8.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.inkMuted,
-            ),
-          ),
+          Text(label, style: EcoType.meta(context, color: AppColors.inkMuted)),
         ],
       ),
     );

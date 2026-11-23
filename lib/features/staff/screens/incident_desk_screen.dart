@@ -228,46 +228,30 @@ class _IncidentTile extends StatelessWidget {
 
     return DeskRailCard(
       railColor: accent,
-      padding: const EdgeInsets.fromLTRB(17, 13, 14, 14),
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                height: 32,
-                width: 32,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(EcoRadius.sm),
-                ),
-                child: Icon(
-                  incident.category.icon,
-                  size: 16,
-                  color: pending ? const Color(0xFFB26A00) : accent,
-                ),
+              Icon(
+                incident.category.icon,
+                size: 13,
+                color: pending ? const Color(0xFFB26A00) : accent,
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 5),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      incident.category.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: EcoType.cardTitle(
-                        context,
-                        color: AppColors.darkGreen,
-                      ),
-                    ),
-                    Text(
-                      timeAgo(incident.createdAt),
-                      style: EcoType.meta(context, color: AppColors.inkMuted),
-                    ),
-                  ],
+                child: Text(
+                  incident.category.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.eyebrow(
+                    context,
+                    color: pending ? const Color(0xFFB26A00) : AppColors.moss,
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               StatusBadge(
                 label: incident.status.label,
                 color: incident.status.color,
@@ -275,28 +259,27 @@ class _IncidentTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.xs),
+          // The report itself is the headline: it is what the desk reads and
+          // acts on, not the category the resident picked.
           Text(
             incident.description,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: EcoType.body(context, color: AppColors.textDark),
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 8),
           Row(
             children: [
-              DeskInitialAvatar(name: incident.residentName, size: 22),
+              DeskInitialAvatar(name: incident.residentName, size: 20),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  incident.residentName,
+                  '${incident.residentName} · '
+                  '${timeAgo(incident.createdAt)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.inkMuted,
-                  ),
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
                 ),
               ),
               if (incident.latitude != null && incident.longitude != null)
@@ -323,10 +306,10 @@ class _IncidentTile extends StatelessWidget {
                       Text(
                         '${incident.latitude!.toStringAsFixed(4)}, '
                         '${incident.longitude!.toStringAsFixed(4)}',
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w600,
+                        style: EcoType.meta(
+                          context,
                           color: AppColors.inkMuted,
+                          weight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -335,7 +318,7 @@ class _IncidentTile extends StatelessWidget {
             ],
           ),
           if (pending) ...[
-            const SizedBox(height: 11),
+            const SizedBox(height: EcoSpace.sm),
             SizedBox(
               width: double.infinity,
               height: 36,

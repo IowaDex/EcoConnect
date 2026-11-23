@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
-import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/assignment_manual.dart';
@@ -24,6 +24,11 @@ import '../services/manual_service.dart';
 
 /// Manual library. Iswim publishes revisions here; City Hall reads and
 /// acknowledges them. No other role has access.
+///
+/// Two different things used to share one scrolling page: the PDFs Iswim
+/// uploads, and the per-driver collection manuals those uploads describe. They
+/// are now one list at a time behind a switch, so the search box and the
+/// status filter always apply to what is on screen.
 class ManualsScreen extends StatefulWidget {
   const ManualsScreen({super.key});
 
@@ -31,12 +36,48 @@ class ManualsScreen extends StatefulWidget {
   State<ManualsScreen> createState() => _ManualsScreenState();
 }
 
+/// Which of the two libraries is open.
+enum _ManualTab { library, collection }
+
+/// The three states a collection manual can be in on this desk.
+enum _CollectionFilter { all, waiting, approved }
+
+extension on _CollectionFilter {
+  String get label => switch (this) {
+    _CollectionFilter.all => 'All',
+    _CollectionFilter.waiting => 'Waiting',
+    _CollectionFilter.approved => 'Approved',
+  };
+
+  bool matches(AssignmentManual manual) => switch (this) {
+    _CollectionFilter.all => true,
+    _CollectionFilter.waiting => !manual.isApproved,
+    _CollectionFilter.approved => manual.isApproved,
+  };
+}
+
 class _ManualsScreenState extends State<ManualsScreen> {
   final _search = TextEditingController();
+
+  _ManualTab _tab = _ManualTab.library;
   String _query = '';
   ManualStatus? _statusFilter;
+  _CollectionFilter _collectionFilter = _CollectionFilter.all;
+
   int _page = 0;
   int _pageSize = 10;
+
+  late final Stream<List<Manual>> _manuals;
+  late final Stream<List<AssignmentManual>> _collection;
+
+  @override
+  void initState() {
+    super.initState();
+    // Subscribed once and shared: the switch and the list must not open two
+    // Firestore listeners over the same query.
+    _manuals = ManualService().watchManuals();
+    _collection = AssignmentManualService().watchAll();
+  }
 
   @override
   void dispose() {
@@ -44,18 +85,24 @@ class _ManualsScreenState extends State<ManualsScreen> {
     super.dispose();
   }
 
-  List<Manual> _filter(List<Manual> manuals) {
-    final q = _query.trim().toLowerCase();
-    return manuals.where((manual) {
-      if (_statusFilter != null && manual.status != _statusFilter) {
-        return false;
-      }
-      if (q.isEmpty) return true;
-      return manual.title.toLowerCase().contains(q) ||
-          manual.summary.toLowerCase().contains(q) ||
-          manual.category.label.toLowerCase().contains(q) ||
-          'v${manual.version}'.contains(q);
-    }).toList();
+  void _clear() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      _statusFilter = null;
+      _collectionFilter = _CollectionFilter.all;
+      _page = 0;
+    });
+  }
+
+  void _switchTab(_ManualTab tab) {
+    if (tab == _tab) return;
+    _search.clear();
+    setState(() {
+      _tab = tab;
+      _query = '';
+      _page = 0;
+    });
   }
 
   @override
@@ -66,156 +113,317 @@ class _ManualsScreenState extends State<ManualsScreen> {
     return EcoPageScaffold(
       eyebrow: isIswim ? 'ISWIM · MANUALS' : 'CITY HALL · MANUALS',
       title: isIswim ? 'Manuals' : 'Manual library',
+      icon: Icons.menu_book_outlined,
       subtitle: 'The procedures both desks follow, versioned and signed off.',
       onBack: () => ecoBack(context, isIswim ? '/iswim' : '/cityhall'),
       actions: [
+        if (isIswim)
+          _HeaderAction(
+            label: 'New manual',
+            icon: Icons.upload_file_rounded,
+            onTap: () => _openCreate(context),
+          ),
         EcoIconAction(
           icon: Icons.inbox_outlined,
           tooltip: 'Manual requests',
           onTap: () => context.push('/manual-requests'),
         ),
       ],
-      fab: isIswim
-          ? FloatingActionButton.extended(
-              onPressed: () => _openCreate(context),
-              backgroundColor: AppColors.forest,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.upload_file_rounded, size: 18),
-              label: const Text(
-                'New manual',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            )
-          : null,
       body: StreamBuilder<List<Manual>>(
-        stream: ManualService().watchManuals(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const SkeletonList();
-          }
-          if (snapshot.hasError) {
-            return EmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'Could not load manuals',
-              message: AppFeedback.describe(snapshot.error!),
-            );
-          }
-          final manuals = snapshot.data ?? const <Manual>[];
-          final filtered = _filter(manuals);
-          final page = clampPage(_page, filtered.length, _pageSize);
-          final visible = pageSlice(filtered, page, _pageSize);
+        stream: _manuals,
+        builder: (context, librarySnapshot) {
+          return StreamBuilder<List<AssignmentManual>>(
+            stream: _collection,
+            builder: (context, collectionSnapshot) {
+              final manuals = librarySnapshot.data ?? const <Manual>[];
+              final collection =
+                  collectionSnapshot.data ?? const <AssignmentManual>[];
 
-          return Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(18, 8, 18, isIswim ? 88 : 20),
-                  children: [
-                    // Every manual lives here, signed or not, on both desks.
-                    const _CollectionManualsSection(),
-                    const SizedBox(height: 22),
-                    SectionHeader(
-                      title: 'Uploaded library',
-                      subtitle: isIswim
-                          ? 'The PDFs Iswim sends to City Hall for '
-                                'acknowledgement.'
-                          : 'The PDFs Iswim has submitted for review.',
-                    ),
-                    const SizedBox(height: 8),
-                    EcoSearchField(
-                      controller: _search,
-                      hint: 'Search title, category, version',
-                      onChanged: (value) => setState(() {
-                        _query = value;
-                        _page = 0;
-                      }),
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 44,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          for (final option in <ManualStatus?>[
-                            null,
-                            ...ManualStatus.values,
-                          ]) ...[
-                            ChoiceChip(
-                              label: Text(
-                                option?.label ?? 'All',
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                              selected: _statusFilter == option,
-                              onSelected: (_) => setState(() {
-                                _statusFilter = option;
-                                _page = 0;
-                              }),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (manuals.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        child: EmptyState(
-                          compact: true,
-                          icon: Icons.menu_book_outlined,
-                          title: 'No uploaded manuals yet',
-                          message: isIswim
-                              ? 'Upload the first manual. It is sent straight '
-                                    'to City Hall.'
-                              : 'Iswim has not submitted a manual yet. You can '
-                                    'request one.',
-                          actionLabel: isIswim
-                              ? 'Upload a manual'
-                              : 'Request a manual',
-                          onAction: () => isIswim
-                              ? _openCreate(context)
-                              : context.push('/manual-requests'),
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                    child: DeskSegmented<_ManualTab>(
+                      value: _tab,
+                      onChanged: _switchTab,
+                      segments: [
+                        DeskSegment(
+                          value: _ManualTab.library,
+                          label: 'Uploaded PDFs',
+                          icon: Icons.picture_as_pdf_outlined,
+                          count: manuals.length,
                         ),
-                      )
-                    else if (filtered.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(28),
-                        child: Text(
-                          'No manuals match your filters.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.inkMuted,
-                          ),
+                        DeskSegment(
+                          value: _ManualTab.collection,
+                          label: 'Collection',
+                          icon: Icons.assignment_ind_outlined,
+                          count: collection.length,
                         ),
-                      )
-                    else
-                      for (final manual in visible) ...[
-                        _ManualCard(manual: manual),
-                        const SizedBox(height: 10),
                       ],
-                  ],
-                ),
-              ),
-              if (filtered.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                  child: EcoPaginationBar(
-                    page: page,
-                    pageSize: _pageSize,
-                    total: filtered.length,
-                    onPageChanged: (next) => setState(() => _page = next),
-                    onPageSizeChanged: (size) => setState(() {
-                      _pageSize = size;
-                      _page = 0;
-                    }),
+                    ),
                   ),
-                ),
-            ],
+                  Expanded(
+                    child: _tab == _ManualTab.library
+                        ? _library(context, isIswim, manuals, librarySnapshot)
+                        : _collectionList(
+                            context,
+                            collection,
+                            collectionSnapshot,
+                          ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Uploaded PDFs
+  // ---------------------------------------------------------------------------
+
+  Widget _library(
+    BuildContext context,
+    bool isIswim,
+    List<Manual> all,
+    AsyncSnapshot<List<Manual>> snapshot,
+  ) {
+    if (snapshot.hasError) {
+      return EmptyState(
+        icon: Icons.error_outline_rounded,
+        title: 'Could not load manuals',
+        message: AppFeedback.describe(snapshot.error!),
+      );
+    }
+    if (!snapshot.hasData) {
+      return const EcoLoadingView(label: 'Loading manuals');
+    }
+
+    final searched = all
+        .where((manual) => _matchesQuery(manual, _query))
+        .toList(growable: false);
+    final items = searched
+        .where(
+          (manual) => _statusFilter == null || manual.status == _statusFilter,
+        )
+        .toList(growable: false);
+    final page = clampPage(_page, items.length, _pageSize);
+    final visible = pageSlice(items, page, _pageSize);
+    final filtered = _query.trim().isNotEmpty || _statusFilter != null;
+
+    return DeskQueueView(
+      search: EcoSearchField(
+        controller: _search,
+        hint: 'Search title, category or version',
+        onChanged: (value) => setState(() {
+          _query = value;
+          _page = 0;
+        }),
+      ),
+      filters: DeskSegmented<ManualStatus?>(
+        value: _statusFilter,
+        onChanged: (value) => setState(() {
+          _statusFilter = value;
+          _page = 0;
+        }),
+        segments: [
+          DeskSegment(value: null, label: 'All', count: searched.length),
+          for (final status in ManualStatus.values)
+            DeskSegment(
+              value: status,
+              label: status.shortLabel,
+              count: searched.where((m) => m.status == status).length,
+            ),
+        ],
+      ),
+      resultLine: DeskResultLine(
+        label: items.length == all.length
+            ? _count(all.length, 'manual')
+            : 'Showing ${items.length} of ${_count(all.length, 'manual')}',
+        onClear: filtered ? _clear : null,
+      ),
+      empty: all.isEmpty
+          ? DeskEmptyQueue(
+              icon: Icons.menu_book_outlined,
+              title: 'No uploaded manuals yet',
+              message: isIswim
+                  ? 'Upload the first manual. It is sent straight to City '
+                        'Hall for acknowledgement.'
+                  : 'Iswim has not submitted a manual yet. Ask for one and '
+                        'the finished file is linked back to the request.',
+              steps: const [
+                'Iswim uploads the PDF',
+                'City Hall reads and acknowledges it',
+                'The manual stays on record, versioned',
+              ],
+              actionLabel: isIswim ? 'Upload a manual' : 'Request a manual',
+              actionIcon: isIswim
+                  ? Icons.upload_file_rounded
+                  : Icons.add_rounded,
+              onAction: () => isIswim
+                  ? _openCreate(context)
+                  : context.push('/manual-requests'),
+            )
+          : DeskEmptyQueue(
+              icon: Icons.search_off_rounded,
+              title: 'No manual matches',
+              message:
+                  'Try another title, category or version, or clear the '
+                  'status filter.',
+              actionLabel: 'Clear filters',
+              actionIcon: Icons.filter_alt_off_outlined,
+              onAction: _clear,
+            ),
+      itemCount: visible.length,
+      itemBuilder: (context, i) => _ManualCard(manual: visible[i]),
+      pagination: items.isEmpty
+          ? null
+          : EcoPaginationBar(
+              page: page,
+              pageSize: _pageSize,
+              total: items.length,
+              onPageChanged: (next) => setState(() => _page = next),
+              onPageSizeChanged: (size) => setState(() {
+                _pageSize = size;
+                _page = 0;
+              }),
+            ),
+    );
+  }
+
+  static bool _matchesQuery(Manual manual, String raw) {
+    final query = raw.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return manual.title.toLowerCase().contains(query) ||
+        manual.summary.toLowerCase().contains(query) ||
+        manual.category.label.toLowerCase().contains(query) ||
+        'v${manual.version}'.contains(query);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Collection manuals
+  // ---------------------------------------------------------------------------
+
+  Widget _collectionList(
+    BuildContext context,
+    List<AssignmentManual> all,
+    AsyncSnapshot<List<AssignmentManual>> snapshot,
+  ) {
+    if (snapshot.hasError) {
+      return EmptyState(
+        icon: Icons.error_outline_rounded,
+        title: 'Could not load collection manuals',
+        message: AppFeedback.describe(snapshot.error!),
+      );
+    }
+    if (!snapshot.hasData) {
+      return const EcoLoadingView(label: 'Loading collection manuals');
+    }
+
+    // Pending first: that is the row the desk has to act on. Within each group
+    // the newest change leads.
+    final ordered = [...all]
+      ..sort((a, b) {
+        if (a.isApproved != b.isApproved) return a.isApproved ? 1 : -1;
+        final left = a.updatedAt ?? a.createdAt ?? DateTime(0);
+        final right = b.updatedAt ?? b.createdAt ?? DateTime(0);
+        return right.compareTo(left);
+      });
+
+    final searched = ordered
+        .where((manual) => _matchesCollectionQuery(manual, _query))
+        .toList(growable: false);
+    final items = searched
+        .where(_collectionFilter.matches)
+        .toList(growable: false);
+    final page = clampPage(_page, items.length, _pageSize);
+    final visible = pageSlice(items, page, _pageSize);
+    final filtered =
+        _query.trim().isNotEmpty || _collectionFilter != _CollectionFilter.all;
+
+    return DeskQueueView(
+      search: EcoSearchField(
+        controller: _search,
+        hint: 'Search manual, driver or plate',
+        onChanged: (value) => setState(() {
+          _query = value;
+          _page = 0;
+        }),
+      ),
+      filters: DeskSegmented<_CollectionFilter>(
+        value: _collectionFilter,
+        onChanged: (value) => setState(() {
+          _collectionFilter = value;
+          _page = 0;
+        }),
+        segments: [
+          for (final filter in _CollectionFilter.values)
+            DeskSegment(
+              value: filter,
+              label: filter.label,
+              count: searched.where(filter.matches).length,
+            ),
+        ],
+      ),
+      resultLine: DeskResultLine(
+        label: items.length == all.length
+            ? _count(all.length, 'manual')
+            : 'Showing ${items.length} of ${_count(all.length, 'manual')}',
+        onClear: filtered ? _clear : null,
+      ),
+      empty: all.isEmpty
+          ? const DeskEmptyQueue(
+              icon: Icons.assignment_ind_outlined,
+              title: 'No collection manual yet',
+              message:
+                  'A collection manual is the schedule Iswim builds for a '
+                  'driver. Create one and it is listed here straight away.',
+              steps: [
+                'Iswim builds the schedule',
+                'City Hall approves it',
+                'The crew runs the routes on the ticket',
+              ],
+            )
+          : DeskEmptyQueue(
+              icon: Icons.search_off_rounded,
+              title: 'No manual matches',
+              message:
+                  'Try another driver, plate or manual name, or clear the '
+                  'filter.',
+              actionLabel: 'Clear filters',
+              actionIcon: Icons.filter_alt_off_outlined,
+              onAction: _clear,
+            ),
+      itemCount: visible.length,
+      itemBuilder: (context, i) => _CollectionManualCard(manual: visible[i]),
+      pagination: items.isEmpty
+          ? null
+          : EcoPaginationBar(
+              page: page,
+              pageSize: _pageSize,
+              total: items.length,
+              onPageChanged: (next) => setState(() => _page = next),
+              onPageSizeChanged: (size) => setState(() {
+                _pageSize = size;
+                _page = 0;
+              }),
+            ),
+    );
+  }
+
+  static bool _matchesCollectionQuery(AssignmentManual manual, String raw) {
+    final query = raw.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return manual.title.toLowerCase().contains(query) ||
+        manual.driverName.toLowerCase().contains(query) ||
+        manual.plateNumber.toLowerCase().contains(query) ||
+        manual.allRoutes.join(' ').toLowerCase().contains(query);
+  }
+
+  static String _count(int count, String noun) =>
+      '$count ${count == 1 ? noun : '${noun}s'}';
 
   Future<void> _openCreate(BuildContext context) async {
     final user = context.read<AuthProvider>().currentUser;
@@ -230,6 +438,47 @@ class _ManualsScreenState extends State<ManualsScreen> {
   }
 }
 
+/// The filled create action in the page header.
+///
+/// A header pill rather than a floating button: the FAB sat on top of the
+/// pagination bar and forced the list to reserve 88px of empty space at the
+/// bottom.
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 15),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.forest,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: const StadiumBorder(),
+        ),
+      ),
+    );
+  }
+}
+
+/// One uploaded revision of a manual.
 class _ManualCard extends StatelessWidget {
   const _ManualCard({required this.manual});
 
@@ -237,60 +486,49 @@ class _ManualCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EcoCard(
+    return DeskRailCard(
+      railColor: manual.status.color,
       onTap: () => context.push('/manuals/${manual.id}'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                height: 36,
-                width: 36,
+                height: 32,
+                width: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.lightGreen,
-                  borderRadius: BorderRadius.circular(11),
+                  color: AppColors.mint,
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
                 ),
                 child: Icon(
                   manual.category.icon,
-                  size: 18,
+                  size: 16,
                   color: AppColors.primary,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      manual.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.darkGreen,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${manual.category.label} · v${manual.version}',
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  manual.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitleLarge(
+                    context,
+                    color: AppColors.darkGreen,
+                  ),
                 ),
               ),
+              const SizedBox(width: 6),
               const Icon(
                 Icons.chevron_right_rounded,
-                size: 19,
-                color: AppColors.moss,
+                size: 17,
+                color: AppColors.inkMuted,
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.xs + 1),
           Row(
             children: [
               StatusBadge(
@@ -298,27 +536,28 @@ class _ManualCard extends StatelessWidget {
                 color: manual.status.color,
                 compact: true,
               ),
-              const Spacer(),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${manual.category.label} · v${manual.version}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ),
               Text(
                 timeAgo(manual.updatedAt ?? manual.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
           if (manual.summary.trim().isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: EcoSpace.xs),
             Text(
               manual.summary,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 9.5,
-                height: 1.45,
-                color: AppColors.inkMuted,
-              ),
+              style: EcoType.bodySmall(context, color: AppColors.inkMuted),
             ),
           ],
         ],
@@ -327,71 +566,7 @@ class _ManualCard extends StatelessWidget {
   }
 }
 
-/// Every collection manual Iswim has built, waiting for City Hall or signed.
-///
-/// This is the roster itself, not the uploaded PDFs below it: the manual is
-/// what generated the trip ticket, so it stays listed whether the approval has
-/// landed or not.
-class _CollectionManualsSection extends StatelessWidget {
-  const _CollectionManualsSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<AssignmentManual>>(
-      stream: AssignmentManualService().watchAll(),
-      builder: (context, snapshot) {
-        // Pending first: that is the row the desk has to act on. Within each
-        // group the newest change leads.
-        final items = [...(snapshot.data ?? const <AssignmentManual>[])]
-          ..sort((a, b) {
-            if (a.isApproved != b.isApproved) return a.isApproved ? 1 : -1;
-            final left = a.updatedAt ?? a.createdAt ?? DateTime(0);
-            final right = b.updatedAt ?? b.createdAt ?? DateTime(0);
-            return right.compareTo(left);
-          });
-        final pending = items.where((manual) => !manual.isApproved).length;
-        final subtitle = items.isEmpty
-            ? 'The schedules Iswim builds for City Hall approval.'
-            : pending == 0
-            ? '${items.length} manual${items.length == 1 ? '' : 's'} · all '
-                  'approved'
-            : '${items.length} total · $pending waiting for City Hall';
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(
-              title: 'Collection manuals',
-              subtitle: subtitle,
-              actionLabel: 'Schedules',
-              onAction: () => context.push('/assignments'),
-            ),
-            const SizedBox(height: 10),
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                items.isEmpty)
-              const LinearProgressIndicator(minHeight: 2)
-            else if (items.isEmpty)
-              const Text(
-                'No collection manual yet. Create one from a City Hall '
-                'request and it is listed here straight away.',
-                style: TextStyle(
-                  fontSize: 10,
-                  height: 1.5,
-                  color: AppColors.inkMuted,
-                ),
-              )
-            else
-              for (var i = 0; i < items.length; i++) ...[
-                _CollectionManualCard(manual: items[i]),
-                if (i < items.length - 1) const SizedBox(height: 9),
-              ],
-          ],
-        );
-      },
-    );
-  }
-}
-
+/// One collection manual: the schedule a crew runs, not the PDF above it.
 class _CollectionManualCard extends StatelessWidget {
   const _CollectionManualCard({required this.manual});
 
@@ -402,8 +577,9 @@ class _CollectionManualCard extends StatelessWidget {
     final pending = !manual.isApproved;
     final ticketId = manual.ticketId;
 
-    return EcoCard(
-      padding: const EdgeInsets.fromLTRB(13, 11, 11, 12),
+    return DeskRailCard(
+      railColor: pending ? AppColors.warning : AppColors.primary,
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
       onTap: ticketId == null || ticketId.isEmpty
           ? null
           : () => context.push('/tickets/$ticketId'),
@@ -413,46 +589,28 @@ class _CollectionManualCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                height: 34,
-                width: 34,
+                height: 32,
+                width: 32,
                 decoration: BoxDecoration(
                   color: AppColors.mint,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
                 ),
                 child: const Icon(
                   Icons.assignment_ind_outlined,
-                  size: 17,
+                  size: 16,
                   color: AppColors.forest,
                 ),
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      manual.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.darkGreen,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      manual.assignmentCount > 1
-                          ? '${manual.assignmentCount} drivers · bulk assignment'
-                          : '${manual.driverName} · ${manual.plateNumber}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  manual.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitleLarge(
+                    context,
+                    color: AppColors.darkGreen,
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -463,40 +621,53 @@ class _CollectionManualCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Text(
-                  manual.allRoutes.join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    height: 1.4,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: () => _export(context),
-                tooltip: 'Export PDF',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                icon: const Icon(
-                  Icons.picture_as_pdf_outlined,
-                  size: 16,
-                  color: AppColors.forest,
-                ),
-              ),
-            ],
+          const SizedBox(height: EcoSpace.xs + 1),
+          Text(
+            manual.assignmentCount > 1
+                ? '${manual.assignmentCount} drivers · bulk assignment'
+                : '${manual.driverName} · ${manual.plateNumber}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.bodyStrong(context, color: AppColors.textDark),
           ),
           const SizedBox(height: 3),
           Text(
-            '${manual.scheduleLabel} · ${timeAgo(manual.updatedAt ?? manual.createdAt)}',
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            manual.allRoutes.join(' · '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+          ),
+          const SizedBox(height: EcoSpace.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${manual.scheduleLabel} · '
+                  '${timeAgo(manual.updatedAt ?? manual.createdAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                height: 30,
+                child: TextButton.icon(
+                  onPressed: () => _export(context),
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 14),
+                  label: const Text(
+                    'PDF',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.forest,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -594,16 +765,6 @@ class _ManualFormState extends State<_ManualForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  height: 4,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.sage,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
               const SizedBox(height: 14),
               const Text(
                 'New manual',

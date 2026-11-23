@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/map_config.dart';
 import '../../../core/utils/maps.dart';
-import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../models/route_directions.dart';
 import '../models/route_plan.dart';
 import '../services/directions_service.dart';
@@ -192,25 +194,31 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     final selected = _selectedStop;
     final bounds = _boundsFor(all);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          if (all.isNotEmpty)
-            IconButton(
-              tooltip: 'Fit all stops',
-              onPressed: () => _fit(all),
-              icon: const Icon(Icons.fit_screen_rounded),
-            ),
-        ],
-      ),
+    return EcoPageScaffold(
+      eyebrow: 'ROUTE · MAP',
+      title: widget.title,
+      subtitle: all.isEmpty
+          ? 'No pinned stops on this run yet.'
+          : '${stops.length} ${stops.length == 1 ? 'stop' : 'stops'} in '
+                'collection order.',
+      onBack: () => ecoBack(context, '/driver-routes'),
+      maxWidth: double.infinity,
+      padding: EdgeInsets.zero,
+      actions: [
+        if (all.isNotEmpty)
+          EcoIconAction(
+            icon: Icons.fit_screen_rounded,
+            tooltip: 'Fit all stops',
+            onTap: () => _fit(all),
+          ),
+      ],
       body: all.isEmpty
-          ? const EmptyState(
+          ? const DeskEmptyQueue(
               icon: Icons.map_outlined,
               title: 'No pinned stops',
               message:
-                  'Staff have not pinned map coordinates for this run yet.',
+                  'Staff have not pinned map coordinates for this run yet. '
+                  'Once the areas are pinned, the road route appears here.',
             )
           : Stack(
               children: [
@@ -431,11 +439,9 @@ class _StopPanel extends StatelessWidget {
                     Expanded(
                       child: Text(
                         status!,
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.label(context, color: AppColors.primary),
                       ),
                     ),
                   ],
@@ -465,7 +471,7 @@ class _StopPanel extends StatelessWidget {
                           '${i + 1}. ${stops[i].name}',
                           style: TextStyle(
                             fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: active ? Colors.white : AppColors.darkGreen,
                           ),
                         ),
@@ -477,43 +483,56 @@ class _StopPanel extends StatelessWidget {
               const SizedBox(height: 12),
             ],
             if (current == null)
-              const Text(
+              Text(
                 'Tap a pin to see the details.',
-                style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
               )
             else ...[
               Text(
                 current.name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+                style: EcoType.cardTitleLarge(
+                  context,
                   color: AppColors.darkGreen,
                 ),
               ),
               if (leg != null)
                 _detail(
+                  context,
                   Icons.turn_right_rounded,
                   '${leg!.distanceLabel} · ${leg!.durationLabel} from the '
                   'previous point',
                 ),
               if (current.address != null)
-                _detail(Icons.place_outlined, current.address!),
+                _detail(context, Icons.place_outlined, current.address!),
               if (current.schedule != null)
-                _detail(Icons.schedule_rounded, current.schedule!),
+                _detail(context, Icons.schedule_rounded, current.schedule!),
               if (current.notes != null)
-                _detail(Icons.notes_rounded, current.notes!),
+                _detail(context, Icons.notes_rounded, current.notes!),
             ],
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onSteps,
-                    icon: const Icon(
-                      Icons.format_list_numbered_rounded,
-                      size: 16,
+                  child: SizedBox(
+                    height: 44,
+                    child: FilledButton.icon(
+                      onPressed: onSteps,
+                      icon: const Icon(
+                        Icons.format_list_numbered_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        'Directions',
+                        style: EcoType.action(context, color: Colors.white),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.forest,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(EcoRadius.sm),
+                        ),
+                      ),
                     ),
-                    label: const Text('Directions'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -536,7 +555,7 @@ class _StopPanel extends StatelessWidget {
     );
   }
 
-  Widget _detail(IconData icon, String text) {
+  Widget _detail(BuildContext context, IconData icon, String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 5),
       child: Row(
@@ -547,7 +566,7 @@ class _StopPanel extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
+              style: EcoType.bodySmall(context, color: AppColors.inkMuted),
             ),
           ),
         ],
@@ -585,24 +604,13 @@ class _StepsSheet extends StatelessWidget {
           controller: controller,
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
           children: [
-            Center(
-              child: Container(
-                height: 4,
-                width: 46,
-                decoration: BoxDecoration(
-                  color: AppColors.sage,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
             Row(
               children: [
-                const Text(
+                Text(
                   'Directions',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
+                  style: EcoType.panelTitle(
+                    context,
                     color: AppColors.darkGreen,
                   ),
                 ),
@@ -610,11 +618,7 @@ class _StepsSheet extends StatelessWidget {
                 if (summary != null)
                   Text(
                     summary!,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
+                    style: EcoType.label(context, color: AppColors.primary),
                   ),
               ],
             ),
@@ -635,13 +639,12 @@ class _StepsSheet extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Column(
                   children: [
-                    const Text(
+                    Text(
                       'Turn-by-turn directions are not available right now. '
                       'Check your connection and try again.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        height: 1.5,
+                      style: EcoType.bodySmall(
+                        context,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -710,10 +713,7 @@ class _StepTile extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       step.distanceLabel,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.inkMuted,
-                      ),
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
                   ),
               ],

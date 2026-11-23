@@ -5,13 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/image_picker_field.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../services/waste_service.dart';
@@ -65,7 +67,8 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
     }
     setState(() {
       _location.text =
-          '${location.latitude!.toStringAsFixed(5)}, ${location.longitude!.toStringAsFixed(5)}';
+          '${location.latitude!.toStringAsFixed(5)}, '
+          '${location.longitude!.toStringAsFixed(5)}';
     });
     AppFeedback.success(context, 'GPS coordinates added');
   }
@@ -123,245 +126,228 @@ class _WasteUploadScreenState extends State<WasteUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
+    final full = _images.length >= 3;
+
+    return EcoPageScaffold(
+      eyebrow: 'RESIDENT · WASTE',
+      title: 'Upload waste',
+      subtitle: 'Send a photo so staff can validate and schedule the pickup.',
+      onBack: () => ecoBack(context, '/user'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.history_rounded,
+          tooltip: 'My uploads',
+          onTap: () => context.push('/waste-history'),
+        ),
+      ],
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
           children: [
-            AppPageHeader(
-              title: 'Upload waste',
+            const DeskSectionHeader(
+              icon: Icons.photo_camera_outlined,
+              title: 'Waste photos',
               subtitle:
-                  'Send a photo so staff can validate and schedule pickup.',
-              onBack: () => context.go('/user'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.go('/waste-history'),
-                  icon: const Icon(Icons.history_rounded),
-                  tooltip: 'My uploads',
-                ),
-              ],
+                  'Up to 3 clear photos. Good light is the difference between '
+                  'approved and sent back.',
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 30),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            const SizedBox(height: EcoSpace.sm),
+            if (_images.isNotEmpty) ...[
+              SizedBox(
+                height: 92,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) => Stack(
                     children: [
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(
-                              title: 'Waste photos',
-                              subtitle:
-                                  'Add up to 3 clear photos. Good lighting helps validation.',
-                            ),
-                            const SizedBox(height: 12),
-                            if (_images.isNotEmpty) ...[
-                              SizedBox(
-                                height: 92,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _images.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(width: 8),
-                                  itemBuilder: (context, i) => Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Image.memory(
-                                          _bytes(_images[i].dataUrl),
-                                          width: 92,
-                                          height: 92,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                      Positioned(
-                                        right: 2,
-                                        top: 2,
-                                        child: GestureDetector(
-                                          onTap: () => setState(
-                                            () => _images.removeAt(i),
-                                          ),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(3),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.black54,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.close_rounded,
-                                              size: 13,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                            if (_images.length < 3)
-                              ImagePickerField(
-                                value: null,
-                                label: 'Add a photo',
-                                helper: 'JPG, PNG or WebP · camera or gallery',
-                                previewHeight: 120,
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() => _images.add(value));
-                                  }
-                                },
-                              )
-                            else
-                              const Text(
-                                'Maximum of 3 photos reached.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.inkMuted,
-                                ),
-                              ),
-                          ],
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(EcoRadius.md),
+                        child: Image.memory(
+                          _bytes(_images[i].dataUrl),
+                          width: 92,
+                          height: 92,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(title: 'Waste details'),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<WasteCategory>(
-                              initialValue: _category,
-                              decoration: const InputDecoration(
-                                labelText: 'Waste category',
-                              ),
-                              items: [
-                                for (final category in WasteCategory.values)
-                                  DropdownMenuItem(
-                                    value: category,
-                                    child: Text(category.label),
-                                  ),
-                              ],
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() => _category = value);
-                                }
-                              },
+                      Positioned(
+                        right: 3,
+                        top: 3,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _images.removeAt(i)),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _category.hint,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.inkMuted,
-                              ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 13,
+                              color: Colors.white,
                             ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _quantity,
-                              decoration: const InputDecoration(
-                                labelText: 'Estimated quantity',
-                                hintText: 'e.g. 2 sacks, 1 bin, 5 kg',
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'Please estimate the quantity'
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _description,
-                              minLines: 3,
-                              maxLines: 5,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Description',
-                                hintText:
-                                    'What is the waste and where is it stored?',
-                                alignLabelWithHint: true,
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().length < 5)
-                                  ? 'Please describe the waste'
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(
-                              title: 'Collection location',
-                              subtitle:
-                                  'Where should the collector pick this up?',
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _location,
-                              minLines: 2,
-                              maxLines: 3,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Address or landmark',
-                                alignLabelWithHint: true,
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'Please add the pickup location'
-                                  : null,
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: _useCurrentLocation,
-                              icon: const Icon(
-                                Icons.my_location_rounded,
-                                size: 16,
-                              ),
-                              label: const Text('Use my current GPS location'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        height: 52,
-                        child: FilledButton(
-                          onPressed: _saving ? null : _submit,
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Submit for validation'),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Uploading the same photo twice is not allowed by validation. '
-                        'Staff may reject unclear or mis-segregated waste.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.5,
-                          color: AppColors.inkMuted,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+              const SizedBox(height: EcoSpace.sm),
+            ],
+            if (full)
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+                decoration: BoxDecoration(
+                  color: AppColors.mint.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
+                  border: Border.all(
+                    color: AppColors.sage.withValues(alpha: 0.7),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 15,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '3 photos attached. Remove one to swap it out.',
+                        style: EcoType.bodySmall(
+                          context,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ImagePickerField(
+                value: null,
+                label: _images.isEmpty ? 'Add a photo' : 'Add another photo',
+                helper: 'JPG, PNG or WebP · camera or gallery',
+                previewHeight: 120,
+                onChanged: (value) {
+                  if (value != null) setState(() => _images.add(value));
+                },
+              ),
+            const SizedBox(height: EcoSpace.lg),
+            const DeskSectionHeader(
+              icon: Icons.category_outlined,
+              title: 'Waste details',
+              subtitle: 'The stream decides which truck takes it.',
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                for (final category in WasteCategory.values)
+                  DeskFilterChip(
+                    label: category.shortLabel,
+                    selected: _category == category,
+                    onTap: () => setState(() => _category = category),
+                  ),
+              ],
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(_category.icon, size: 14, color: _category.color),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    '${_category.label} · ${_category.hint}',
+                    style: EcoType.bodySmall(
+                      context,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: EcoSpace.md),
+            TextFormField(
+              controller: _quantity,
+              decoration: const InputDecoration(
+                labelText: 'Estimated quantity',
+                hintText: 'e.g. 2 sacks, 1 bin, 5 kg',
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please estimate the quantity'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.md),
+            TextFormField(
+              controller: _description,
+              minLines: 3,
+              maxLines: 5,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'What is the waste and where is it stored?',
+                alignLabelWithHint: true,
+              ),
+              validator: (value) => (value == null || value.trim().length < 5)
+                  ? 'Please describe the waste'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.lg),
+            const DeskSectionHeader(
+              icon: Icons.place_outlined,
+              title: 'Collection location',
+              subtitle: 'Where should the collector pick this up?',
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            TextFormField(
+              controller: _location,
+              minLines: 2,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Address or landmark',
+                alignLabelWithHint: true,
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please add the pickup location'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _useCurrentLocation,
+                icon: const Icon(Icons.my_location_rounded, size: 15),
+                label: Text(
+                  'Use my current GPS location',
+                  style: EcoType.label(context, color: AppColors.primary),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 34),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+            const SizedBox(height: EcoSpace.lg),
+            PrimaryButton(
+              label: 'Submit for validation',
+              loading: _saving,
+              onPressed: _submit,
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            Text(
+              'The same photo cannot be uploaded twice. Staff may reject '
+              'unclear or mis-segregated waste.',
+              textAlign: TextAlign.center,
+              style: EcoType.meta(context, color: AppColors.inkMuted),
             ),
           ],
         ),

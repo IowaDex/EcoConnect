@@ -5,15 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/image_picker_field.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/models/account_type.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -141,11 +143,14 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
           title: const Text('Request submitted'),
           content: Text(switch (_kind) {
             RequestKind.special =>
-              'Barangay staff will review your special collection request and assign a schedule.',
+              'Barangay staff will review your special collection request and '
+                  'assign a schedule.',
             RequestKind.uncollected =>
-              'Barangay Batasan Hills will check your report and ask City Hall for a second (wave 2) collection.',
+              'Barangay Batasan Hills will check your report and ask City Hall '
+                  'for a second (wave 2) collection.',
             RequestKind.resident =>
-              'Barangay staff will review your request. You will be notified when it is approved or scheduled.',
+              'Barangay staff will review your request. You will be notified '
+                  'when it is approved or scheduled.',
           }),
           actions: [
             FilledButton(
@@ -167,436 +172,366 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final canSpecial = user?.role == UserRole.user;
+    final uncollected = _kind == RequestKind.uncollected;
+    final full = _images.length >= 3;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
+    return EcoPageScaffold(
+      eyebrow: uncollected
+          ? 'RESIDENT · WAVE 2 REPORT'
+          : 'RESIDENT · COLLECTION',
+      title: uncollected
+          ? 'Report uncollected garbage'
+          : canSpecial
+          ? 'Collection request'
+          : 'Request a collection',
+      subtitle: uncollected
+          ? 'The barangay verifies the report before City Hall decides.'
+          : canSpecial
+          ? 'Standard or special pickup for government personnel.'
+          : 'Tell the barangay what needs to be collected.',
+      onBack: () => ecoBack(context, '/user'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.history_rounded,
+          tooltip: 'My requests',
+          onTap: () => context.push('/my-requests'),
+        ),
+      ],
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
           children: [
-            AppPageHeader(
-              title: _kind == RequestKind.uncollected
-                  ? 'Report uncollected garbage'
-                  : canSpecial
-                  ? 'Collection request'
-                  : 'Request a collection',
-              subtitle: _kind == RequestKind.uncollected
-                  ? 'The barangay verifies the report before City Hall decides.'
-                  : canSpecial
-                  ? 'Standard or special pickup for government personnel.'
-                  : 'Tell the barangay what needs to be collected.',
-              onBack: () => context.go('/user'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.go('/my-requests'),
-                  icon: const Icon(Icons.history_rounded),
-                  tooltip: 'My requests',
+            if (uncollected) ...[
+              const EcoBanner(
+                message:
+                    'This is a Wave 2 report. Barangay staff verify it, then '
+                    'forward it to City Hall for a decision. You are notified '
+                    'at every step.',
+                icon: Icons.report_problem_outlined,
+                color: AppColors.warning,
+              ),
+              const SizedBox(height: EcoSpace.md),
+            ],
+            if (canSpecial) ...[
+              DeskSegmented<RequestKind>(
+                value: _kind,
+                onChanged: (value) => setState(() => _kind = value),
+                segments: const [
+                  DeskSegment<RequestKind>(
+                    value: RequestKind.resident,
+                    label: 'Standard',
+                    icon: Icons.home_outlined,
+                  ),
+                  DeskSegment<RequestKind>(
+                    value: RequestKind.special,
+                    label: 'Special',
+                    icon: Icons.badge_outlined,
+                  ),
+                ],
+              ),
+              const SizedBox(height: EcoSpace.xs + 2),
+              Text(
+                _kind == RequestKind.special
+                    ? 'Government offices, schools and public facilities.'
+                    : 'Household pickup on the regular route.',
+                style: EcoType.meta(context, color: AppColors.inkMuted),
+              ),
+              const SizedBox(height: EcoSpace.lg),
+            ] else if (user?.isGovernment == true) ...[
+              EcoBanner(
+                message: user?.verificationStatus == VerificationStatus.rejected
+                    ? 'Your government ID was rejected. Standard requests '
+                          'still work while you resubmit your document.'
+                    : 'Your government account is pending verification. '
+                          'Special collection requests unlock once staff approve '
+                          'your ID.',
+                icon: Icons.badge_outlined,
+                color: user?.verificationStatus == VerificationStatus.rejected
+                    ? AppColors.error
+                    : AppColors.warning,
+              ),
+              const SizedBox(height: EcoSpace.lg),
+            ],
+            if (_kind == RequestKind.special) ...[
+              const EcoBanner(
+                message:
+                    'Include the office name and an authorised contact in the '
+                    'description.',
+                icon: Icons.info_outline_rounded,
+                color: Color(0xFF1565C0),
+              ),
+              const SizedBox(height: EcoSpace.lg),
+            ],
+            const DeskSectionHeader(
+              icon: Icons.assignment_outlined,
+              title: 'What to collect',
+              subtitle: 'Clear details are approved faster.',
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            TextFormField(
+              controller: _title,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Request title',
+                hintText: 'e.g. Bulky waste pickup at the barangay hall',
+              ),
+              validator: (value) => (value == null || value.trim().length < 5)
+                  ? 'Please add a short title'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.md),
+            TextFormField(
+              controller: _description,
+              minLines: 3,
+              maxLines: 5,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText:
+                    'What needs to be collected and any access instructions',
+                alignLabelWithHint: true,
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please describe the request'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.md),
+            Text(
+              'WASTE CATEGORY',
+              style: EcoType.eyebrow(context, color: AppColors.inkMuted),
+            ),
+            const SizedBox(height: EcoSpace.xs + 2),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                for (final category in WasteCategory.values)
+                  DeskFilterChip(
+                    label: category.shortLabel,
+                    selected: _category == category,
+                    onTap: () => setState(() => _category = category),
+                  ),
+              ],
+            ),
+            const SizedBox(height: EcoSpace.xs + 2),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(_category.icon, size: 14, color: _category.color),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    _category.hint,
+                    style: EcoType.meta(context, color: AppColors.inkMuted),
+                  ),
                 ),
               ],
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 30),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            const SizedBox(height: EcoSpace.md),
+            TextFormField(
+              controller: _quantity,
+              decoration: const InputDecoration(
+                labelText: 'Estimated quantity',
+                hintText: 'e.g. 10 sacks, 2 truckloads',
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please estimate the quantity'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.lg),
+            const DeskSectionHeader(
+              icon: Icons.place_outlined,
+              title: 'Pickup',
+              subtitle: 'Where and when the crew should come.',
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            TextFormField(
+              controller: _location,
+              minLines: 2,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Collection location',
+                alignLabelWithHint: true,
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'Please add the collection location'
+                  : null,
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            InkWell(
+              onTap: _pickDate,
+              borderRadius: BorderRadius.circular(EcoRadius.md),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
+                  border: Border.all(
+                    color: AppColors.sage.withValues(alpha: 0.8),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      height: 32,
+                      width: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.mint,
+                        borderRadius: BorderRadius.circular(EcoRadius.sm),
+                      ),
+                      child: const Icon(
+                        Icons.event_outlined,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: EcoSpace.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PREFERRED DATE',
+                            style: EcoType.eyebrow(
+                              context,
+                              color: AppColors.inkMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            dateTimeLabel(_preferred),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: EcoType.bodyStrong(
+                              context,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.edit_calendar_outlined,
+                      size: 16,
+                      color: AppColors.inkMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: EcoSpace.md),
+            TextFormField(
+              controller: _remarks,
+              minLines: 2,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Additional remarks (optional)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: EcoSpace.lg),
+            const DeskSectionHeader(
+              icon: Icons.photo_camera_outlined,
+              title: 'Photos',
+              subtitle: 'At least one photo is required for validation.',
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            if (_images.isNotEmpty) ...[
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) => Stack(
                     children: [
-                      if (_kind == RequestKind.uncollected) ...[
-                        const EcoBanner(
-                          message:
-                              'This is a Wave 2 report. Barangay staff will '
-                              'verify it, then forward it to City Hall for a '
-                              'decision. You will be notified at every step.',
-                          icon: Icons.report_problem_outlined,
-                          color: AppColors.warning,
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      if (canSpecial) ...[
-                        _KindSelector(
-                          kind: _kind,
-                          onChanged: (value) => setState(() => _kind = value),
-                        ),
-                        const SizedBox(height: 14),
-                      ] else if (user?.isGovernment == true) ...[
-                        EcoBanner(
-                          message:
-                              user?.verificationStatus ==
-                                  VerificationStatus.rejected
-                              ? 'Your government ID was rejected. Standard requests still work while you resubmit your document.'
-                              : 'Your government account is pending verification. Special collection requests unlock once staff approve your ID.',
-                          icon: Icons.badge_outlined,
-                          color:
-                              user?.verificationStatus ==
-                                  VerificationStatus.rejected
-                              ? AppColors.error
-                              : AppColors.warning,
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      if (_kind == RequestKind.special) ...[
-                        const EcoBanner(
-                          message:
-                              'Special collection is for government offices, schools and public facilities. Include the office name and authorized contact in the description.',
-                          icon: Icons.info_outline_rounded,
-                          color: Color(0xFF1565C0),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(
-                              title: 'Request details',
-                              subtitle:
-                                  'Clear details help staff approve faster.',
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _title,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Request title',
-                                hintText:
-                                    'e.g. Bulky waste pickup at the barangay hall',
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().length < 5)
-                                  ? 'Please add a short title'
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _description,
-                              minLines: 3,
-                              maxLines: 5,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Description',
-                                hintText:
-                                    'What needs to be collected and any access instructions',
-                                alignLabelWithHint: true,
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'Please describe the request'
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<WasteCategory>(
-                              initialValue: _category,
-                              decoration: const InputDecoration(
-                                labelText: 'Waste category',
-                              ),
-                              items: [
-                                for (final category in WasteCategory.values)
-                                  DropdownMenuItem(
-                                    value: category,
-                                    child: Text(category.label),
-                                  ),
-                              ],
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() => _category = value);
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _quantity,
-                              decoration: const InputDecoration(
-                                labelText: 'Estimated quantity',
-                                hintText: 'e.g. 10 sacks, 2 truckloads',
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'Please estimate the quantity'
-                                  : null,
-                            ),
-                          ],
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(EcoRadius.md),
+                        child: Image.memory(
+                          _bytes(_images[i].dataUrl),
+                          width: 88,
+                          height: 88,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(title: 'Pickup'),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _location,
-                              minLines: 2,
-                              maxLines: 3,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Collection location',
-                                alignLabelWithHint: true,
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'Please add the collection location'
-                                  : null,
+                      Positioned(
+                        right: 3,
+                        top: 3,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _images.removeAt(i)),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
                             ),
-                            const SizedBox(height: 10),
-                            InkWell(
-                              onTap: _pickDate,
-                              borderRadius: BorderRadius.circular(14),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 13,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: AppColors.sage),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.event_outlined,
-                                      size: 18,
-                                      color: AppColors.primary,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Preferred collection date',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: AppColors.inkMuted,
-                                          ),
-                                        ),
-                                        Text(
-                                          dateTimeLabel(_preferred),
-                                          style: const TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.textDark,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const Spacer(),
-                                    const Icon(
-                                      Icons.edit_calendar_outlined,
-                                      size: 17,
-                                      color: AppColors.inkMuted,
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 12,
+                              color: Colors.white,
                             ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _remarks,
-                              minLines: 2,
-                              maxLines: 3,
-                              textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
-                                labelText: 'Additional remarks (optional)',
-                                alignLabelWithHint: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      EcoCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SectionHeader(
-                              title: 'Photos',
-                              subtitle:
-                                  'At least one photo is required for validation.',
-                            ),
-                            const SizedBox(height: 12),
-                            if (_images.isNotEmpty) ...[
-                              SizedBox(
-                                height: 88,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _images.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(width: 8),
-                                  itemBuilder: (context, i) => Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Image.memory(
-                                          _bytes(_images[i].dataUrl),
-                                          width: 88,
-                                          height: 88,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                      Positioned(
-                                        right: 2,
-                                        top: 2,
-                                        child: GestureDetector(
-                                          onTap: () => setState(
-                                            () => _images.removeAt(i),
-                                          ),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(3),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.black54,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.close_rounded,
-                                              size: 12,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                            if (_images.length < 3)
-                              ImagePickerField(
-                                value: null,
-                                label: 'Add a photo',
-                                helper: 'JPG, PNG or WebP',
-                                previewHeight: 110,
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() => _images.add(value));
-                                  }
-                                },
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        height: 52,
-                        child: FilledButton(
-                          onPressed: _saving ? null : _submit,
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Text(
-                                  _kind == RequestKind.special
-                                      ? 'Submit special request'
-                                      : 'Submit request',
-                                ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+              const SizedBox(height: EcoSpace.sm),
+            ],
+            if (full)
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+                decoration: BoxDecoration(
+                  color: AppColors.mint.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
+                  border: Border.all(
+                    color: AppColors.sage.withValues(alpha: 0.7),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 15,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '3 photos attached. Remove one to swap it out.',
+                        style: EcoType.bodySmall(
+                          context,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ImagePickerField(
+                value: null,
+                label: _images.isEmpty ? 'Add a photo' : 'Add another photo',
+                helper: 'JPG, PNG or WebP',
+                previewHeight: 110,
+                onChanged: (value) {
+                  if (value != null) setState(() => _images.add(value));
+                },
+              ),
+            const SizedBox(height: EcoSpace.lg),
+            PrimaryButton(
+              label: _kind == RequestKind.special
+                  ? 'Submit special request'
+                  : 'Submit request',
+              loading: _saving,
+              onPressed: _submit,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _KindSelector extends StatelessWidget {
-  const _KindSelector({required this.kind, required this.onChanged});
-
-  final RequestKind kind;
-  final ValueChanged<RequestKind> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: AppColors.sage),
-      ),
-      child: Row(
-        children: [
-          _option(
-            context,
-            kind: RequestKind.resident,
-            label: 'Standard',
-            icon: Icons.home_outlined,
-            subtitle: 'Household pickup',
-          ),
-          _option(
-            context,
-            kind: RequestKind.special,
-            label: 'Special',
-            icon: Icons.badge_outlined,
-            subtitle: 'Government',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _option(
-    BuildContext context, {
-    required RequestKind kind,
-    required String label,
-    required IconData icon,
-    required String subtitle,
-  }) {
-    final active = this.kind == kind;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onChanged(kind),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: active ? AppColors.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: active ? Colors.white : AppColors.inkMuted,
-              ),
-              const SizedBox(width: 6),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: active ? Colors.white : AppColors.darkGreen,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 7.5,
-                      color: active
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : AppColors.inkMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );

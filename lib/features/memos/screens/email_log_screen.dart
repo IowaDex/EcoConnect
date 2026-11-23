@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../services/memo_service.dart';
 
@@ -116,79 +120,72 @@ class EmailLogScreen extends StatelessWidget {
           eyebrow: 'CITY HALL · OUTBOX',
           title: 'Email log',
           subtitle: 'Every message this desk sent to the district officer.',
+          icon: Icons.forward_to_inbox_rounded,
           onBack: () => ecoBack(context, '/cityhall'),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  child: ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: const BorderSide(color: AppColors.sage),
-                    ),
-                    leading: const Icon(
-                      Icons.badge_outlined,
-                      color: AppColors.forest,
-                    ),
-                    title: const Text(
-                      'District Officer email',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    subtitle: Text(
-                      officerEmail ?? 'Not set — tap to add',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: officerEmail == null
-                            ? AppColors.warning
-                            : AppColors.inkMuted,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.edit_outlined, size: 18),
-                    onTap: () => _editAddress(context, officerEmail),
-                  ),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: _OfficerCard(
+                  email: officerEmail,
+                  onEdit: () => _editAddress(context, officerEmail),
                 ),
               ),
               Expanded(
                 child: StreamBuilder<List<EmailLogEntry>>(
                   stream: service.watchEmailLog(),
                   builder: (context, snapshot) {
-                    final entries = snapshot.data ?? const <EmailLogEntry>[];
+                    if (snapshot.hasError) {
+                      return const DeskEmptyQueue(
+                        icon: Icons.cloud_off_rounded,
+                        title: 'Could not load the log',
+                        message:
+                            'Check the connection and open this page again.',
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const EcoLoadingView(label: 'Loading email log');
+                    }
+                    final entries = snapshot.data!;
                     if (entries.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(28),
-                          child: Text(
-                            'Nothing to send yet. When Iswim posts an '
-                            'announcement, it appears here for the District '
-                            'Officer.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              height: 1.6,
-                              color: AppColors.inkMuted,
+                      return const DeskEmptyQueue(
+                        icon: Icons.outgoing_mail,
+                        title: 'Nothing to send yet',
+                        message:
+                            'When Iswim posts an announcement, it appears here '
+                            'ready to forward to the District Officer.',
+                        steps: [
+                          'Iswim posts an announcement',
+                          'It lands in this log',
+                          'City Hall sends it by email',
+                        ],
+                      );
+                    }
+                    return Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                          child: DeskResultLine(
+                            label:
+                                '${entries.length} '
+                                '${entries.length == 1 ? 'message' : 'messages'}',
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 26),
+                            itemCount: entries.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: EcoSpace.sm),
+                            itemBuilder: (context, i) => _EntryCard(
+                              entry: entries[i],
+                              to: officerEmail ?? entries[i].to,
+                              onSend: () =>
+                                  _send(context, officerEmail, entries[i]),
                             ),
                           ),
                         ),
-                      );
-                    }
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 26),
-                      children: [
-                        for (final entry in entries) ...[
-                          _EntryCard(
-                            entry: entry,
-                            to: officerEmail ?? entry.to,
-                            onSend: () => _send(context, officerEmail, entry),
-                          ),
-                          const SizedBox(height: 9),
-                        ],
                       ],
                     );
                   },
@@ -198,6 +195,74 @@ class EmailLogScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The saved District Officer address, editable in place.
+class _OfficerCard extends StatelessWidget {
+  const _OfficerCard({required this.email, required this.onEdit});
+
+  final String? email;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final set = email != null;
+    return EcoCard(
+      onTap: onEdit,
+      padding: const EdgeInsets.fromLTRB(15, 12, 12, 12),
+      child: Row(
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: set
+                  ? AppColors.mint
+                  : AppColors.warning.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(EcoRadius.sm),
+            ),
+            child: Icon(
+              Icons.badge_outlined,
+              size: 17,
+              color: set ? AppColors.forest : AppColors.warning,
+            ),
+          ),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'DISTRICT OFFICER',
+                  style: EcoType.eyebrow(context, color: AppColors.moss),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  email ?? 'Not set yet',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.bodyStrong(
+                    context,
+                    color: set ? AppColors.textDark : AppColors.warning,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: EcoSpace.sm),
+          Text(
+            set ? 'Change' : 'Add',
+            style: EcoType.action(context, color: AppColors.primary),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 17,
+            color: AppColors.inkMuted,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -216,84 +281,86 @@ class _EntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sentAt = entry.sentAt;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.sage),
-      ),
+    return DeskRailCard(
+      railColor: AppColors.moss,
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.outgoing_mail, size: 14, color: AppColors.moss),
-              const SizedBox(width: 6),
+              const Icon(Icons.outgoing_mail, size: 13, color: AppColors.moss),
+              const SizedBox(width: 5),
               Expanded(
                 child: Text(
-                  'To: $to',
+                  'TO $to'.toUpperCase(),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
+                  style: EcoType.eyebrow(context, color: AppColors.moss),
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 sentAt == null
                     ? '—'
                     : '${sentAt.month}/${sentAt.day} '
                           '${sentAt.hour.toString().padLeft(2, '0')}:'
                           '${sentAt.minute.toString().padLeft(2, '0')}',
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: EcoSpace.xs),
           Text(
             entry.subject,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 5),
           Text(
             entry.body,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 9.5,
-              height: 1.45,
-              color: AppColors.inkMuted,
-            ),
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'by ${entry.byName}',
-            style: const TextStyle(fontSize: 8.5, color: AppColors.sage),
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: onSend,
-              icon: const Icon(Icons.send_rounded, size: 15),
-              label: const Text('Send by email'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.forest,
-                textStyle: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
+          const SizedBox(height: EcoSpace.sm),
+          Row(
+            children: [
+              const Icon(
+                Icons.person_outline_rounded,
+                size: 12,
+                color: AppColors.inkMuted,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'by ${entry.byName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
                 ),
               ),
-            ),
+              const SizedBox(width: EcoSpace.sm),
+              SizedBox(
+                height: 34,
+                child: FilledButton.icon(
+                  onPressed: onSend,
+                  icon: const Icon(Icons.send_rounded, size: 14),
+                  label: const Text('Send'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.forest,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 34),
+                    textStyle: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: const StadiumBorder(),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

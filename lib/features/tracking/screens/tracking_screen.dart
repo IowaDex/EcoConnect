@@ -233,8 +233,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 child: _DriverSheet(
                   route: route,
                   plan: _plan,
-                  hasLocation: location.hasLocation,
-                  accuracy: location.currentPosition?.accuracy,
+                  location: location,
                   restricted: restricted,
                 ),
               ),
@@ -371,15 +370,13 @@ class _DriverSheet extends StatelessWidget {
   const _DriverSheet({
     required this.route,
     required this.plan,
-    required this.hasLocation,
-    required this.accuracy,
+    required this.location,
     this.restricted = false,
   });
 
   final CollectionRoute? route;
   final RoutePlan? plan;
-  final bool hasLocation;
-  final double? accuracy;
+  final LocationProvider location;
 
   /// A resident whose ID is still being checked may only track the truck.
   final bool restricted;
@@ -577,42 +574,15 @@ class _DriverSheet extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Container(
-                  height: 58,
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.cream,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          !hasLocation
-                              ? 'Locating your position…'
-                              : accuracy != null
-                              ? 'Your position · accuracy ±${accuracy!.round()} m'
-                              : 'Your position is ready',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.my_location_rounded,
-                        size: 16,
-                        color: AppColors.moss,
-                      ),
-                    ],
-                  ),
-                ),
+                _LocationStatus(location: location),
               ],
             ),
           ),
           AppBottomNav(
-            currentIndex: 1,
+            // The map is opened from Home, so Home stays lit. It used to say
+            // 1, which highlighted Requests and made the page look like the
+            // wrong tab had been opened.
+            currentIndex: 0,
             dark: true,
             disabledIndexes: restricted ? const {2} : const {},
             askAiLocked: restricted,
@@ -625,7 +595,7 @@ class _DriverSheet extends StatelessWidget {
                     context.go('/user');
                   }
                 case 1:
-                  break;
+                  context.go('/my-requests');
                 case 2:
                   if (restricted) {
                     AppFeedback.info(
@@ -671,4 +641,135 @@ class _DriverSheet extends StatelessWidget {
       shape: BoxShape.circle,
     ),
   );
+}
+
+/// The resident's own GPS state, and the one control that fixes it.
+///
+/// It used to read "Locating your position…" forever: a failed fix showed the
+/// same sentence as a fix that was still on its way, and there was no way to
+/// ask again. Each state now says what it is, and the button offers the next
+/// step — go live, or retry.
+class _LocationStatus extends StatelessWidget {
+  const _LocationStatus({required this.location});
+
+  final LocationProvider location;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFix = location.hasLocation;
+    final tracking = location.isTracking;
+    final busy = location.isLoading;
+    final accuracy = location.currentPosition?.accuracy;
+
+    final icon = hasFix
+        ? Icons.gps_fixed_rounded
+        : busy
+        ? Icons.my_location_rounded
+        : tracking
+        ? Icons.gps_not_fixed_rounded
+        : Icons.gps_off_rounded;
+    final tint = hasFix
+        ? AppColors.moss
+        : busy
+        ? AppColors.moss
+        : tracking
+        ? AppColors.warning
+        : AppColors.inkMuted;
+    final label = hasFix
+        ? tracking
+              ? 'Live · accuracy ±${accuracy?.round() ?? 0} m'
+              : 'Position ready · accuracy ±${accuracy?.round() ?? 0} m'
+        : busy
+        ? 'Locating your position…'
+        : tracking
+        ? 'Waiting for a GPS fix…'
+        : 'Location is off';
+
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: tint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                if (!hasFix && location.error != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    AppFeedback.describe(location.error!),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      height: 1.35,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ] else if (hasFix && !tracking) ...[
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Turn on real-time tracking to keep this pin moving.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9,
+                      height: 1.35,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!tracking)
+            TextButton(
+              onPressed: () => location.startTracking(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.forest,
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Go live',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+              ),
+            )
+          else if (!hasFix)
+            TextButton(
+              onPressed: busy ? null : () => location.getCurrentLocation(),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.forest,
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

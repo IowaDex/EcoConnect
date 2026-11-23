@@ -203,7 +203,7 @@ class DeskSegmented<T> extends StatelessWidget {
     if (segments.isEmpty) return const SizedBox.shrink();
 
     return Container(
-      height: 40,
+      height: 44,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.cream.withValues(alpha: 0.7),
@@ -319,6 +319,116 @@ class _SegmentLabel<T> extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A pill-shaped filter cell with an optional facet count.
+///
+/// The selected cell is filled with the brand gradient; the others stay white
+/// with a soft border. Used by the office bar on the document desk and by the
+/// day bar on the collection schedule, so a filter reads the same everywhere.
+class DeskFilterChip extends StatelessWidget {
+  const DeskFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.count,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: EcoMotion.fast,
+      curve: EcoMotion.enter,
+      height: 34,
+      decoration: BoxDecoration(
+        color: selected ? null : Colors.white,
+        gradient: selected ? AppColors.forestGradient : null,
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+        border: Border.all(
+          color: selected
+              ? AppColors.forest
+              : AppColors.sage.withValues(alpha: 0.9),
+        ),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: AppColors.forest.withValues(alpha: 0.2),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      // The ink sits on a transparent surface above the fill, so the ripple is
+      // visible and the cell reads as a button rather than a label.
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            // Align, not Center: a plain Center expands to the widest space it
+            // is offered, so inside a Wrap every chip claimed a whole row and
+            // the day bar stacked into seven lines. With widthFactor the chip
+            // hugs its label when it can and still fills a fixed cell.
+            child: Align(
+              alignment: Alignment.center,
+              widthFactor: 1,
+              // Shrinks the label instead of clipping it, so a long office
+              // name never overflows its cell on a narrow window.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? Colors.white : AppColors.forest,
+                      ),
+                    ),
+                    if (count != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white.withValues(alpha: 0.24)
+                              : AppColors.cream,
+                          borderRadius: BorderRadius.circular(EcoRadius.pill),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: selected ? Colors.white : AppColors.inkMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -640,9 +750,13 @@ class DeskEmptyQueue extends StatelessWidget {
                   child: FilledButton.icon(
                     onPressed: onAction,
                     icon: Icon(actionIcon, size: 16),
-                    label: Text(actionLabel!, style: EcoType.action(context)),
+                    label: Text(
+                      actionLabel!,
+                      style: EcoType.action(context, color: Colors.white),
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.forest,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: EcoSpace.lg,
                       ),

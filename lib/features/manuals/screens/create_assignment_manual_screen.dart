@@ -1555,14 +1555,6 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
-            Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
               child: Row(

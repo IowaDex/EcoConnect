@@ -302,9 +302,7 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
   /// detail is read.
   Widget _header(VerificationStatus status, bool emailConfirmed) {
     final name = (_a['name'] as String?)?.trim();
-    final display = (name == null || name.isEmpty)
-        ? 'Unnamed resident'
-        : name;
+    final display = (name == null || name.isEmpty) ? 'Unnamed resident' : name;
     final initial = display.substring(0, 1).toUpperCase();
     final barangay = (_a['barangay'] as String?)?.trim();
 
@@ -325,16 +323,6 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
             child: Column(
               children: [
-                Center(
-                  child: Container(
-                    height: 4,
-                    width: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -402,7 +390,9 @@ class _ResidentReviewSheetState extends State<ResidentReviewSheet> {
                     ),
                     const SizedBox(width: 7),
                     _HeaderChip(
-                      label: emailConfirmed ? 'Email confirmed' : 'Email pending',
+                      label: emailConfirmed
+                          ? 'Email confirmed'
+                          : 'Email pending',
                       color: emailConfirmed
                           ? AppColors.primary
                           : AppColors.warning,
@@ -741,10 +731,7 @@ class _InfoRow extends StatelessWidget {
             width: 84,
             child: Text(
               label,
-              style: const TextStyle(
-                fontSize: 9.5,
-                color: AppColors.inkMuted,
-              ),
+              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
             ),
           ),
           Expanded(

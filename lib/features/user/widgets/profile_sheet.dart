@@ -198,14 +198,6 @@ class _ProfileSheetState extends State<_ProfileSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              height: 4,
-              width: 44,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
             const SizedBox(height: 22),
             UserAvatar(
               photoUrl: _photoUrl,

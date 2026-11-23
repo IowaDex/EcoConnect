@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -27,12 +29,15 @@ import '../widgets/desk_tools.dart';
 
 /// City Hall — the DSQC and the super admin.
 ///
-/// The page is a document desk: every trip ticket and memo that reaches City
-/// Hall is grouped into **For Signature** (what still needs the last
-/// signature) and **Received** (what has already arrived). Both sections
-/// filter by originating office and search across the real record, and every
-/// card opens the underlying document so the existing signing flows stay the
-/// only place a signature is written.
+/// The page is a document desk. It opens with who you are and the one thing
+/// the desk exists to do: sign the next document. The queue follows straight
+/// away, because that is the work. The twelve shortcuts and the shift roster
+/// are reference, so they sit around the queue rather than on top of it.
+///
+/// Every figure on the page has one home: the totals live in the hero, the
+/// list sizes live in the segmented control, and the facet counts live on the
+/// filters that produce them. Nothing repeats a number the officer has just
+/// read.
 class CityHallDashboardScreen extends StatefulWidget {
   const CityHallDashboardScreen({super.key});
 
@@ -41,8 +46,11 @@ class CityHallDashboardScreen extends StatefulWidget {
       _CityHallDashboardScreenState();
 }
 
+/// The two lists the desk works through.
+enum _DeskTab { signature, received }
+
 class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
-  int _tab = 0;
+  _DeskTab _tab = _DeskTab.signature;
 
   SignatureFilter _signatureFilter = SignatureFilter.awaiting;
   DeskCategory? _signatureCategory;
@@ -52,6 +60,12 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
   final TextEditingController _receivedSearch = TextEditingController();
   String _signatureQuery = '';
   String _receivedQuery = '';
+
+  // Both lists page in place. The Received list grows for the life of the
+  // deployment, so it must never render as one endless column.
+  int _signaturePage = 0;
+  int _receivedPage = 0;
+  int _pageSize = 10;
 
   // Cached so switching tabs or typing in the search box never resubscribes
   // and flashes a loading state.
@@ -80,6 +94,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
       _signatureQuery = '';
       _signatureCategory = null;
       _signatureFilter = SignatureFilter.awaiting;
+      _signaturePage = 0;
     });
   }
 
@@ -88,6 +103,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
     setState(() {
       _receivedQuery = '';
       _receivedCategory = null;
+      _receivedPage = 0;
     });
   }
 
@@ -98,20 +114,6 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.creamBright,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/memos/new'),
-        backgroundColor: AppColors.forest,
-        foregroundColor: Colors.white,
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(EcoRadius.lg),
-        ),
-        icon: const Icon(Icons.edit_note_rounded, size: 19),
-        label: const Text(
-          'New memo',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -172,7 +174,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 980),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
           children: [
             FadeSlideIn(index: 0, child: _hero(userName, documents)),
             const SizedBox(height: EcoSpace.lg),
@@ -180,25 +182,19 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
               index: 1,
               child: DeskTools(pendingSignatures: documents.pendingSignatures),
             ),
-            const SizedBox(height: EcoSpace.lg),
-            const FadeSlideIn(index: 2, child: ShiftCalendarCard()),
-            const SizedBox(height: EcoSpace.lg),
-            FadeSlideIn(index: 3, child: _tabs(documents)),
-            const SizedBox(height: EcoSpace.md),
-            if (error != null) ...[
-              EcoBanner(
-                message: AppFeedback.describe(error),
-                icon: Icons.cloud_off_rounded,
-                color: AppColors.error,
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (loading)
-              _deskSkeleton()
-            else if (_tab == 0)
-              ..._signatureSection(documents)
-            else
-              ..._receivedSection(documents),
+            const SizedBox(height: EcoSpace.xl),
+            FadeSlideIn(
+              index: 2,
+              child: _queue(documents, loading: loading, error: error),
+            ),
+            const SizedBox(height: EcoSpace.xl),
+            // The roster is reference, not work: it sits under the queue and
+            // opens collapsed so it never pushes the queue off the first
+            // screen.
+            const FadeSlideIn(
+              index: 3,
+              child: ShiftCalendarCard(collapsible: true),
+            ),
           ],
         ),
       ),
@@ -215,24 +211,18 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         .where((document) => document.status == DeskDocumentStatus.signed)
         .length;
     final firstName = userName.trim().split(RegExp(r'\s+')).first;
+    final next = _nextToSign(documents);
 
     return RoleHero(
       icon: Icons.account_balance_rounded,
       eyebrow: 'CITY HALL · DOCUMENT DESK',
       greeting: greeting(),
       title: firstName,
-      subtitle:
-          'Review, sign and acknowledge everything addressed to the DSQC.',
-      chip: pending > 0
-          ? RoleChip(
-              label: '$pending awaiting',
-              icon: Icons.draw_rounded,
-              tone: AppColors.warning,
-            )
-          : const RoleChip(
-              label: 'All clear',
-              icon: Icons.check_circle_rounded,
-            ),
+      subtitle: pending > 0
+          ? 'Everything addressed to the DSQC is in one queue below. '
+                'Start with the next one — it is already open for your signature.'
+          : 'Nothing is waiting for you. The queue below keeps every document '
+                'you have signed or received.',
       stats: [
         RoleStat(
           icon: Icons.draw_rounded,
@@ -248,137 +238,85 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         ),
         RoleStat(icon: Icons.verified_rounded, label: 'Signed', value: signed),
       ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tabs
-  // ---------------------------------------------------------------------------
-
-  Widget _tabs(CityHallDocuments documents) {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(EcoRadius.pill),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final segment = constraints.maxWidth / 2;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // The pill slides between the two halves, so switching tabs
-              // reads as one surface moving rather than two colours swapping.
-              AnimatedPositioned(
-                duration: EcoMotion.base,
-                curve: EcoMotion.enter,
-                left: _tab * segment,
-                top: 0,
-                bottom: 0,
-                width: segment,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: AppColors.forestGradient,
-                    borderRadius: BorderRadius.circular(EcoRadius.pill),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.forest.withValues(alpha: 0.28),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _tabSegment(
-                      0,
-                      'For signature',
-                      documents.pendingSignatures,
-                      Icons.draw_outlined,
-                    ),
-                  ),
-                  Expanded(
-                    child: _tabSegment(
-                      1,
-                      'Received',
-                      documents.received.length,
-                      Icons.inbox_outlined,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _tabSegment(int index, String label, int count, IconData icon) {
-    final selected = _tab == index;
-    final foreground = selected ? Colors.white : AppColors.textDark;
-
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: () => setState(() => _tab = index),
-        customBorder: const StadiumBorder(),
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: foreground),
-              const SizedBox(width: 6),
-              Flexible(
-                child: AnimatedDefaultTextStyle(
-                  duration: EcoMotion.fast,
-                  curve: EcoMotion.enter,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: foreground,
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              AnimatedContainer(
-                duration: EcoMotion.fast,
-                curve: EcoMotion.enter,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Colors.white.withValues(alpha: 0.24)
-                      : AppColors.cream,
-                  borderRadius: BorderRadius.circular(EcoRadius.pill),
-                ),
-                child: Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: selected ? Colors.white : AppColors.forest,
-                  ),
-                ),
-              ),
-            ],
+      actions: [
+        if (next != null)
+          _HeroPrimary(
+            label: next.kind == DeskDocumentKind.tripTicket
+                ? 'Sign next document'
+                : 'Acknowledge next',
+            icon: Icons.draw_rounded,
+            onTap: () => context.push(_signRoute(next)),
+          )
+        else
+          const _HeroPrimary(
+            label: 'Nothing to sign',
+            icon: Icons.check_circle_rounded,
           ),
+        _HeroGhost(
+          label: 'New memo',
+          icon: Icons.edit_note_rounded,
+          onTap: () => context.push('/memos/new'),
         ),
-      ),
+      ],
+    );
+  }
+
+  /// The document the officer should open first: the oldest one that is
+  /// genuinely waiting for this desk, falling back to the head of the list.
+  static DeskDocument? _nextToSign(CityHallDocuments documents) {
+    final signable = documents.forSignature
+        .where((document) => document.canSign)
+        .toList(growable: false);
+    if (signable.isNotEmpty) return signable.first;
+    return documents.forSignature.isEmpty ? null : documents.forSignature.first;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Queue
+  // ---------------------------------------------------------------------------
+
+  Widget _queue(
+    CityHallDocuments documents, {
+    required bool loading,
+    required Object? error,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DeskSegmented<_DeskTab>(
+          segments: [
+            DeskSegment(
+              value: _DeskTab.signature,
+              label: 'For signature',
+              icon: Icons.draw_outlined,
+              count: documents.pendingSignatures,
+            ),
+            DeskSegment(
+              value: _DeskTab.received,
+              label: 'Received',
+              icon: Icons.inbox_outlined,
+              count: documents.received.length,
+            ),
+          ],
+          value: _tab,
+          onChanged: (tab) => setState(() => _tab = tab),
+        ),
+        const SizedBox(height: EcoSpace.md),
+        if (error != null) ...[
+          EcoBanner(
+            message: AppFeedback.describe(error),
+            icon: Icons.cloud_off_rounded,
+            color: AppColors.error,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (loading)
+          _deskSkeleton()
+        else if (_tab == _DeskTab.signature)
+          ..._signatureSection(documents)
+        else
+          ..._receivedSection(documents),
+      ],
     );
   }
 
@@ -392,19 +330,8 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         .where((document) => document.matchesSearch(_signatureQuery))
         .toList(growable: false);
 
-    // Facet counts: the status row counts within the selected category, the
-    // category row counts within the selected status. Both respect search, so
-    // the numbers always describe what is actually on screen.
-    final statusCounts = <SignatureFilter, int>{
-      for (final filter in SignatureFilter.values)
-        filter: searched
-            .where(
-              (document) =>
-                  document.matchesCategory(_signatureCategory) &&
-                  document.matchesSignatureFilter(filter),
-            )
-            .length,
-    };
+    // The category row counts within the active status, so its numbers always
+    // describe the list that is on screen.
     final categoryCounts = <DeskCategory?, int>{
       null: searched
           .where(
@@ -434,57 +361,81 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         _signatureQuery.trim().isNotEmpty ||
         _signatureFilter != SignatureFilter.awaiting;
 
+    // A busy desk can hold hundreds of signed documents; the list pages in
+    // place instead of scrolling forever.
+    final page = clampPage(_signaturePage, visible.length, _pageSize);
+    final pageItems = pageSlice(visible, page, _pageSize);
+    final paged = visible.length > _pageSize;
+
     return [
-      _sectionIntro(
-        icon: _signatureFilter.status.icon,
-        title: _signatureFilter.label,
-        subtitle: switch (_signatureFilter) {
-          SignatureFilter.awaiting =>
-            'Documents waiting for the City Hall signature.',
-          SignatureFilter.signed => 'Documents already signed at this desk.',
-          SignatureFilter.rejected => 'Documents rejected at this desk.',
-          SignatureFilter.returned =>
-            'Documents sent back for revision by this desk.',
-        },
-        count: visible.length,
-      ),
-      const SizedBox(height: EcoSpace.sm),
-      DeskSignatureBar(
-        selected: _signatureFilter,
-        counts: statusCounts,
-        onChanged: (filter) => setState(() => _signatureFilter = filter),
-      ),
-      const SizedBox(height: EcoSpace.sm),
-      _filterCard(
+      DeskFilterPanel(
+        padding: EdgeInsets.zero,
         search: EcoSearchField(
           controller: _signatureSearch,
-          hint: 'Search document, driver name, or reference number...',
-          onChanged: (value) => setState(() => _signatureQuery = value),
+          hint: 'Search document, driver name, or reference number…',
+          onChanged: (value) => setState(() {
+            _signatureQuery = value;
+            _signaturePage = 0;
+          }),
         ),
-        categories: DeskCategoryBar(
-          selected: _signatureCategory,
-          counts: categoryCounts,
-          onChanged: (category) =>
-              setState(() => _signatureCategory = category),
+        filters: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DeskSegmented<SignatureFilter>(
+              segments: [
+                for (final filter in SignatureFilter.values)
+                  DeskSegment(value: filter, label: filter.shortLabel),
+              ],
+              value: _signatureFilter,
+              onChanged: (filter) => setState(() {
+                _signatureFilter = filter;
+                _signaturePage = 0;
+              }),
+            ),
+            const SizedBox(height: EcoSpace.sm),
+            DeskCategoryBar(
+              selected: _signatureCategory,
+              counts: categoryCounts,
+              onChanged: (category) => setState(() {
+                _signatureCategory = category;
+                _signaturePage = 0;
+              }),
+            ),
+          ],
         ),
       ),
       // The count describes what is actually listed. When the active status
       // has nothing in it the empty state explains why, so the line is hidden
-      // rather than claiming "2 documents" above an empty list.
+      // rather than claiming "2 documents" above an empty list. While paging,
+      // the pagination bar owns the total and this line only carries the
+      // clear-filters link.
       if (all.isNotEmpty && visible.isNotEmpty) ...[
         const SizedBox(height: EcoSpace.sm),
-        _resultLine(
-          'document',
-          visible.length,
-          all.length,
-          filtered: visible.length != all.length,
+        DeskResultLine(
+          label: paged ? '' : _countLabel(visible.length, 'document'),
+          onClear: filtered ? _clearSignatureFilters : null,
         ),
       ],
       const SizedBox(height: EcoSpace.sm),
       if (visible.isEmpty)
         _signatureEmpty(hasAny: all.isNotEmpty, filtered: filtered)
-      else
-        ..._documentList(visible),
+      else ...[
+        ..._documentList(pageItems),
+        if (paged) ...[
+          const SizedBox(height: EcoSpace.xs),
+          EcoPaginationBar(
+            page: page,
+            pageSize: _pageSize,
+            total: visible.length,
+            onPageChanged: (next) => setState(() => _signaturePage = next),
+            onPageSizeChanged: (size) => setState(() {
+              _pageSize = size;
+              _signaturePage = 0;
+              _receivedPage = 0;
+            }),
+          ),
+        ],
+      ],
     ];
   }
 
@@ -494,7 +445,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
         compact: true,
         icon: Icons.search_off_rounded,
         title: 'No documents match your filters',
-        message: 'Try another category or status, or clear the search term.',
+        message: 'Try another office or status, or clear the search term.',
         actionLabel: 'Clear filters',
         onAction: _clearSignatureFilters,
       );
@@ -547,34 +498,38 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
     final filtered =
         _receivedCategory != null || _receivedQuery.trim().isNotEmpty;
 
+    // The Received list only ever grows — every signed ticket and acknowledged
+    // memo ends up here. It pages in place so the desk never turns into one
+    // endless column.
+    final page = clampPage(_receivedPage, visible.length, _pageSize);
+    final pageItems = pageSlice(visible, page, _pageSize);
+    final paged = visible.length > _pageSize;
+
     return [
-      _sectionIntro(
-        icon: Icons.inbox_outlined,
-        title: 'Received',
-        subtitle:
-            'Everything delivered to City Hall from the barangay, ISWIM and the fleet.',
-        count: visible.length,
-      ),
-      const SizedBox(height: EcoSpace.sm),
-      _filterCard(
+      DeskFilterPanel(
+        padding: EdgeInsets.zero,
         search: EcoSearchField(
           controller: _receivedSearch,
-          hint: 'Search received documents...',
-          onChanged: (value) => setState(() => _receivedQuery = value),
+          hint: 'Search received documents…',
+          onChanged: (value) => setState(() {
+            _receivedQuery = value;
+            _receivedPage = 0;
+          }),
         ),
-        categories: DeskCategoryBar(
+        filters: DeskCategoryBar(
           selected: _receivedCategory,
           counts: categoryCounts,
-          onChanged: (category) => setState(() => _receivedCategory = category),
+          onChanged: (category) => setState(() {
+            _receivedCategory = category;
+            _receivedPage = 0;
+          }),
         ),
       ),
       if (all.isNotEmpty && visible.isNotEmpty) ...[
         const SizedBox(height: EcoSpace.sm),
-        _resultLine(
-          'document',
-          visible.length,
-          all.length,
-          filtered: visible.length != all.length,
+        DeskResultLine(
+          label: paged ? '' : _countLabel(visible.length, 'document'),
+          onClear: filtered ? _clearReceivedFilters : null,
         ),
       ],
       const SizedBox(height: EcoSpace.sm),
@@ -586,14 +541,29 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
               ? 'No documents match your search'
               : 'No documents received yet',
           message: filtered
-              ? 'Try another category or a different search term.'
+              ? 'Try another office or a different search term.'
               : 'Completed trip tickets and memos addressed to City Hall are '
                     'listed here as soon as they arrive.',
           actionLabel: filtered ? 'Clear filters' : null,
           onAction: filtered ? _clearReceivedFilters : null,
         )
-      else
-        ..._documentList(visible),
+      else ...[
+        ..._documentList(pageItems),
+        if (paged) ...[
+          const SizedBox(height: EcoSpace.xs),
+          EcoPaginationBar(
+            page: page,
+            pageSize: _pageSize,
+            total: visible.length,
+            onPageChanged: (next) => setState(() => _receivedPage = next),
+            onPageSizeChanged: (size) => setState(() {
+              _pageSize = size;
+              _receivedPage = 0;
+              _signaturePage = 0;
+            }),
+          ),
+        ],
+      ],
     ];
   }
 
@@ -640,12 +610,7 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
       children: [
         Text(
           _dayLabel(date),
-          style: const TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-            color: AppColors.inkMuted,
-          ),
+          style: EcoType.eyebrow(context, color: AppColors.inkMuted),
         ),
         const SizedBox(width: 9),
         Expanded(
@@ -665,154 +630,6 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
       return relative.toUpperCase();
     }
     return dateLabel(date).toUpperCase();
-  }
-
-  Widget _sectionIntro({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    int? count,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          height: 36,
-          width: 36,
-          decoration: BoxDecoration(
-            color: AppColors.mint,
-            borderRadius: BorderRadius.circular(EcoRadius.sm + 2),
-          ),
-          child: Icon(icon, size: 17, color: AppColors.forest),
-        ),
-        const SizedBox(width: EcoSpace.sm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.1,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                  ),
-                  if (count != null && count > 0) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.cream,
-                        borderRadius: BorderRadius.circular(EcoRadius.pill),
-                      ),
-                      child: Text(
-                        '$count',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.forest,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  height: 1.45,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.inkMuted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Search and office filters live on one surface: they belong together and
-  /// always apply to the same list.
-  Widget _filterCard({required Widget search, required Widget categories}) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(EcoRadius.lg),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.75)),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        children: [
-          search,
-          const SizedBox(height: 10),
-          Container(height: 1, color: AppColors.sage.withValues(alpha: 0.55)),
-          const SizedBox(height: 9),
-          categories,
-        ],
-      ),
-    );
-  }
-
-  Widget _resultLine(
-    String noun,
-    int visible,
-    int total, {
-    required bool filtered,
-  }) {
-    final label = filtered
-        ? 'Showing $visible of ${_countLabel(total, noun)}'
-        : _countLabel(total, noun);
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.1,
-              color: AppColors.inkMuted,
-            ),
-          ),
-        ),
-        if (filtered)
-          OutlinedButton.icon(
-            onPressed: _tab == 0 ? _clearSignatureFilters : _clearReceivedFilters,
-            icon: const Icon(Icons.filter_alt_off_rounded, size: 14),
-            label: const Text('Clear filters'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: BorderSide(
-                color: AppColors.primary.withValues(alpha: 0.4),
-              ),
-              minimumSize: const Size(0, 30),
-              padding: const EdgeInsets.symmetric(horizontal: 11),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-              textStyle: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-              shape: const StadiumBorder(),
-            ),
-          ),
-      ],
-    );
   }
 
   Widget _deskSkeleton() {
@@ -856,4 +673,135 @@ class _CityHallDashboardScreenState extends State<CityHallDashboardScreen> {
 
   static String _signRoute(DeskDocument document) =>
       '${document.openRoute}?sign=1';
+}
+
+/// The filled call to action inside the hero.
+///
+/// White on the forest gradient so it reads as the one thing to press, and
+/// greyed out when there is nothing to sign — the label still explains why.
+class _HeroPrimary extends StatefulWidget {
+  const _HeroPrimary({required this.label, required this.icon, this.onTap});
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  State<_HeroPrimary> createState() => _HeroPrimaryState();
+}
+
+class _HeroPrimaryState extends State<_HeroPrimary> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final lit = _hovered && enabled;
+
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: EcoMotion.fast,
+          curve: EcoMotion.enter,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: enabled ? Colors.white : Colors.white.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(EcoRadius.pill),
+            boxShadow: lit
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.icon,
+                size: 15,
+                color: enabled ? AppColors.darkGreen : Colors.white,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.1,
+                  color: enabled ? AppColors.darkGreen : Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The quiet secondary action beside [_HeroPrimary].
+class _HeroGhost extends StatefulWidget {
+  const _HeroGhost({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_HeroGhost> createState() => _HeroGhostState();
+}
+
+class _HeroGhostState extends State<_HeroGhost> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: EcoMotion.fast,
+          curve: EcoMotion.enter,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: _hovered ? Colors.white.withValues(alpha: 0.14) : null,
+            borderRadius: BorderRadius.circular(EcoRadius.pill),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(widget.icon, size: 14, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(
+                widget.label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

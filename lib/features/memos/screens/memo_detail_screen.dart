@@ -5,12 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/eco_page.dart';
 import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
+import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/motion.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../tickets/widgets/signature_sheet.dart';
@@ -44,6 +48,10 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
   bool _signing = false;
   bool _downloading = false;
   bool _autoSignHandled = false;
+
+  /// Cached so a rebuild from [_signing] or [_downloading] does not hand the
+  /// StreamBuilder a new stream and flash the loading state.
+  late final Stream<Memo?> _memo = MemoService().watchOne(widget.memoId);
 
   Future<void> _markReceived(Memo memo) async {
     if (_receivedMarked) return;
@@ -149,213 +157,206 @@ ${attachment == null ? '' : '<p class="meta" style="margin-top:18px">Attachment:
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
 
-    return EcoPageScaffold(
-      eyebrow: 'MEMORANDUM',
-      title: 'Memo',
-      subtitle: 'The full text, the signatures and the trail behind it.',
-      onBack: () => context.pop(),
-      body: StreamBuilder<Memo?>(
-        stream: MemoService().watchOne(widget.memoId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            );
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  AppFeedback.describe(snapshot.error!),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    color: AppColors.error,
-                  ),
-                ),
-              ),
-            );
-          }
-          final memo = snapshot.data;
-          if (memo == null) {
-            return const Center(
-              child: Text(
-                'This memo no longer exists.',
-                style: TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-              ),
-            );
-          }
+    // The whole page sits inside the stream so the header can carry the live
+    // status pill instead of repeating it at the top of the body.
+    return StreamBuilder<Memo?>(
+      stream: _memo,
+      builder: (context, snapshot) {
+        final memo = snapshot.data;
+        final waiting = snapshot.connectionState == ConnectionState.waiting;
 
-          final isCityHall = user?.role == UserRole.cityHall;
-          final isAuthor = user?.uid == memo.fromUid;
-          final isRecipient = _ownsChannel(user?.role, memo.toChannel);
-          final canSign =
-              isCityHall && memo.toChannel == 'cityHall' && !memo.isSigned;
-          final canEdit = isAuthor && memo.isEditable;
+        return EcoPageScaffold(
+          eyebrow: 'MEMORANDUM',
+          title: 'Memo',
+          subtitle: 'The full text, the signatures and the trail behind it.',
+          icon: Icons.description_outlined,
+          actions: [if (memo != null) MemoStatusBadge(status: memo.status)],
+          onBack: () => context.pop(),
+          body: snapshot.hasError
+              ? EmptyState(
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Could not load this memo',
+                  message: AppFeedback.describe(snapshot.error!),
+                )
+              : waiting && memo == null
+              ? const EcoLoadingView(label: 'Loading memo')
+              : memo == null
+              ? const EmptyState(
+                  icon: Icons.description_outlined,
+                  title: 'Memo not found',
+                  message: 'This memo no longer exists or was withdrawn.',
+                )
+              : _body(context, memo, user),
+        );
+      },
+    );
+  }
 
-          // Arriving from the desk's "Acknowledge" button: open the signature
-          // sheet once, after the first frame so the page is already mounted.
-          if (widget.autoSign && canSign && !_autoSignHandled) {
-            _autoSignHandled = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _sign(memo);
-            });
-          }
+  Widget _body(BuildContext context, Memo memo, AppUser? user) {
+    final isCityHall = user?.role == UserRole.cityHall;
+    final isAuthor = user?.uid == memo.fromUid;
+    final isRecipient = _ownsChannel(user?.role, memo.toChannel);
+    final canSign =
+        isCityHall && memo.toChannel == 'cityHall' && !memo.isSigned;
+    final canEdit = isAuthor && memo.isEditable;
 
-          // Opening a memo addressed to your own desk records that it arrived.
-          if (isRecipient && !memo.isSigned) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _markReceived(memo);
-            });
-          }
+    // Arriving from the desk's "Acknowledge" button: open the signature sheet
+    // once, after the first frame so the page is already mounted.
+    if (widget.autoSign && canSign && !_autoSignHandled) {
+      _autoSignHandled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _sign(memo);
+      });
+    }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+    // Opening a memo addressed to your own desk records that it arrived.
+    if (isRecipient && !memo.isSigned) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _markReceived(memo);
+      });
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+      children: [
+        FadeSlideIn(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FadeSlideIn(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.mint,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            memo.kind.label,
-                            style: const TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        MemoStatusBadge(status: memo.status, compact: false),
-                        const Spacer(),
-                        Text(
-                          timeAgo(memo.createdAt),
-                          style: const TextStyle(
-                            fontSize: 8.5,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ],
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      memo.subject,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
-                      ),
+                    decoration: BoxDecoration(
+                      color: AppColors.mint,
+                      borderRadius: BorderRadius.circular(EcoRadius.pill),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
+                    child: Text(
+                      memo.kind.label,
+                      style: EcoType.chip(context, color: AppColors.forest),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    timeAgo(memo.createdAt),
+                    style: EcoType.meta(context, color: AppColors.inkMuted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              Text(
+                memo.subject,
+                style: EcoType.panelTitle(context, color: AppColors.darkGreen),
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              Row(
+                children: [
+                  DeskInitialAvatar(name: memo.fromName, size: 24),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
                       'From ${memo.fromName} · To ${memo.recipientLabel}',
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.inkMuted,
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
-                    if (memo.editedAt != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        'Edited ${timeAgo(memo.editedAt)}',
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 14),
-              EcoCard(
-                child: Text(
-                  memo.body,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    height: 1.65,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-              if (memo.attachment != null) ...[
-                const SizedBox(height: 12),
-                MemoAttachmentCard(attachment: memo.attachment!),
-              ],
-              const SizedBox(height: 12),
-              _StatusTimeline(memo: memo),
-              if (memo.isSigned) ...[
-                const SizedBox(height: 12),
-                _SignatureCard(memo: memo),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 42,
-                  child: OutlinedButton.icon(
-                    onPressed: _downloading ? null : () => _downloadCopy(memo),
-                    icon: const Icon(Icons.download_rounded, size: 16),
-                    label: Text(
-                      _downloading ? 'Preparing…' : 'Download signed copy',
-                    ),
-                  ),
-                ),
-              ],
-              if (canSign) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 46,
-                  child: FilledButton.icon(
-                    onPressed: _signing ? null : () => _sign(memo),
-                    icon: const Icon(Icons.draw_rounded, size: 18),
-                    label: Text(_signing ? 'Saving…' : 'Sign & acknowledge'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.forest,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Your signature is stored on this memo with your name and the '
-                  'date and time.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    height: 1.5,
-                    color: AppColors.inkMuted,
-                  ),
-                ),
-              ],
-              if (canEdit) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    onPressed: () => context.push('/memo/${memo.id}/edit'),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Edit memo'),
-                  ),
+              if (memo.editedAt != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Edited ${timeAgo(memo.editedAt)}',
+                  style: EcoType.micro(context, color: AppColors.inkMuted),
                 ),
               ],
             ],
-          );
-        },
-      ),
+          ),
+        ),
+        const SizedBox(height: EcoSpace.md),
+        EcoCard(
+          child: SelectableText(
+            memo.body,
+            style: EcoType.body(
+              context,
+              color: AppColors.textDark,
+            ).copyWith(height: 1.7),
+          ),
+        ),
+        if (memo.attachment != null) ...[
+          const SizedBox(height: EcoSpace.md),
+          MemoAttachmentCard(attachment: memo.attachment!),
+        ],
+        const SizedBox(height: EcoSpace.md),
+        _StatusTimeline(memo: memo),
+        if (memo.isSigned) ...[
+          const SizedBox(height: EcoSpace.md),
+          _SignatureCard(memo: memo),
+          const SizedBox(height: EcoSpace.sm),
+          SizedBox(
+            height: 40,
+            child: OutlinedButton.icon(
+              onPressed: _downloading ? null : () => _downloadCopy(memo),
+              icon: const Icon(Icons.download_rounded, size: 15),
+              label: Text(
+                _downloading ? 'Preparing…' : 'Download signed copy',
+                style: const TextStyle(fontSize: 11.5),
+              ),
+            ),
+          ),
+        ],
+        if (canSign) ...[
+          const SizedBox(height: EcoSpace.lg),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: _signing ? null : () => _sign(memo),
+              icon: _signing
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.draw_rounded, size: 18),
+              label: Text(_signing ? 'Saving…' : 'Sign & acknowledge'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.forest,
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: EcoSpace.sm),
+          Text(
+            'Your signature is stored on this memo with your name and the '
+            'date and time.',
+            textAlign: TextAlign.center,
+            style: EcoType.micro(context, color: AppColors.inkMuted),
+          ),
+        ],
+        if (canEdit) ...[
+          const SizedBox(height: EcoSpace.lg),
+          SizedBox(
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: () => context.push('/memo/${memo.id}/edit'),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Edit memo', style: TextStyle(fontSize: 11.5)),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -390,16 +391,11 @@ class _StatusTimeline extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Memo flow',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AppColors.forest,
-            ),
+          Text(
+            'MEMO FLOW',
+            style: EcoType.eyebrow(context, color: AppColors.moss),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.sm),
           for (var i = 0; i < steps.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 7),
@@ -416,24 +412,18 @@ class _StatusTimeline extends StatelessWidget {
                   Expanded(
                     child: Text(
                       steps[i].label,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: steps[i].done
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: steps[i].done
-                            ? AppColors.textDark
-                            : AppColors.inkMuted,
-                      ),
+                      style: steps[i].done
+                          ? EcoType.bodyStrong(
+                              context,
+                              color: AppColors.textDark,
+                            )
+                          : EcoType.body(context, color: AppColors.inkMuted),
                     ),
                   ),
                   if (steps[i].time != null)
                     Text(
                       timeAgo(steps[i].time),
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        color: AppColors.inkMuted,
-                      ),
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
                 ],
               ),
@@ -465,21 +455,15 @@ class _SignatureCard extends StatelessWidget {
                 color: AppColors.primary,
               ),
               const SizedBox(width: 6),
-              const Text(
-                'Signed',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
+              Expanded(
+                child: Text(
+                  'SIGNED',
+                  style: EcoType.eyebrow(context, color: AppColors.primary),
                 ),
               ),
-              const Spacer(),
               Text(
                 timeAgo(memo.acknowledgedAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -490,7 +474,7 @@ class _SignatureCard extends StatelessWidget {
               width: double.infinity,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(EcoRadius.sm),
                 border: Border.all(color: AppColors.sage),
               ),
               child: Image.memory(bytes, fit: BoxFit.contain),
@@ -499,15 +483,11 @@ class _SignatureCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             memo.acknowledgedByName ?? 'City Hall',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
+            style: EcoType.bodyStrong(context, color: AppColors.textDark),
           ),
-          const Text(
+          Text(
             'City Hall · DSQC',
-            style: TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
+            style: EcoType.meta(context, color: AppColors.inkMuted),
           ),
         ],
       ),

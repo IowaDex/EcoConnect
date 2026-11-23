@@ -69,26 +69,19 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
     return EcoPageScaffold(
       eyebrow: 'MANUALS · REQUESTS',
       title: 'Manual requests',
+      icon: Icons.mark_email_unread_outlined,
       subtitle:
           'A procedure that is missing or out of date. Iswim answers by '
           'linking the manual to the request.',
       onBack: () => ecoBack(context, isIswim ? '/iswim' : '/cityhall'),
-      fab: isIswim
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _openRequest(context),
-              backgroundColor: AppColors.forest,
-              foregroundColor: Colors.white,
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(EcoRadius.lg),
-              ),
-              icon: const Icon(Icons.add_rounded, size: 19),
-              label: const Text(
-                'Request manual',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            ),
+      actions: [
+        if (!isIswim)
+          _HeaderAction(
+            label: 'Request',
+            icon: Icons.add_rounded,
+            onTap: () => _openRequest(context),
+          ),
+      ],
       body: StreamBuilder<List<ManualRequest>>(
         stream: ManualService().watchRequests(),
         builder: (context, snapshot) {
@@ -173,10 +166,10 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
               ],
             ),
             resultLine: DeskResultLine(
-              label: filtered
-                  ? 'Showing ${items.length} of ${requests.length}'
-                  : '${requests.length} '
-                        '${requests.length == 1 ? 'request' : 'requests'}',
+              label: items.length == requests.length
+                  ? '${requests.length} '
+                        '${requests.length == 1 ? 'request' : 'requests'}'
+                  : 'Showing ${items.length} of ${requests.length}',
               onClear: filtered ? _clear : null,
             ),
             empty: requests.isEmpty
@@ -209,7 +202,7 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
                     onAction: _clear,
                   ),
             itemCount: visible.length,
-            listPadding: const EdgeInsets.fromLTRB(20, 6, 20, 96),
+            listPadding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
             itemBuilder: (context, i) =>
                 _RequestCard(request: visible[i], isIswim: isIswim),
             pagination: items.isEmpty
@@ -238,6 +231,45 @@ class _ManualRequestsScreenState extends State<ManualRequestsScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _RequestForm(byName: user.displayName ?? 'City Hall'),
+    );
+  }
+}
+
+/// The filled create action in the page header.
+///
+/// A header pill rather than a floating button: the FAB sat on top of the
+/// pagination bar and forced the list to reserve 96px of empty space.
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 15),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.forest,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: const StadiumBorder(),
+        ),
+      ),
     );
   }
 }
@@ -347,7 +379,7 @@ class _RequestCard extends StatelessWidget {
             request.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: EcoType.cardTitle(context, color: AppColors.darkGreen),
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
           ),
           if (request.details.trim().isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -487,7 +519,7 @@ class _RequestCard extends StatelessWidget {
                 if (!isIswim && request.status == ManualRequestStatus.pending)
                   Expanded(
                     child: SizedBox(
-                      height: 42,
+                      height: 36,
                       child: OutlinedButton.icon(
                         onPressed: () => _cancel(context),
                         icon: const Icon(Icons.close_rounded, size: 15),
@@ -558,16 +590,6 @@ class _PickManualSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
           const SizedBox(height: 14),
           const Text(
             'Link a submitted manual',
@@ -717,16 +739,6 @@ class _RequestFormState extends State<_RequestForm> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
-                        child: Container(
-                          height: 4,
-                          width: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.sage,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
                       const SizedBox(height: 16),
                       Row(
                         children: [

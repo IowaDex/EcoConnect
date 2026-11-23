@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../providers/location_provider.dart';
 
 /// Real-time tracking switch (offline-first, private history), styled for the
@@ -9,46 +11,58 @@ import '../providers/location_provider.dart';
 class LocationControls extends StatelessWidget {
   const LocationControls({super.key});
 
-  static const _titleStyle = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w700,
-    color: AppColors.forest,
-  );
-  static const _subtitleStyle = TextStyle(
-    fontSize: 10,
-    color: AppColors.inkMuted,
-  );
-
   @override
   Widget build(BuildContext context) {
     final location = context.watch<LocationProvider>();
+    final tracking = location.isTracking;
 
-    // Material (not a decorated Container) so the tiles' ink splashes show.
-    return Material(
-      color: AppColors.cream,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: AppColors.sage.withValues(alpha: 0.8)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
+    return DeskRailCard(
+      railColor: tracking ? AppColors.lime : AppColors.sage,
+      padding: const EdgeInsets.fromLTRB(17, 12, 8, 12),
+      child: Row(
         children: [
-          SwitchListTile(
-            activeThumbColor: AppColors.forest,
-            title: const Text('Real-time tracking', style: _titleStyle),
-            subtitle: Text(
-              location.isTracking
-                  ? 'Updating your location · only you can see it'
-                  : 'Turn on to record your location · only you can see it',
-              style: _subtitleStyle,
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: tracking ? AppColors.mint : AppColors.cream,
+              borderRadius: BorderRadius.circular(EcoRadius.sm + 2),
             ),
-            value: location.isTracking,
+            child: Icon(
+              tracking ? Icons.gps_fixed_rounded : Icons.gps_off_rounded,
+              size: 17,
+              color: tracking ? AppColors.moss : AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Real-time tracking',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitle(context),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  tracking
+                      ? 'Updating your location · only you can see it'
+                      : 'Turn on to record your location · only you can see it',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: tracking,
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppColors.forest,
             onChanged: (on) =>
                 on ? location.startTracking() : location.stopTracking(),
-            secondary: Icon(
-              Icons.gps_fixed,
-              color: location.isTracking ? AppColors.moss : AppColors.inkMuted,
-            ),
           ),
         ],
       ),

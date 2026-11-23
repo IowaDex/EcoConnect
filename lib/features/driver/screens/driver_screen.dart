@@ -13,9 +13,11 @@ import '../../location/providers/location_provider.dart';
 import '../../location/services/geocoding_service.dart';
 import '../../route/services/route_service.dart';
 import '../../../core/network/network_status.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/confirm_logout.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../route/widgets/route_preview_map.dart';
 import '../../route/screens/route_map_screen.dart';
@@ -1317,27 +1319,31 @@ class _DriverScreenState extends State<DriverScreen> {
                     _DriverPickupsCard(requests: _pickups),
                     if (_isLive) ...[
                       const SizedBox(height: 16),
-                      const Text(
-                        'Update status',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.forest,
+                      Text(
+                        'UPDATE STATUS',
+                        style: EcoType.eyebrow(
+                          context,
+                          color: AppColors.inkMuted,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          for (final status in [
+                      // The same switch every desk uses: one thumb, two
+                      // positions, so the crew reads it as a state change
+                      // rather than two separate buttons.
+                      DeskSegmented<RouteStatus>(
+                        value: _status,
+                        onChanged: _changeStatus,
+                        segments: [
+                          for (final status in const [
                             RouteStatus.inTransit,
                             RouteStatus.delayed,
                           ])
-                            _StatusChip(
+                            DeskSegment<RouteStatus>(
+                              value: status,
                               label: status.label,
-                              selected: _status == status,
-                              color: status.color,
-                              onTap: () => _changeStatus(status),
+                              icon: status == RouteStatus.inTransit
+                                  ? Icons.local_shipping_rounded
+                                  : Icons.timer_outlined,
                             ),
                         ],
                       ),
@@ -1980,16 +1986,6 @@ class _PreflightSheetState extends State<_PreflightSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                height: 4,
-                width: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.sage,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 18),
             const Text(
               'Pre-flight check',
@@ -2290,49 +2286,6 @@ class _LocationCard extends StatelessWidget {
         ? 'Location is blocked for EcoConnect. Allow it in Settings, then tap '
               'Try again.'
         : 'Location permission is required to run a collection route.';
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.selected,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected
-              ? color.withValues(alpha: 0.22)
-              : AppColors.creamBright,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? color : AppColors.sage,
-            width: selected ? 1.4 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? AppColors.forest : AppColors.inkMuted,
-          ),
-        ),
-      ),
-    );
   }
 }
 
