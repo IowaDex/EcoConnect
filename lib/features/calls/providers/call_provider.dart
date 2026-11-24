@@ -797,6 +797,24 @@ class CallProvider extends ChangeNotifier {
     return _signalQueue;
   }
 
+  /// Reads the real signalling state from the platform.
+  ///
+  /// `pc.signalingState` is only a cache the plugin fills from change events.
+  /// A fresh peer connection has never changed state, so on Android and iOS
+  /// that getter returns `null` — and `null == stable` is false, which silently
+  /// skipped the answer: the callee accepted, gathered no candidates and never
+  /// wrote one, so both phones sat on "Connecting audio" forever. Asking the
+  /// channel returns the true state on every platform.
+  Future<RTCSignalingState> _readSignalingState(RTCPeerConnection pc) async {
+    try {
+      final state = await pc.getSignalingState();
+      if (state != null) return state;
+    } catch (_) {
+      // A platform that does not answer the call falls back to the cache.
+    }
+    return pc.signalingState ?? RTCSignalingState.RTCSignalingStateStable;
+  }
+
   Future<void> _applySignalsNow(CallSession call) async {
     final pc = _pc;
     // `_pc` is assigned before the microphone track is added, so a snapshot
@@ -804,6 +822,7 @@ class CallProvider extends ChangeNotifier {
     // connection that has no description yet. `_preparePeer` replays the latest
     // snapshot once it is finished, so nothing is lost by waiting.
     if (pc == null || !_peerReady) return;
+    final signaling = await _readSignalingState(pc);
     // The caller of this method may be holding a snapshot from before the
     // peer connection existed, so the live session is the better source: an
     // answer that arrived while the microphone was still opening would
@@ -817,8 +836,7 @@ class CallProvider extends ChangeNotifier {
       if (!_isCaller &&
           !_offerApplied &&
           session.offer != null &&
-          pc.signalingState ==
-              RTCSignalingState.RTCSignalingStateStable) {
+          signaling == RTCSignalingState.RTCSignalingStateStable) {
         final offer = session.offer!;
         final sdp = offer['sdp'] as String?;
         final type = offer['type'] as String?;
@@ -841,7 +859,7 @@ class CallProvider extends ChangeNotifier {
       if (_isCaller &&
           !_answerApplied &&
           session.answer != null &&
-          pc.signalingState ==
+          signaling ==
               RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
         final answer = session.answer!;
         final sdp = answer['sdp'] as String?;
