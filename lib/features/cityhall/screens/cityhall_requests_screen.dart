@@ -29,9 +29,32 @@ class CityHallRequestsScreen extends StatefulWidget {
   State<CityHallRequestsScreen> createState() => _CityHallRequestsScreenState();
 }
 
+/// A request still needs an answer when no City Hall reply exists yet —
+/// a barangay note in the same thread does not count.
+bool _needsReply(CollectionRequest request) =>
+    request.responses.every((response) => response.byRole != 'cityHall');
+
+/// The three ways a request can sit on this desk. The desk opens on
+/// [needsReply], because that is the work; the other two are the record.
+enum _RequestFilter { needsReply, answered, all }
+
+extension on _RequestFilter {
+  String get label => switch (this) {
+    _RequestFilter.needsReply => 'Need reply',
+    _RequestFilter.answered => 'Answered',
+    _RequestFilter.all => 'All',
+  };
+
+  bool matches(CollectionRequest request) => switch (this) {
+    _RequestFilter.needsReply => _needsReply(request),
+    _RequestFilter.answered => !_needsReply(request),
+    _RequestFilter.all => true,
+  };
+}
+
 class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
   final _search = TextEditingController();
-  bool _openOnly = true;
+  _RequestFilter _filter = _RequestFilter.needsReply;
   String _query = '';
   int _page = 0;
   int _pageSize = 10;
@@ -42,7 +65,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
     super.dispose();
   }
 
-  List<CollectionRequest> _filter(List<CollectionRequest> items) {
+  List<CollectionRequest> _searchIn(List<CollectionRequest> items) {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return items;
     return items.where((r) {
@@ -53,16 +76,11 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
     }).toList();
   }
 
-  /// A request still needs an answer when no City Hall reply exists yet —
-  /// a barangay note in the same thread does not count.
-  static bool _needsReply(CollectionRequest request) =>
-      request.responses.every((response) => response.byRole != 'cityHall');
-
   void _clearFilters() {
     _search.clear();
     setState(() {
       _query = '';
-      _openOnly = true;
+      _filter = _RequestFilter.needsReply;
       _page = 0;
     });
   }
@@ -75,6 +93,7 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
     return EcoPageScaffold(
       eyebrow: 'CITY HALL · RESIDENT REQUESTS',
       title: 'Resident requests',
+      icon: Icons.forum_outlined,
       subtitle:
           'Answer the barangay’s escalated requests. Your reply is visible to '
           'the resident and the concerned staff.',
@@ -94,16 +113,12 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
           }
 
           final all = snapshot.data ?? const <CollectionRequest>[];
-          final open = _openOnly
-              ? all.where((r) => r.status.isOpen).toList(growable: false)
-              : all;
-          final items = _filter(open);
+          final searched = _searchIn(all);
+          final items = searched.where(_filter.matches).toList(growable: false);
           final page = clampPage(_page, items.length, _pageSize);
           final visible = pageSlice(items, page, _pageSize);
           final needsReply = all.where(_needsReply).length;
-          final answered = all
-              .where((r) => r.responses.any((x) => x.byRole == 'cityHall'))
-              .length;
+          final answered = all.length - needsReply;
 
           return DeskQueueView(
             metrics: [
@@ -133,33 +148,30 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                 _page = 0;
               }),
             ),
-            filters: DeskSegmented<bool>(
-              value: _openOnly,
+            filters: DeskSegmented<_RequestFilter>(
+              value: _filter,
               onChanged: (value) => setState(() {
-                _openOnly = value;
+                _filter = value;
                 _page = 0;
               }),
               segments: [
-                DeskSegment(
-                  value: true,
-                  label: 'Open only',
-                  count: all.where((r) => r.status.isOpen).length,
-                  icon: Icons.pending_actions_rounded,
-                ),
-                DeskSegment(
-                  value: false,
-                  label: 'All requests',
-                  count: all.length,
-                  icon: Icons.all_inbox_rounded,
-                ),
+                for (final filter in _RequestFilter.values)
+                  DeskSegment(
+                    value: filter,
+                    label: filter.label,
+                    count: searched.where(filter.matches).length,
+                  ),
               ],
             ),
             resultLine: DeskResultLine(
-              label: _query.trim().isEmpty
-                  ? '${items.length} '
-                        '${items.length == 1 ? 'request' : 'requests'}'
-                  : 'Showing ${items.length} of ${open.length}',
-              onClear: _query.trim().isNotEmpty ? _clearFilters : null,
+              label:
+                  '${items.length} '
+                  '${items.length == 1 ? 'request' : 'requests'}',
+              onClear:
+                  _query.trim().isNotEmpty ||
+                      _filter != _RequestFilter.needsReply
+                  ? _clearFilters
+                  : null,
             ),
             empty: all.isEmpty
                 ? const DeskEmptyQueue(
@@ -181,23 +193,23 @@ class _CityHallRequestsScreenState extends State<CityHallRequestsScreen> {
                     title: 'No request matches',
                     message:
                         'Try another word, or clear the search to see '
-                        'every open request.',
+                        'every request on this desk.',
                     actionLabel: 'Clear search',
                     actionIcon: Icons.search_off_rounded,
                     onAction: _clearFilters,
                   )
-                // The queue is empty because every open request already has
-                // its City Hall reply — offer the record, not a filter reset.
+                // Nothing is waiting for a reply. Offer the record instead of
+                // a filter reset — the queue is empty because the work is done.
                 : DeskEmptyQueue(
                     icon: Icons.task_alt_rounded,
                     title: 'Every request is answered',
                     message:
-                        'Nothing is waiting for a City Hall reply. '
-                        'Answered requests stay on record.',
-                    actionLabel: 'Show all requests',
-                    actionIcon: Icons.all_inbox_rounded,
+                        'Nothing is waiting for a City Hall reply. Answered '
+                        'requests stay on record.',
+                    actionLabel: 'Show answered requests',
+                    actionIcon: Icons.forum_outlined,
                     onAction: () => setState(() {
-                      _openOnly = false;
+                      _filter = _RequestFilter.answered;
                       _page = 0;
                     }),
                   ),
@@ -245,12 +257,13 @@ class _RequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final needsReply = _CityHallRequestsScreenState._needsReply(request);
+    final needsReply = _needsReply(request);
     final barangay = request.requesterBarangay;
 
     return DeskRailCard(
       railColor: request.status.color,
       onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -272,25 +285,21 @@ class _RequestTile extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: EcoSpace.xs),
           Text(
             request.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: EcoType.cardTitle(context, color: AppColors.darkGreen),
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
           Row(
             children: [
-              DeskInitialAvatar(name: request.requesterName, size: 24),
+              DeskInitialAvatar(name: request.requesterName, size: 22),
               const SizedBox(width: 7),
               Expanded(
                 child: Column(
@@ -300,10 +309,9 @@ class _RequestTile extends StatelessWidget {
                       request.requesterName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: EcoType.bodySmall(
+                      style: EcoType.bodyStrong(
                         context,
                         color: AppColors.textDark,
-                        weight: FontWeight.w600,
                       ),
                     ),
                     Text(
@@ -320,24 +328,25 @@ class _RequestTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.sm),
           Row(
             children: [
-              _ReplyChip(awaiting: needsReply, count: request.responses.length),
-              const Spacer(),
-              const Text(
-                'Open',
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+              // Expanded keeps the chevron on the card's right edge no matter
+              // how long the reply chip is.
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ReplyChip(
+                    awaiting: needsReply,
+                    count: request.responses.length,
+                  ),
                 ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 8),
               const Icon(
                 Icons.chevron_right_rounded,
-                size: 16,
-                color: AppColors.primary,
+                size: 17,
+                color: AppColors.inkMuted,
               ),
             ],
           ),
@@ -357,10 +366,10 @@ class _ReplyChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = awaiting ? AppColors.warning : AppColors.primary;
     final label = awaiting
-        ? 'Awaiting City Hall reply'
+        ? 'Needs reply'
         : count == 1
-        ? '1 reply in the thread'
-        : '$count replies in the thread';
+        ? '1 reply'
+        : '$count replies';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -378,14 +387,7 @@ class _ReplyChip extends StatelessWidget {
             color: color,
           ),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 8.5,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
+          Text(label, style: EcoType.chip(context, color: color)),
         ],
       ),
     );

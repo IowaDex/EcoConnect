@@ -8,6 +8,7 @@ import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/motion.dart';
@@ -291,6 +292,13 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
       icon: Icons.local_shipping_outlined,
       route: '/fleet',
     ),
+    // A truck without a login is a truck nobody can drive: the crew accounts
+    // are made on this desk, and this is the only way in from the dashboard.
+    const QuickAction(
+      label: 'Accounts',
+      icon: Icons.badge_outlined,
+      route: '/accounts',
+    ),
   ];
 
   // ---------------------------------------------------------------------------
@@ -375,7 +383,7 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
         ),
         const SizedBox(height: EcoSpace.md),
         if (!_loaded)
-          const _TicketSkeleton()
+          const SkeletonCardList(count: 3, gap: 9)
         else if (_tickets.isEmpty)
           const EmptyState(
             compact: true,
@@ -387,20 +395,23 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
           )
         else ...[
           _TicketGroup(
-            title: 'FOR APPROVAL',
+            title: 'Waiting for City Hall',
+            icon: Icons.draw_rounded,
             emptyLabel: 'Nothing waiting for City Hall.',
             tickets: forApproval,
           ),
           const SizedBox(height: EcoSpace.lg),
           _TicketGroup(
-            title: 'APPROVED',
+            title: 'Approved',
+            icon: Icons.verified_outlined,
             emptyLabel: 'No approved manual yet.',
             tickets: approved,
           ),
           if (others.isNotEmpty) ...[
             const SizedBox(height: EcoSpace.lg),
             _TicketGroup(
-              title: 'OTHER TICKETS',
+              title: 'Other tickets',
+              icon: Icons.confirmation_number_outlined,
               emptyLabel: '',
               tickets: others,
             ),
@@ -465,7 +476,9 @@ class _FleetList extends StatelessWidget {
     return StreamBuilder<List<GarbageTruck>>(
       stream: FleetService().watchTrucks(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const _FleetSkeleton();
+        if (!snapshot.hasData) {
+          return const SkeletonCardList(count: 4, leading: true, gap: 8);
+        }
 
         final trucks = snapshot.data ?? const <GarbageTruck>[];
         if (trucks.isEmpty) {
@@ -579,15 +592,17 @@ class _ManualRequestCard extends StatelessWidget {
   }
 }
 
-/// One heading plus its tickets, e.g. "FOR APPROVAL" or "APPROVED".
+/// One heading plus its tickets, e.g. "Waiting for City Hall".
 class _TicketGroup extends StatelessWidget {
   const _TicketGroup({
     required this.title,
+    required this.icon,
     required this.emptyLabel,
     required this.tickets,
   });
 
   final String title;
+  final IconData icon;
   final String emptyLabel;
   final List<TripTicket> tickets;
 
@@ -596,40 +611,12 @@ class _TicketGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.7,
-                color: AppColors.inkMuted,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppColors.cream,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${tickets.length}',
-                style: const TextStyle(
-                  fontSize: 8,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.inkMuted,
-                ),
-              ),
-            ),
-          ],
-        ),
+        DeskSectionHeader(icon: icon, title: title, count: tickets.length),
         const SizedBox(height: 8),
         if (tickets.isEmpty)
           Text(
             emptyLabel,
-            style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
           )
         else
           for (var i = 0; i < tickets.length; i++) ...[
@@ -639,84 +626,6 @@ class _TicketGroup extends StatelessWidget {
             ),
             if (i < tickets.length - 1) const SizedBox(height: 9),
           ],
-      ],
-    );
-  }
-}
-
-class _TicketSkeleton extends StatelessWidget {
-  const _TicketSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < 3; i++) ...[
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(EcoRadius.lg),
-              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    SkeletonBox(width: 62, height: 15, radius: 7),
-                    SizedBox(width: 8),
-                    SkeletonBox(width: 46, height: 15, radius: 7),
-                  ],
-                ),
-                SizedBox(height: 11),
-                SkeletonBox(width: double.infinity, height: 12),
-                SizedBox(height: 8),
-                SkeletonBox(width: 130, height: 10, radius: 5),
-              ],
-            ),
-          ),
-          if (i < 2) const SizedBox(height: 9),
-        ],
-      ],
-    );
-  }
-}
-
-class _FleetSkeleton extends StatelessWidget {
-  const _FleetSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < 4; i++) ...[
-          Container(
-            height: 62,
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
-            ),
-            child: const Row(
-              children: [
-                SkeletonBox(width: 36, height: 36, radius: 18),
-                SizedBox(width: 11),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonBox(width: 90, height: 12),
-                    SizedBox(height: 7),
-                    SkeletonBox(width: 150, height: 10, radius: 5),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (i < 3) const SizedBox(height: 8),
-        ],
       ],
     );
   }

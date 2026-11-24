@@ -300,6 +300,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   route: '/verification',
                                   badge: pendingAccounts,
                                 ),
+                                const QuickAction(
+                                  label: 'Guides',
+                                  icon: Icons.person_pin_circle_outlined,
+                                  route: '/accounts',
+                                ),
                                 QuickAction(
                                   label: 'Requests',
                                   icon: Icons.assignment_outlined,

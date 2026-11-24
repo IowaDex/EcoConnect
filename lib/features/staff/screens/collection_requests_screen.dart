@@ -6,11 +6,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/service_area.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
@@ -130,7 +132,8 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                           ? const EmptyState(
                               icon: Icons.inbox_outlined,
                               title: 'No requests match',
-                              message: 'Try clearing the status or date filter.',
+                              message:
+                                  'Try clearing the status or date filter.',
                             )
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
@@ -229,55 +232,57 @@ class _StatusFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 34,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Stack(
         children: [
-          _chip('All', selected == null, () => onChanged(null)),
-          for (final status in RequestStatus.values)
-            _chip(status.label, selected == status, () => onChanged(status)),
-          _chip(
-            'Special only',
-            specialOnly,
-            () => onSpecialChanged(!specialOnly),
-            icon: Icons.star_outline_rounded,
+          ListView(
+            scrollDirection: Axis.horizontal,
+            // The strip is wider than a phone, so it ends with air and a fade
+            // instead of a chip sliced in half at the screen edge.
+            padding: const EdgeInsets.fromLTRB(18, 0, 26, 0),
+            children: [
+              _chip('All', selected == null, () => onChanged(null)),
+              for (final status in RequestStatus.values)
+                _chip(
+                  status.label,
+                  selected == status,
+                  () => onChanged(status),
+                ),
+              _chip(
+                'Special only',
+                specialOnly,
+                () => onSpecialChanged(!specialOnly),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 26,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      AppColors.background.withValues(alpha: 0),
+                      AppColors.background,
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _chip(
-    String label,
-    bool active,
-    VoidCallback onTap, {
-    IconData? icon,
-  }) {
+  Widget _chip(String label, bool active, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 7),
-      child: ChoiceChip(
-        avatar: icon == null
-            ? null
-            : Icon(
-                icon,
-                size: 13,
-                color: active ? Colors.white : AppColors.darkGreen,
-              ),
-        label: Text(label),
-        selected: active,
-        onSelected: (_) => onTap(),
-        labelStyle: TextStyle(
-          fontSize: 9.5,
-          fontWeight: FontWeight.w600,
-          color: active ? Colors.white : AppColors.darkGreen,
-        ),
-        selectedColor: AppColors.primary,
-        backgroundColor: Colors.white,
-        side: BorderSide(color: AppColors.sage.withValues(alpha: 0.8)),
-        showCheckmark: false,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        visualDensity: VisualDensity.compact,
-      ),
+      child: DeskFilterChip(label: label, selected: active, onTap: onTap),
     );
   }
 }
@@ -305,10 +310,16 @@ class _FilterSummary extends StatelessWidget {
           // way to the pills instead of pushing them off the row.
           Expanded(
             child: Text(
-              '$shown of $total requests',
+              // "0 of 0 requests" reads like a broken counter. When the desk
+              // is empty there is nothing to page through, so say so.
+              total == 0
+                  ? 'No requests yet'
+                  : shown == total
+                  ? '$total request${total == 1 ? '' : 's'}'
+                  : '$shown of $total requests',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+              style: EcoType.meta(context, color: AppColors.inkMuted),
             ),
           ),
           PopupMenuButton<int>(

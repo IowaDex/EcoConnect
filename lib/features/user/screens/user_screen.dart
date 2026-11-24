@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -8,11 +11,12 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/primary_button.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../announcements/models/announcement.dart';
 import '../../announcements/services/announcement_service.dart';
@@ -61,96 +65,43 @@ class _UserScreenState extends State<UserScreen> {
     final restricted = user?.isRestrictedResident ?? false;
 
     return Scaffold(
-      backgroundColor: AppColors.creamBright,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            const RoleTopBar(),
-            Expanded(
-              // Pull to refresh re-reads the profile, so an approval made at
-              // the barangay desk unlocks the dashboard without a new login.
-              child: RefreshIndicator(
-                onRefresh: auth.refreshUser,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                  children: [
-                    FadeSlideIn(
-                      index: 0,
-                      child: _ResidentHero(
-                        user: user,
-                        onEditProfile: () => _showProfile(context),
-                      ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              children: [
+                const RoleTopBar(),
+                Expanded(
+                  // Pull to refresh re-reads the profile, so an approval made
+                  // at the barangay desk unlocks the dashboard without a new
+                  // login.
+                  child: RefreshIndicator(
+                    onRefresh: auth.refreshUser,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                      children: [
+                        FadeSlideIn(
+                          index: 0,
+                          child: _ResidentHero(
+                            user: user,
+                            onEditProfile: () => _showProfile(context),
+                          ),
+                        ),
+                        if (restricted)
+                          ..._restrictedBody(context, user!)
+                        else
+                          ..._residentBody(context, user),
+                      ],
                     ),
-                    if (restricted) ...[
-                      const SizedBox(height: EcoSpace.md),
-                      _VerificationGateCard(user: user!),
-                      const SizedBox(height: EcoSpace.md),
-                      const _TrackTruckCard(),
-                      const SizedBox(height: EcoSpace.xl),
-                      const SectionLabel('QUICK ACTIONS'),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Only truck tracking is open for now. The rest unlocks '
-                        'once barangay staff verify your account.',
-                        style: TextStyle(
-                          fontSize: 10,
-                          height: 1.45,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                      const SizedBox(height: EcoSpace.sm),
-                      QuickActionGrid(
-                        actions: _restrictedActions,
-                        onLocked: (action) =>
-                            _showLocked(context, action.lockedNote),
-                      ),
-                    ] else ...[
-                      if (user?.registrationPending == true) ...[
-                        const SizedBox(height: EcoSpace.md),
-                        const EcoBanner(
-                          message:
-                              'Your registration is waiting for barangay review. You can keep using EcoConnect while staff check your details.',
-                          icon: Icons.hourglass_top_rounded,
-                          color: AppColors.warning,
-                        ),
-                      ],
-                      if (user?.isGovernment == true &&
-                          !user!.isVerifiedGovernment) ...[
-                        const SizedBox(height: EcoSpace.md),
-                        _VerificationNotice(user: user),
-                      ],
-                      const SizedBox(height: EcoSpace.md),
-                      const _TrackTruckCard(),
-                      const SizedBox(height: EcoSpace.xl),
-                      const SectionLabel('QUICK ACTIONS'),
-                      const SizedBox(height: EcoSpace.sm),
-                      const QuickActionGrid(actions: _actions),
-                      const SizedBox(height: EcoSpace.xl),
-                      SectionLabel(
-                        'UPCOMING EVENTS',
-                        action: 'View all',
-                        onAction: () => context.go('/events'),
-                      ),
-                      const SizedBox(height: EcoSpace.sm),
-                      const _EventsStrip(),
-                      const SizedBox(height: EcoSpace.xl),
-                      SectionLabel(
-                        'ANNOUNCEMENTS',
-                        action: 'View all',
-                        onAction: () => context.go('/announcements'),
-                      ),
-                      const SizedBox(height: EcoSpace.sm),
-                      const _LatestAnnouncements(),
-                      const SizedBox(height: EcoSpace.lg),
-                      const LocationControls(),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
       bottomNavigationBar: AppBottomNav(
@@ -165,7 +116,109 @@ class _UserScreenState extends State<UserScreen> {
     );
   }
 
-  static const _actions = <QuickAction>[
+  /// Everything a resident can use once the barangay has verified the ID.
+  ///
+  /// The order is deliberate: the truck they are waiting for, the three things
+  /// they came to do, then everything else. The three primary actions are not
+  /// repeated in the grid below — one destination, one tile.
+  List<Widget> _residentBody(BuildContext context, AppUser? user) {
+    final registrationPending = user?.registrationPending == true;
+    final governmentPending =
+        user?.isGovernment == true && user?.isVerifiedGovernment == false;
+
+    return [
+      if (registrationPending) ...[
+        const SizedBox(height: EcoSpace.md),
+        const EcoBanner(
+          message:
+              'Your registration is waiting for barangay review. You can keep '
+              'using EcoConnect while staff check your details.',
+          icon: Icons.hourglass_top_rounded,
+          color: AppColors.warning,
+        ),
+      ],
+      if (governmentPending) ...[
+        const SizedBox(height: EcoSpace.md),
+        _VerificationNotice(user: user!),
+      ],
+      const SizedBox(height: EcoSpace.md),
+      const FadeSlideIn(index: 1, child: _TrackTruckCard()),
+      const SizedBox(height: EcoSpace.xl),
+      const FadeSlideIn(
+        index: 2,
+        child: DeskSectionHeader(
+          icon: Icons.bolt_rounded,
+          title: 'Quick actions',
+          subtitle:
+              'Upload proof, ask for a pickup, or report a street the '
+              'truck skipped.',
+        ),
+      ),
+      const SizedBox(height: EcoSpace.sm),
+      const FadeSlideIn(index: 3, child: _PrimaryActions()),
+      const SizedBox(height: EcoSpace.xl),
+      const FadeSlideIn(
+        index: 4,
+        child: DeskSectionHeader(
+          icon: Icons.grid_view_rounded,
+          title: 'All services',
+        ),
+      ),
+      const SizedBox(height: EcoSpace.sm),
+      const QuickActionGrid(actions: _services),
+      const SizedBox(height: EcoSpace.xl),
+      FadeSlideIn(
+        index: 5,
+        child: DeskSectionHeader(
+          icon: Icons.event_available_outlined,
+          title: 'Coming up',
+          trailing: _ViewAll(onTap: () => context.go('/events')),
+        ),
+      ),
+      const SizedBox(height: EcoSpace.sm),
+      const _EventsStrip(),
+      const SizedBox(height: EcoSpace.xl),
+      FadeSlideIn(
+        index: 6,
+        child: DeskSectionHeader(
+          icon: Icons.campaign_outlined,
+          title: 'From the barangay',
+          trailing: _ViewAll(onTap: () => context.go('/announcements')),
+        ),
+      ),
+      const SizedBox(height: EcoSpace.sm),
+      const _LatestAnnouncements(),
+      const SizedBox(height: EcoSpace.xl),
+      const LocationControls(),
+    ];
+  }
+
+  /// The locked dashboard. Only the ID card and truck tracking are live, and
+  /// every shortcut below says why it is dimmed instead of quietly failing.
+  List<Widget> _restrictedBody(BuildContext context, AppUser user) {
+    return [
+      const SizedBox(height: EcoSpace.md),
+      _VerificationGateCard(user: user),
+      const SizedBox(height: EcoSpace.md),
+      const _TrackTruckCard(),
+      const SizedBox(height: EcoSpace.xl),
+      const DeskSectionHeader(
+        icon: Icons.lock_outline_rounded,
+        title: 'Unlocks after approval',
+        subtitle:
+            'Everything below opens the moment barangay staff verify '
+            'your ID.',
+      ),
+      const SizedBox(height: EcoSpace.sm),
+      QuickActionGrid(
+        actions: _restrictedActions,
+        onLocked: (action) => _showLocked(context, action.lockedNote),
+      ),
+    ];
+  }
+
+  /// The three actions residents reach for most, shown larger than the rest.
+  static const _primary = <QuickAction>[
     QuickAction(
       label: 'Upload waste',
       icon: Icons.add_a_photo_outlined,
@@ -184,6 +237,10 @@ class _UserScreenState extends State<UserScreen> {
       route: '/request-collection?kind=uncollected',
       lockedNote: 'report uncollected garbage',
     ),
+  ];
+
+  /// Everything else. The primary three are deliberately absent.
+  static const _services = <QuickAction>[
     QuickAction(
       label: 'My requests',
       icon: Icons.fact_check_outlined,
@@ -231,7 +288,7 @@ class _UserScreenState extends State<UserScreen> {
   /// verification. ID verification is handled by the card above, so that
   /// shortcut is left out instead of shown as locked.
   List<QuickAction> get _restrictedActions => [
-    for (final action in _actions)
+    for (final action in [..._primary, ..._services])
       if (action.route != '/verify-identity')
         QuickAction(
           label: action.label,
@@ -387,7 +444,102 @@ class _ResidentHeroState extends State<_ResidentHero> {
   }
 }
 
-/// The resident's only open feature while the account is not verified.
+/// The three things a resident does most, one step larger than the grid.
+class _PrimaryActions extends StatelessWidget {
+  const _PrimaryActions();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 106,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < _UserScreenState._primary.length; i++) ...[
+            if (i > 0) const SizedBox(width: EcoSpace.xs),
+            Expanded(child: _PrimaryTile(action: _UserScreenState._primary[i])),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryTile extends StatelessWidget {
+  const _PrimaryTile({required this.action});
+
+  final QuickAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    return EcoCard(
+      onTap: () => context.push(action.route),
+      padding: const EdgeInsets.fromLTRB(11, 12, 11, 11),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 32,
+            width: 32,
+            decoration: BoxDecoration(
+              gradient: AppColors.forestGradient,
+              borderRadius: BorderRadius.circular(EcoRadius.sm),
+            ),
+            child: Icon(action.icon, size: 17, color: Colors.white),
+          ),
+          const Spacer(),
+          Text(
+            action.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.label(context, color: AppColors.forest),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The small "View all" pill that closes a section header.
+class _ViewAll extends StatelessWidget {
+  const _ViewAll({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(EcoRadius.pill),
+          border: Border.all(color: AppColors.sage.withValues(alpha: 0.9)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'View all',
+              style: EcoType.label(context, color: AppColors.primary),
+            ),
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 13,
+              color: AppColors.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The resident's window on the collection truck.
 ///
 /// It reads the same live route the map uses, so the status here and the map
 /// can never disagree.
@@ -414,25 +566,52 @@ class _TrackTruckCardState extends State<_TrackTruckCard> {
             : route.etaMinutes != null
             ? '${route.driverName} · about ${route.etaMinutes} min away'
             : '${route.driverName} · ${route.status.label}';
+        final updated = live
+            ? timeAgo(route.updatedAt ?? route.lastSeenAt)
+            : '';
 
-        return EcoCard(
+        return DeskRailCard(
+          railColor: live ? AppColors.lime : AppColors.sage,
           onTap: () => context.push('/tracking'),
-          padding: const EdgeInsets.all(14),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // The truck itself is a tap target too: residents reach for the
-              // icon first, so it opens the map without hunting for the pill.
-              Tooltip(
-                message: 'Track the collection truck',
-                child: InkWell(
-                  onTap: () => context.push('/tracking'),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
+              Row(
+                children: [
+                  _LiveDot(active: live),
+                  const SizedBox(width: 6),
+                  // Expanded, not Flexible + Spacer: the label gives way to the
+                  // timestamp instead of pushing it off the row.
+                  Expanded(
+                    child: Text(
+                      live ? 'LIVE TRUCK TRACKING' : 'TRUCK TRACKING',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.eyebrow(
+                        context,
+                        color: live ? AppColors.moss : AppColors.inkMuted,
+                      ),
+                    ),
+                  ),
+                  if (updated.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      'Updated $updated',
+                      maxLines: 1,
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              Row(
+                children: [
+                  Container(
                     height: 46,
                     width: 46,
                     decoration: BoxDecoration(
                       gradient: AppColors.forestGradient,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(EcoRadius.md),
                     ),
                     child: const Icon(
                       Icons.local_shipping_rounded,
@@ -440,99 +619,143 @@ class _TrackTruckCardState extends State<_TrackTruckCard> {
                       color: Colors.white,
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                  const SizedBox(width: EcoSpace.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          height: 6,
-                          width: 6,
-                          decoration: BoxDecoration(
-                            color: live ? AppColors.lime : AppColors.sage,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
                         Text(
-                          live ? 'LIVE TRUCK TRACKING' : 'TRUCK TRACKING',
-                          style: const TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.9,
+                          live
+                              ? 'The collection truck is on the road'
+                              : 'Track the next collection',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: EcoType.cardTitle(context),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          detail,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: EcoType.bodySmall(
+                            context,
                             color: AppColors.inkMuted,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      live
-                          ? 'The collection truck is on the road'
-                          : 'Track the next collection',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        height: 1.35,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              // A control of its own, so the way into the map is obvious even
-              // while every other shortcut on the dashboard is locked.
-              Material(
-                color: AppColors.forest,
-                borderRadius: BorderRadius.circular(20),
-                child: InkWell(
-                  onTap: () => context.push('/tracking'),
-                  borderRadius: BorderRadius.circular(20),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Track',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
+                  ),
+                  const SizedBox(width: EcoSpace.xs),
+                  // A control of its own, so the way into the map is obvious
+                  // even while every other shortcut is locked.
+                  Material(
+                    color: AppColors.forest,
+                    borderRadius: BorderRadius.circular(EcoRadius.pill),
+                    child: InkWell(
+                      onTap: () => context.push('/tracking'),
+                      borderRadius: BorderRadius.circular(EcoRadius.pill),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 7,
                         ),
-                        SizedBox(width: 3),
-                        Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 11,
-                          color: Colors.white,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Track',
+                              style: EcoType.label(
+                                context,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 11,
+                              color: Colors.white,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// A dot that breathes while the truck is on the road, and sits still when it
+/// is not. Motion is the cheapest way to say "this is live".
+class _LiveDot extends StatefulWidget {
+  const _LiveDot({required this.active});
+
+  final bool active;
+
+  @override
+  State<_LiveDot> createState() => _LiveDotState();
+}
+
+class _LiveDotState extends State<_LiveDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _pulse.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    } else if (!widget.active && _pulse.isAnimating) {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.active ? AppColors.moss : AppColors.sage;
+    return SizedBox(
+      height: 10,
+      width: 10,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (widget.active)
+            FadeTransition(
+              opacity: Tween<double>(begin: 0.5, end: 0).animate(_pulse),
+              child: Container(
+                height: 10,
+                width: 10,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ),
+          Container(
+            height: 6,
+            width: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -594,76 +817,64 @@ class _VerificationGateCardState extends State<_VerificationGateCard> {
     final reason = user.rejectionReason?.trim();
     final accent = rejected ? AppColors.error : AppColors.warning;
 
-    return EcoCard(
-      padding: const EdgeInsets.all(16),
-      borderColor: accent.withValues(alpha: 0.45),
+    return DeskRailCard(
+      railColor: accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                height: 38,
-                width: 38,
+                height: 36,
+                width: 36,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(EcoRadius.sm + 2),
                 ),
                 child: Icon(
                   rejected
                       ? Icons.gpp_bad_outlined
                       : Icons.verified_user_outlined,
-                  size: 19,
+                  size: 18,
                   color: accent,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: EcoSpace.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ACCOUNT NOT VERIFIED',
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.9,
-                        color: accent,
-                      ),
+                      rejected ? 'ID REJECTED' : 'ID UNDER REVIEW',
+                      style: EcoType.eyebrow(context, color: accent),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       rejected
-                          ? 'Your ID was rejected'
-                          : 'Your ID is being checked',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.forest,
-                      ),
+                          ? 'Send a clearer photo'
+                          : 'Your ID is with barangay staff',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.cardTitle(context),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.sm),
           Text(
             rejected
                 ? 'Barangay staff could not accept your last ID'
                       '${reason == null || reason.isEmpty ? '.' : ': $reason'} '
                       'Upload a clearer photo to try again.'
-                : 'Your sign-up ID is with barangay staff. You can track the '
-                      'collection truck while you wait; waste uploads, pickup '
-                      'requests, complaints and community unlock after '
-                      'approval. Upload a clearer photo below if needed.',
-            style: const TextStyle(
-              fontSize: 10,
-              height: 1.5,
-              color: AppColors.inkMuted,
-            ),
+                : 'You can track the collection truck while you wait. Waste '
+                      'uploads, pickup requests, complaints and community '
+                      'unlock after approval. Upload a clearer photo below if '
+                      'needed.',
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: EcoSpace.md),
           ImagePickerField(
             value: _document,
             onChanged: (value) => setState(() => _document = value),
@@ -676,7 +887,7 @@ class _VerificationGateCardState extends State<_VerificationGateCard> {
             documentMode: true,
             previewHeight: 150,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: EcoSpace.md),
           PrimaryButton(
             label: rejected
                 ? 'Resubmit my ID'
@@ -712,6 +923,7 @@ class _VerificationNotice extends StatelessWidget {
   }
 }
 
+/// The next few barangay events, as a swipeable row.
 class _EventsStrip extends StatelessWidget {
   const _EventsStrip();
 
@@ -721,126 +933,75 @@ class _EventsStrip extends StatelessWidget {
       stream: EventService().watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 118,
-            child: Center(
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
+          return const SizedBox(height: 112, child: _StripSkeleton());
         }
         final events = (snapshot.data ?? const <CommunityEvent>[])
             .where((e) => e.isUpcoming)
             .take(4)
             .toList(growable: false);
         if (events.isEmpty) {
-          return const EcoCard(
-            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-            child: Row(
-              children: [
-                Icon(Icons.event_outlined, size: 20, color: AppColors.inkMuted),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'No upcoming events yet. New community programs appear here.',
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.45,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return const _QuietCard(
+            icon: Icons.event_outlined,
+            message:
+                'No upcoming events yet. New community programs appear here.',
           );
         }
         return SizedBox(
-          height: 122,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: events.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, i) {
-              final event = events[i];
-              return GestureDetector(
-                onTap: () => context.push('/events'),
-                child: Container(
-                  width: 190,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFE8F5E9), Color(0xFFD7EED8)],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.sage.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+          height: 112,
+          child: Stack(
+            children: [
+              ListView.separated(
+                scrollDirection: Axis.horizontal,
+                // The row is wider than a phone, so it ends with air and a
+                // fade instead of a card sliced by the screen edge.
+                padding: const EdgeInsets.only(right: 26),
+                itemCount: events.length,
+                separatorBuilder: (_, __) => const SizedBox(width: EcoSpace.sm),
+                itemBuilder: (context, i) {
+                  final event = events[i];
+                  return SizedBox(
+                    width: 198,
+                    child: DeskRailCard(
+                      railColor: event.category.color,
+                      onTap: () => context.push('/events'),
+                      padding: const EdgeInsets.fromLTRB(17, 11, 11, 11),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          StatusBadge(
-                            label: event.category.label,
-                            color: event.category.color,
-                            compact: true,
+                          Row(
+                            children: [
+                              _DayChip(date: event.startAt),
+                              const Spacer(),
+                              Text(
+                                relativeDay(event.startAt),
+                                style: EcoType.label(
+                                  context,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
                           ),
                           const Spacer(),
                           Text(
-                            relativeDay(event.startAt),
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
+                            event.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: EcoType.cardTitle(context),
                           ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Text(
-                        event.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          height: 1.3,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.darkGreen,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.place_outlined,
-                            size: 10,
+                          const SizedBox(height: 3),
+                          DeskFact(
+                            icon: Icons.place_outlined,
+                            text: event.location,
                             color: AppColors.inkMuted,
                           ),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              event.location,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 9,
-                                color: AppColors.inkMuted,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                    ),
+                  );
+                },
+              ),
+              const _EdgeFade(),
+            ],
           ),
         );
       },
@@ -848,6 +1009,45 @@ class _EventsStrip extends StatelessWidget {
   }
 }
 
+/// MON / 24, the way a calendar page reads at a glance.
+class _DayChip extends StatelessWidget {
+  const _DayChip({required this.date});
+
+  final DateTime date;
+
+  static const _months = [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.sm),
+      ),
+      child: Text(
+        '${_months[date.month - 1]} ${date.day}',
+        style: EcoType.eyebrow(context, color: AppColors.forest),
+      ),
+    );
+  }
+}
+
+/// The two newest announcements, read straight from the same feed the
+/// announcements screen uses.
 class _LatestAnnouncements extends StatelessWidget {
   const _LatestAnnouncements();
 
@@ -857,93 +1057,91 @@ class _LatestAnnouncements extends StatelessWidget {
       stream: AnnouncementService().watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            height: 100,
-            child: Center(
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
+          return const SizedBox(height: 104, child: _StripSkeleton());
         }
         final items = (snapshot.data ?? const <Announcement>[])
             .take(2)
             .toList(growable: false);
         if (items.isEmpty) {
-          return const EcoCard(
-            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.campaign_outlined,
-                  size: 20,
-                  color: AppColors.inkMuted,
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'No announcements yet. Barangay updates will appear here.',
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.45,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          return const _QuietCard(
+            icon: Icons.campaign_outlined,
+            message: 'No announcements yet. Barangay updates will appear here.',
           );
         }
         return Column(
           children: [
             for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(height: 10),
-              EcoCard(
-                onTap: () => context.push('/announcements'),
-                padding: const EdgeInsets.all(15),
+              if (i > 0) const SizedBox(height: EcoSpace.sm),
+              _AnnouncementCard(announcement: items[i]),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AnnouncementCard extends StatelessWidget {
+  const _AnnouncementCard({required this.announcement});
+
+  final Announcement announcement;
+
+  @override
+  Widget build(BuildContext context) {
+    return DeskRailCard(
+      railColor: announcement.category.color,
+      onTap: () => context.push('/announcements'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              StatusBadge(
+                label: announcement.category.shortLabel,
+                color: announcement.category.color,
+                icon: announcement.category.icon,
+                compact: true,
+              ),
+              const Spacer(),
+              Text(
+                timeAgo(announcement.publishAt ?? announcement.createdAt),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: EcoSpace.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (announcement.image != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
+                  child: Image.memory(
+                    _bytes(announcement.image!.dataUrl),
+                    height: 54,
+                    width: 54,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: EcoSpace.sm),
+              ],
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        StatusBadge(
-                          label: items[i].category.shortLabel,
-                          color: items[i].category.color,
-                          icon: items[i].category.icon,
-                          compact: true,
-                        ),
-                        const Spacer(),
-                        Text(
-                          timeAgo(items[i].publishAt ?? items[i].createdAt),
-                          style: const TextStyle(
-                            fontSize: 9,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     Text(
-                      items[i].title,
+                      announcement.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.darkGreen,
-                      ),
+                      style: EcoType.cardTitle(context),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
-                      items[i].body,
+                      announcement.body,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        height: 1.5,
+                      style: EcoType.bodySmall(
+                        context,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -951,9 +1149,91 @@ class _LatestAnnouncements extends StatelessWidget {
                 ),
               ),
             ],
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
+}
+
+/// A single quiet line where a feed would be. Cheaper and calmer than an
+/// empty-state panel inside an already long dashboard.
+class _QuietCard extends StatelessWidget {
+  const _QuietCard({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return EcoCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.inkMuted),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StripSkeleton extends StatelessWidget {
+  const _StripSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 26),
+      child: Row(
+        children: [
+          for (var i = 0; i < 2; i++) ...[
+            if (i > 0) const SizedBox(width: EcoSpace.sm),
+            const Expanded(child: SkeletonBox(height: double.infinity)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Right-edge fade for a horizontal row that runs past the screen.
+class _EdgeFade extends StatelessWidget {
+  const _EdgeFade();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 0,
+      top: 0,
+      bottom: 0,
+      width: 26,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                AppColors.background.withValues(alpha: 0),
+                AppColors.background,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Uint8List _bytes(String dataUrl) {
+  final comma = dataUrl.indexOf(',');
+  if (comma < 0) return Uint8List(0);
+  return base64Decode(dataUrl.substring(comma + 1));
 }

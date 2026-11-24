@@ -6,13 +6,12 @@ import 'package:go_router/go_router.dart';
 
 void main() {
   group('desk tools', () {
-    testWidgets('keeps all twelve shortcuts and the count in the header', (
+    testWidgets('keeps all twelve shortcuts and no filler copy', (
       tester,
     ) async {
       await tester.pumpWidget(_wrap(const DeskTools(pendingSignatures: 2)));
 
       expect(find.text('DESK TOOLS'), findsOneWidget);
-      expect(find.textContaining('12 shortcuts'), findsOneWidget);
       expect(find.byType(EcoCard), findsNWidgets(12));
 
       for (final label in const [

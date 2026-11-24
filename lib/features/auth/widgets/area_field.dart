@@ -64,10 +64,7 @@ class AreaField extends StatelessWidget {
 
 /// Opens the searchable area sheet and returns the picked area, or null when
 /// the resident dismissed it.
-Future<String?> showAreaPicker(
-  BuildContext context, {
-  String? selected,
-}) {
+Future<String?> showAreaPicker(BuildContext context, {String? selected}) {
   return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -122,14 +119,6 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Container(
-              height: 4,
-              width: 44,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
               child: Row(

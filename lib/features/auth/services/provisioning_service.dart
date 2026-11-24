@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../driver/models/truck_crew_role.dart';
 import '../models/user.dart';
 
-/// What City Hall asked to create.
+/// A login the desk asked to create.
+///
+/// Credentials only: the plate is not chosen here. A driver meets his truck in
+/// the collection manual Iswim writes, which is the assignment record.
 class ProvisionRequest {
   const ProvisionRequest({
     required this.name,
@@ -14,7 +16,6 @@ class ProvisionRequest {
     required this.password,
     required this.role,
     this.crewRole = TruckCrewRole.driver,
-    this.truckId,
     this.phone,
   });
 
@@ -26,13 +27,10 @@ class ProvisionRequest {
   /// Only meaningful for [UserRole.driver]: a driver or a guide.
   final TruckCrewRole crewRole;
 
-  /// Only meaningful for [UserRole.driver]: the truck he holds.
-  final String? truckId;
-
   final String? phone;
 }
 
-/// A staff account as City Hall sees it in the list.
+/// A staff account as the desk sees it in the list.
 class ProvisionedAccount {
   const ProvisionedAccount({
     required this.uid,
@@ -41,7 +39,6 @@ class ProvisionedAccount {
     required this.role,
     required this.status,
     this.crewRole,
-    this.truckId,
   });
 
   final String uid;
@@ -50,18 +47,64 @@ class ProvisionedAccount {
   final UserRole role;
   final String status;
   final TruckCrewRole? crewRole;
-  final String? truckId;
 
   bool get isActive => status == 'active';
 }
 
-/// Creates the logins the barangay cannot create for itself.
+/// What an account desk is allowed to see and change.
+///
+/// Two desks provision logins and neither may touch the other's people:
+/// Iswim owns the drivers, the barangay owns its truck guides. City Hall is
+/// the only one that sees every role, and no desk may manage an Iswim,
+/// City Hall or barangay login.
+enum AccountScope {
+  /// Iswim: the drivers who hold a plate. Not the guides.
+  drivers,
+
+  /// The barangay: its truck guides, and nothing else.
+  guides,
+
+  /// Not a desk that provisions logins.
+  none,
+}
+
+AccountScope accountScopeFor(UserRole? role) => switch (role) {
+  UserRole.iswim => AccountScope.drivers,
+  UserRole.admin => AccountScope.guides,
+  _ => AccountScope.none,
+};
+
+extension AccountScopeX on AccountScope {
+  bool get canProvision => this != AccountScope.none;
+
+  /// Whether this account belongs on the desk. A guide is a `driver` profile
+  /// with `crewRole: guide`, so the role alone cannot tell the two apart. A
+  /// driver provisioned before `crewRole` existed counts as a driver.
+  bool covers(ProvisionedAccount account) {
+    if (account.role != UserRole.driver) return false;
+    final isGuide = account.crewRole == TruckCrewRole.guide;
+    return switch (this) {
+      AccountScope.drivers => !isGuide,
+      AccountScope.guides => isGuide,
+      AccountScope.none => false,
+    };
+  }
+
+  /// The one kind of crew login the desk may create.
+  TruckCrewRole? get kind => switch (this) {
+    AccountScope.drivers => TruckCrewRole.driver,
+    AccountScope.guides => TruckCrewRole.guide,
+    AccountScope.none => null,
+  };
+}
+
+/// Creates the crew logins no resident can sign up for.
 ///
 /// A client SDK sign-up normally replaces whoever is signed in, which would
-/// throw City Hall out of the console mid-shift. The account is therefore made
+/// throw the desk out of the console mid-shift. The account is therefore made
 /// on a **secondary** Firebase app: that app holds its own session, so the
 /// console stays signed in while the new login is created. The profile is then
-/// written from the primary app, so the Firestore rules see City Hall as the
+/// written from the primary app, so the Firestore rules see the desk as the
 /// author of the write.
 class ProvisioningService {
   ProvisioningService._();
@@ -75,47 +118,44 @@ class ProvisioningService {
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection('users');
 
-  /// Every account City Hall (or the barangay desk) is responsible for.
-  Stream<List<ProvisionedAccount>> watchAccounts() {
+  /// The crew accounts this desk is responsible for.
+  ///
+  /// Scoped at the query, not only on screen: the barangay must not receive
+  /// an Iswim or City Hall profile over the wire at all, and the rules would
+  /// refuse a write to one anyway.
+  Stream<List<ProvisionedAccount>> watchAccounts(AccountScope scope) {
+    if (!scope.canProvision) return Stream.value(const <ProvisionedAccount>[]);
     return _users
-        .where(
-          'role',
-          whereIn: ['iswim', 'driver', 'admin', 'cityHall', 'auditor'],
-        )
+        .where('role', isEqualTo: UserRole.driver.name)
         .snapshots()
         .map((snap) {
-          final accounts = snap.docs.map((doc) {
-            final data = doc.data();
-            final email = data['email'] as String? ?? '';
-            final name = (data['name'] as String?)?.trim();
-            return ProvisionedAccount(
-              uid: doc.id,
-              name: (name == null || name.isEmpty)
-                  ? (email.isEmpty ? 'No name' : email.split('@').first)
-                  : name,
-              email: email,
-              role: UserRole.values.firstWhere(
-                (role) => role.name == data['role'],
-                orElse: () => UserRole.user,
-              ),
-              status: data['accountStatus'] as String? ?? 'active',
-              crewRole: data['crewRole'] == null
-                  ? null
-                  : TruckCrewRoleX.fromName(data['crewRole'] as String?),
-              truckId: data['assignedTruckId'] as String?,
-            );
-          }).toList();
-          // Newest roles first: the people who sign tickets, then the crews.
-          int rank(UserRole role) => switch (role) {
-            UserRole.cityHall => 0,
-            UserRole.iswim => 1,
-            UserRole.admin => 2,
-            UserRole.auditor => 3,
-            UserRole.driver => 4,
-            UserRole.user => 5,
-          };
+          final accounts = snap.docs
+              .map((doc) {
+                final data = doc.data();
+                final email = data['email'] as String? ?? '';
+                final name = (data['name'] as String?)?.trim();
+                return ProvisionedAccount(
+                  uid: doc.id,
+                  name: (name == null || name.isEmpty)
+                      ? (email.isEmpty ? 'No name' : email.split('@').first)
+                      : name,
+                  email: email,
+                  role: UserRole.values.firstWhere(
+                    (role) => role.name == data['role'],
+                    orElse: () => UserRole.user,
+                  ),
+                  status: data['accountStatus'] as String? ?? 'active',
+                  crewRole: data['crewRole'] == null
+                      ? null
+                      : TruckCrewRoleX.fromName(data['crewRole'] as String?),
+                );
+              })
+              .where(scope.covers)
+              .toList();
+          // Drivers before the guides who ride with them, then by name.
           accounts.sort((a, b) {
-            final byRole = rank(a.role).compareTo(rank(b.role));
+            final byRole = (a.crewRole == TruckCrewRole.guide ? 1 : 0)
+                .compareTo(b.crewRole == TruckCrewRole.guide ? 1 : 0);
             return byRole != 0 ? byRole : a.name.compareTo(b.name);
           });
           return accounts;
@@ -124,8 +164,12 @@ class ProvisioningService {
 
   /// Creates the login and its profile. Returns the new uid.
   ///
-  /// The password is returned nowhere: it is shown once on screen for City
-  /// Hall to hand over, and Firebase never reveals it again.
+  /// Credentials only. The plate is assigned later, in the collection manual
+  /// Iswim writes — that is the assignment record, and it is what stamps the
+  /// driver onto the truck. A brand-new driver therefore holds no truck yet.
+  ///
+  /// The password is returned nowhere: it is shown once on screen for the desk
+  /// to hand over, and Firebase never reveals it again.
   Future<String> create(ProvisionRequest request) async {
     final email = request.email.trim().toLowerCase();
     final name = request.name.trim();
@@ -168,8 +212,6 @@ class ProvisioningService {
           'phone': request.phone!.trim(),
         if (request.role == UserRole.driver)
           'crewRole': request.crewRole.wireName,
-        if (request.truckId != null && request.truckId!.isNotEmpty)
-          'assignedTruckId': request.truckId,
       });
     } catch (e) {
       // A login without a profile can never sign in, so it is safe to leave
@@ -180,29 +222,7 @@ class ProvisioningService {
       );
     }
 
-    if (request.role == UserRole.driver &&
-        request.truckId != null &&
-        request.truckId!.isNotEmpty) {
-      await _linkTruck(request.truckId!, uid, name);
-    }
-
     return uid;
-  }
-
-  /// Stamps the crew onto the truck, so Iswim's ticket form shows the account
-  /// instead of "no login account".
-  Future<void> _linkTruck(String truckId, String uid, String name) async {
-    try {
-      await _db.collection('trucks').doc(truckId).set({
-        'driverAccountId': uid,
-        'driverName': name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      // The account exists and works; the truck link can be redone from the
-      // fleet screen, so this is not worth failing the whole provisioning.
-      debugPrint('Truck link failed for $truckId: $e');
-    }
   }
 
   /// A sign-in / sign-out of this account, used to hand the phone to the crew

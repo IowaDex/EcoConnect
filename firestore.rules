@@ -61,6 +61,12 @@ service cloud.firestore {
         && profile(request.auth.uid).get('crewRole', '') in ['driver', 'guide'];
     }
 
+    // A guide is a driver profile with crewRole 'guide'. The barangay makes
+    // those logins, and they are the only crew accounts it may touch.
+    function isGuideProfile(data) {
+      return data.role == 'driver' && data.get('crewRole', '') == 'guide';
+    }
+
     // A deleted user keeps their login, so access also requires a profile.
     function hasProfile(uid) {
       return exists(/databases/$(database)/documents/users/$(uid));
@@ -184,13 +190,13 @@ service cloud.firestore {
       // Iswim needs the driver directory to issue tickets; City Hall needs it
       // to provision the accounts Iswim asks for.
       allow read: if isSelf(userId) || isAdmin() || isIswim() || isCityHall();
-      // Two ways a profile is born:
+      // Three ways a profile is born:
       //  1. self sign-up — residents only, pending until the barangay checks
       //     their ID. Confirming their email (the Firebase link) and that ID
       //     check both come before they may sign in;
-      //  2. City Hall provisions every crew, staff and Iswim login, and Iswim
-      //     provisions its own colleagues and the crew logins. Those profiles
-      //     arrive already active. The barangay creates no accounts.
+      //  2. City Hall provisions every crew, staff and Iswim login;
+      //  3. Iswim provisions the crew, and the barangay provisions its own
+      //     truck guides. Those profiles arrive already active.
       allow create: if (isSelf(userId)
         && !isRemoved(userId)
         && request.resource.data.role == 'user'
@@ -214,18 +220,31 @@ service cloud.firestore {
               || request.resource.data.accountType in ['resident', 'government'])
           && !('points' in request.resource.data)
           && photoOk(request.resource.data))
-        // Iswim provisions its own colleagues and the crew logins. It can
-        // never mint a barangay, City Hall or audit account.
+        // Iswim provisions the drivers — the people who hold a plate — and
+        // nothing else. The guides belong to the barangay; its own colleagues,
+        // City Hall and the auditors are City Hall's to create.
         || (isIswim()
           && !isRemoved(userId)
-          && request.resource.data.role in ['iswim', 'driver']
+          && request.resource.data.role == 'driver'
+          && request.resource.data.get('crewRole', '') == 'driver'
+          && request.resource.data.accountStatus == 'active'
+          && (!('accountType' in request.resource.data)
+              || request.resource.data.accountType in ['resident', 'government'])
+          && !('points' in request.resource.data)
+          && photoOk(request.resource.data))
+        // The barangay makes the logins for its own truck guides, and only
+        // guides: never a driver, never Iswim, City Hall or a colleague.
+        || (isAdmin()
+          && !isRemoved(userId)
+          && isGuideProfile(request.resource.data)
           && request.resource.data.accountStatus == 'active'
           && (!('accountType' in request.resource.data)
               || request.resource.data.accountType in ['resident', 'government'])
           && !('points' in request.resource.data)
           && photoOk(request.resource.data));
-      // The barangay cannot mint accounts. It reviews the ones that arrive
-      // (see the update rule below), but provisioning belongs to City Hall.
+      // Every desk keeps its own people. The barangay reviews the residents
+      // who signed up and suspends its guides; Iswim suspends the crew. An
+      // Iswim, City Hall or colleague admin login is nobody else's to change.
       allow update: if (isSelf(userId)
           && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['role', 'accountStatus', 'points', 'pointsUpdatedAt',
@@ -243,13 +262,25 @@ service cloud.firestore {
           && residentAnswer()
           && photoOk(request.resource.data))
         || isCityHall()
-        // The barangay desk reviews accounts but never hands out roles: a
-        // driver, Iswim or City Hall login is provisioned by City Hall.
+        // The barangay keeps its own guides and reviews the residents who
+        // signed up. It never hands out roles, and an Iswim, City Hall or
+        // colleague admin login is not its to touch.
         || (isAdmin()
             && !request.resource.data.diff(resource.data).affectedKeys()
-                  .hasAny(['role']));
-      // Not their own profile: that would lock the admin out for good.
-      allow delete: if isAdmin() && request.auth.uid != userId;
+                  .hasAny(['role'])
+            && (resource.data.role == 'user' || isGuideProfile(resource.data)))
+        // Iswim runs the drivers: suspend one, nothing more. A guide is the
+        // barangay's, and a profile from before crewRole existed is a driver.
+        || (isIswim()
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['role'])
+            && resource.data.role == 'driver'
+            && resource.data.get('crewRole', 'driver') == 'driver');
+      // Not their own profile: that would lock the admin out for good. And
+      // only its own people: a resident being removed, or one of its guides.
+      allow delete: if (isAdmin()
+        && request.auth.uid != userId
+        && (resource.data.role == 'user' || isGuideProfile(resource.data)));
 
       // Private location history: only its owner can read it. Staff can read
       // it solely once the user is being deleted (the tombstone exists), so the

@@ -7,14 +7,15 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
-import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/section_header.dart';
-import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../services/memo_service.dart';
 import '../widgets/memo_widgets.dart';
@@ -184,6 +185,7 @@ class _MemoComposeScreenState extends State<MemoComposeScreen> {
             child: Column(
               children: [
                 AppPageHeader(
+                  eyebrow: 'MEMO DESK · COMPOSE',
                   title: _editing ? 'Edit memo' : 'New memo',
                   subtitle: _editing
                       ? 'Correct the details before the receiving desk opens it.'
@@ -773,6 +775,9 @@ class _SendBar extends StatelessWidget {
 }
 
 /// Inbox and sent history of memos for one desk.
+/// The two lists a memo desk works through.
+enum _MemoTab { inbox, sent }
+
 class MemoInboxScreen extends StatefulWidget {
   const MemoInboxScreen({
     super.key,
@@ -788,7 +793,7 @@ class MemoInboxScreen extends StatefulWidget {
 }
 
 class _MemoInboxScreenState extends State<MemoInboxScreen> {
-  int _tab = 0;
+  _MemoTab _tab = _MemoTab.inbox;
   int _page = 0;
   int _pageSize = 10;
 
@@ -821,11 +826,12 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
     });
   }
 
-  void _switchTab(int value) {
+  void _switchTab(_MemoTab tab) {
+    if (tab == _tab) return;
     // A query typed for the inbox should not silently hide the outbox.
     _search.clear();
     setState(() {
-      _tab = value;
+      _tab = tab;
       _query = '';
       _page = 0;
     });
@@ -844,219 +850,222 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
         : MemoService().watchSentByDesk(_roleKey(user.role));
   }
 
+  /// The desk the inbox belongs to, so the page says where you are once.
+  String get _eyebrow => switch (widget.channel) {
+    'iswim' => 'ISWIM · MEMO DESK',
+    'barangay' => 'BARANGAY · MEMO DESK',
+    _ => 'CITY HALL · MEMO DESK',
+  };
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
+    final inboxTab = _tab == _MemoTab.inbox;
 
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      floatingActionButton: user == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => context.push(
-                '/memos/new?channel=${_composeChannel(user.role)}',
-              ),
-              backgroundColor: AppColors.forest,
-              foregroundColor: Colors.white,
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(EcoRadius.lg),
-              ),
-              icon: const Icon(Icons.edit_note_rounded, size: 19),
-              label: const Text(
-                'Compose',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
+    return EcoPageScaffold(
+      eyebrow: _eyebrow,
+      title: widget.title,
+      icon: Icons.mail_outline_rounded,
+      subtitle: inboxTab
+          ? 'Memos addressed to this desk, newest first.'
+          : 'Everything this desk has sent, with its delivery status.',
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          // The inbox is opened from three different consoles, so go back to
+          // the caller's own home.
+          final role = context.read<AuthProvider>().currentUser?.role;
+          context.go(switch (role) {
+            UserRole.iswim => '/iswim',
+            UserRole.admin => '/admin-dashboard',
+            _ => '/cityhall',
+          });
+        }
+      },
+      actions: [
+        if (user != null)
+          _ComposeAction(
+            onTap: () => context.push(
+              '/memos/new?channel=${_composeChannel(user.role)}',
             ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: StreamBuilder<List<Memo>>(
-              stream: _inbox,
-              builder: (context, inboxSnap) {
-                return StreamBuilder<List<Memo>>(
-                  stream: _sent,
-                  builder: (context, sentSnap) {
-                    final inbox = inboxSnap.data ?? const <Memo>[];
-                    final sent = sentSnap.data ?? const <Memo>[];
-                    final inboxLoading =
-                        inboxSnap.connectionState == ConnectionState.waiting;
-                    final sentLoading =
-                        _sent != null &&
-                        sentSnap.connectionState == ConnectionState.waiting;
-                    final inboxTab = _tab == 0;
-                    final pending = inbox
-                        .where((memo) => !memo.isSigned)
-                        .length;
-                    final acknowledged = sent
-                        .where((memo) => memo.isSigned)
-                        .length;
-                    final showSummary = inboxTab
-                        ? !inboxSnap.hasError &&
-                              (inboxLoading || inbox.isNotEmpty)
-                        : !sentSnap.hasError &&
-                              (sentLoading || sent.isNotEmpty);
-                    final source = inboxTab ? inbox : sent;
-                    final searching = _query.trim().isNotEmpty;
-                    final visible = _filter(source);
-                    final page = clampPage(_page, visible.length, _pageSize);
-                    final paged = pageSlice(visible, page, _pageSize);
+          ),
+      ],
+      body: StreamBuilder<List<Memo>>(
+        stream: _inbox,
+        builder: (context, inboxSnap) {
+          return StreamBuilder<List<Memo>>(
+            stream: _sent,
+            builder: (context, sentSnap) {
+              final inbox = inboxSnap.data ?? const <Memo>[];
+              final sent = sentSnap.data ?? const <Memo>[];
+              final snapshot = inboxTab ? inboxSnap : sentSnap;
+              final source = inboxTab ? inbox : sent;
+              final visible = _filter(source);
+              final page = clampPage(_page, visible.length, _pageSize);
+              final paged = pageSlice(visible, page, _pageSize);
 
-                    return Column(
-                      children: [
-                        AppPageHeader(
-                          title: widget.title,
-                          subtitle: inboxTab
-                              ? 'Memos addressed to this desk, newest first.'
-                              : 'Everything this desk has sent, with its delivery status.',
-                          onBack: () {
-                            if (context.canPop()) {
-                              context.pop();
-                            } else {
-                              // The inbox is opened from three different
-                              // consoles, so go back to the caller's own home.
-                              final role = context
-                                  .read<AuthProvider>()
-                                  .currentUser
-                                  ?.role;
-                              context.go(switch (role) {
-                                UserRole.iswim => '/iswim',
-                                UserRole.admin => '/admin-dashboard',
-                                _ => '/cityhall',
-                              });
-                            }
-                          },
+              final awaiting = inbox.where((memo) => !memo.isSigned).length;
+              final acknowledged = sent.where((memo) => memo.isSigned).length;
+
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: DeskSegmented<_MemoTab>(
+                      value: _tab,
+                      onChanged: _switchTab,
+                      segments: [
+                        DeskSegment(
+                          value: _MemoTab.inbox,
+                          label: 'Inbox',
+                          icon: Icons.inbox_rounded,
+                          count: inbox.length,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: _DeskSwitch(
-                            tab: _tab,
-                            inboxCount: inboxLoading ? null : inbox.length,
-                            sentCount: sentLoading ? null : sent.length,
-                            onChanged: _switchTab,
-                          ),
+                        DeskSegment(
+                          value: _MemoTab.sent,
+                          label: 'Sent',
+                          icon: Icons.send_rounded,
+                          count: sent.length,
                         ),
-                        if (showSummary) ...[
-                          const SizedBox(height: EcoSpace.sm),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: AnimatedSwitcher(
-                              duration: EcoMotion.base,
-                              child: inboxTab
-                                  ? _InboxSummary(
-                                      key: const ValueKey('inbox-summary'),
-                                      pending: pending,
-                                      loading: inboxLoading,
-                                    )
-                                  : _SentSummary(
-                                      key: const ValueKey('sent-summary'),
-                                      acknowledged: acknowledged,
-                                      total: sent.length,
-                                      loading: sentLoading,
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: snapshot.hasError
+                        ? EmptyState(
+                            icon: Icons.cloud_off_rounded,
+                            title: 'Could not load memos',
+                            message: AppFeedback.describe(snapshot.error!),
+                          )
+                        : !snapshot.hasData
+                        ? const EcoLoadingView(label: 'Loading memos')
+                        : DeskQueueView(
+                            metrics: inboxTab
+                                ? [
+                                    DeskMetric(
+                                      icon: Icons.mark_email_unread_rounded,
+                                      label: 'Awaiting',
+                                      value: '$awaiting',
+                                      accent: AppColors.warning,
+                                      highlight: awaiting > 0,
                                     ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: EcoSpace.md),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: EcoSearchField(
-                            controller: _search,
-                            hint: inboxTab
-                                ? 'Search subject, sender or kind'
-                                : 'Search subject, recipient or kind',
-                            onChanged: (value) => setState(() {
-                              _query = value;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                        AnimatedSize(
-                          duration: EcoMotion.fast,
-                          curve: EcoMotion.enter,
-                          alignment: Alignment.topCenter,
-                          child: searching
-                              ? Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    EcoSpace.xs + 2,
-                                    20,
-                                    0,
-                                  ),
-                                  child: EcoResultCount(
-                                    shown: visible.length,
-                                    total: source.length,
-                                    singular: 'memo',
-                                    plural: 'memos',
-                                  ),
-                                )
-                              : const SizedBox(width: double.infinity),
-                        ),
-                        const SizedBox(height: EcoSpace.sm),
-                        Expanded(
-                          child: _MemoList(
-                            memos: paged,
-                            loading: inboxTab ? inboxLoading : sentLoading,
-                            error: inboxTab ? inboxSnap.error : sentSnap.error,
-                            emptyTitle: searching
-                                ? 'No memo matches'
-                                : inboxTab
-                                ? 'No memos in the inbox'
-                                : 'Nothing sent yet',
-                            emptyMessage: searching
-                                ? 'Nothing in this desk mentions '
-                                      '"${_query.trim()}". Try a shorter word, '
-                                      'a name or a kind.'
-                                : inboxTab
-                                ? 'Memos addressed to this desk appear here in real time.'
-                                : 'Memos sent from this desk are listed here with their status.',
-                            emptyActionLabel: searching
-                                ? 'Clear search'
-                                : inboxTab
-                                ? null
-                                : 'Compose a memo',
-                            onEmptyAction: searching
-                                ? _clearSearch
-                                : inboxTab || user == null
-                                ? null
-                                : () => context.push(
-                                    '/memos/new?channel=${_composeChannel(user.role)}',
-                                  ),
-                            highlightUnsigned: inboxTab,
-                            emptyIcon: searching
-                                ? Icons.search_off_rounded
-                                : Icons.mail_outline_rounded,
-                          ),
-                        ),
-                        if (visible.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              20,
-                              0,
-                              20,
-                              EcoSpace.sm,
-                            ),
-                            child: EcoPaginationBar(
-                              page: page,
-                              pageSize: _pageSize,
-                              total: visible.length,
-                              onPageChanged: (next) =>
-                                  setState(() => _page = next),
-                              onPageSizeChanged: (size) => setState(() {
-                                _pageSize = size;
+                                    DeskMetric(
+                                      icon: Icons.verified_rounded,
+                                      label: 'Signed',
+                                      value: '${inbox.length - awaiting}',
+                                    ),
+                                    DeskMetric(
+                                      icon: Icons.inbox_rounded,
+                                      label: 'Total',
+                                      value: '${inbox.length}',
+                                    ),
+                                  ]
+                                : [
+                                    DeskMetric(
+                                      icon: Icons.done_all_rounded,
+                                      label: 'Acknowledged',
+                                      value: '$acknowledged',
+                                    ),
+                                    DeskMetric(
+                                      icon: Icons.hourglass_empty_rounded,
+                                      label: 'Waiting',
+                                      value: '${sent.length - acknowledged}',
+                                      accent: AppColors.warning,
+                                    ),
+                                    DeskMetric(
+                                      icon: Icons.send_rounded,
+                                      label: 'Sent',
+                                      value: '${sent.length}',
+                                    ),
+                                  ],
+                            search: EcoSearchField(
+                              controller: _search,
+                              hint: inboxTab
+                                  ? 'Search subject, sender or kind'
+                                  : 'Search subject, recipient or kind',
+                              onChanged: (value) => setState(() {
+                                _query = value;
                                 _page = 0;
                               }),
                             ),
+                            resultLine: DeskResultLine(
+                              label: _query.trim().isEmpty
+                                  ? '${visible.length} '
+                                        '${visible.length == 1 ? 'memo' : 'memos'}'
+                                  : 'Showing ${visible.length} of '
+                                        '${source.length}',
+                              onClear: _query.trim().isEmpty
+                                  ? null
+                                  : _clearSearch,
+                            ),
+                            empty: source.isEmpty
+                                ? DeskEmptyQueue(
+                                    icon: Icons.mail_outline_rounded,
+                                    title: inboxTab
+                                        ? 'No memos in the inbox'
+                                        : 'Nothing sent yet',
+                                    message: inboxTab
+                                        ? 'Memos addressed to this desk appear '
+                                              'here in real time.'
+                                        : 'Memos sent from this desk are '
+                                              'listed here with their status.',
+                                    steps: const [
+                                      'A desk composes the memo',
+                                      'It lands in the receiving inbox',
+                                      'Signing it closes the record',
+                                    ],
+                                    actionLabel: inboxTab
+                                        ? null
+                                        : 'Compose a memo',
+                                    actionIcon: Icons.edit_note_rounded,
+                                    onAction: inboxTab || user == null
+                                        ? null
+                                        : () => context.push(
+                                            '/memos/new?channel='
+                                            '${_composeChannel(user.role)}',
+                                          ),
+                                  )
+                                : DeskEmptyQueue(
+                                    icon: Icons.search_off_rounded,
+                                    title: 'No memo matches',
+                                    message:
+                                        'Nothing in this desk mentions '
+                                        '"${_query.trim()}". Try a shorter '
+                                        'word, a name or a kind.',
+                                    actionLabel: 'Clear search',
+                                    actionIcon: Icons.search_off_rounded,
+                                    onAction: _clearSearch,
+                                  ),
+                            itemCount: paged.length,
+                            itemBuilder: (context, i) => FadeSlideIn(
+                              index: i > 6 ? 6 : i,
+                              offset: 10,
+                              child: MemoCard(
+                                memo: paged[i],
+                                needsAction: inboxTab && !paged[i].isSigned,
+                              ),
+                            ),
+                            pagination: visible.isEmpty
+                                ? null
+                                : EcoPaginationBar(
+                                    page: page,
+                                    pageSize: _pageSize,
+                                    total: visible.length,
+                                    onPageChanged: (next) =>
+                                        setState(() => _page = next),
+                                    onPageSizeChanged: (size) => setState(() {
+                                      _pageSize = size;
+                                      _page = 0;
+                                    }),
+                                  ),
                           ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1078,452 +1087,33 @@ class _MemoInboxScreenState extends State<MemoInboxScreen> {
   };
 }
 
-/// Segmented Inbox / Sent switch with live counts.
-class _DeskSwitch extends StatelessWidget {
-  const _DeskSwitch({
-    required this.tab,
-    required this.inboxCount,
-    required this.sentCount,
-    required this.onChanged,
-  });
+/// The compose action in the page header.
+///
+/// A header pill rather than a floating button: the FAB sat on top of the
+/// pagination bar and forced every list to reserve 96px of empty space.
+class _ComposeAction extends StatelessWidget {
+  const _ComposeAction({required this.onTap});
 
-  final int tab;
-  final int? inboxCount;
-  final int? sentCount;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(EcoSpace.xxs),
-      decoration: BoxDecoration(
-        color: AppColors.cream,
-        borderRadius: BorderRadius.circular(EcoRadius.pill),
-        border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
-      ),
-      child: Row(
-        children: [
-          _DeskSegment(
-            icon: Icons.inbox_rounded,
-            label: 'Inbox',
-            count: inboxCount,
-            selected: tab == 0,
-            onTap: () => onChanged(0),
-          ),
-          _DeskSegment(
-            icon: Icons.send_rounded,
-            label: 'Sent',
-            count: sentCount,
-            selected: tab == 1,
-            onTap: () => onChanged(1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeskSegment extends StatelessWidget {
-  const _DeskSegment({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final int? count;
-  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: EcoMotion.fast,
-          curve: EcoMotion.enter,
-          padding: const EdgeInsets.symmetric(vertical: EcoSpace.sm),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.forest : Colors.transparent,
-            borderRadius: BorderRadius.circular(EcoRadius.pill),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: selected ? Colors.white : AppColors.inkMuted,
-              ),
-              const SizedBox(width: EcoSpace.xs),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? Colors.white : AppColors.inkMuted,
-                ),
-              ),
-              if (count != null && count! > 0) ...[
-                const SizedBox(width: EcoSpace.xs),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? Colors.white.withValues(alpha: 0.18)
-                        : AppColors.mint,
-                    borderRadius: BorderRadius.circular(EcoRadius.pill),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w800,
-                      color: selected ? Colors.white : AppColors.forest,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
+    return SizedBox(
+      height: 34,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.edit_note_rounded, size: 16),
+        label: const Text(
+          'Compose',
+          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
         ),
-      ),
-    );
-  }
-}
-
-/// What needs attention in the inbox, or the all-clear.
-class _InboxSummary extends StatelessWidget {
-  const _InboxSummary({
-    super.key,
-    required this.pending,
-    required this.loading,
-  });
-
-  final int pending;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final clear = pending == 0;
-    final tint = clear ? AppColors.moss : AppColors.warning;
-
-    return Container(
-      padding: const EdgeInsets.all(EcoSpace.sm + 2),
-      decoration: BoxDecoration(
-        color: clear
-            ? AppColors.mint
-            : AppColors.warning.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(EcoRadius.md),
-        border: Border.all(
-          color: clear
-              ? AppColors.sage
-              : AppColors.warning.withValues(alpha: 0.45),
-        ),
-      ),
-      child: loading
-          ? const Row(
-              children: [
-                SkeletonBox(width: 34, height: 34, radius: 10),
-                SizedBox(width: EcoSpace.sm),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonBox(width: 168, height: 11),
-                    SizedBox(height: 6),
-                    SkeletonBox(width: 220, height: 9, radius: 4),
-                  ],
-                ),
-              ],
-            )
-          : Row(
-              children: [
-                Container(
-                  height: 34,
-                  width: 34,
-                  decoration: BoxDecoration(
-                    color: tint.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(EcoRadius.sm),
-                  ),
-                  child: Icon(
-                    clear
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.mark_email_unread_outlined,
-                    size: 17,
-                    color: tint,
-                  ),
-                ),
-                const SizedBox(width: EcoSpace.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        clear
-                            ? 'You are all caught up'
-                            : '$pending waiting for acknowledgement',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.forest,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        clear
-                            ? 'No memo needs your signature right now.'
-                            : 'Open a memo to review it and sign.',
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          height: 1.35,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!clear)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning,
-                      borderRadius: BorderRadius.circular(EcoRadius.pill),
-                    ),
-                    child: Text(
-                      '$pending',
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-    );
-  }
-}
-
-/// How much of the outbox the receiving desks have acknowledged.
-class _SentSummary extends StatelessWidget {
-  const _SentSummary({
-    super.key,
-    required this.acknowledged,
-    required this.total,
-    required this.loading,
-  });
-
-  final int acknowledged;
-  final int total;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final ratio = total == 0 ? 0.0 : acknowledged / total;
-
-    return Container(
-      padding: const EdgeInsets.all(EcoSpace.sm + 2),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(EcoRadius.md),
-        border: Border.all(color: AppColors.sage),
-      ),
-      child: loading
-          ? const Row(
-              children: [
-                SkeletonBox(width: 34, height: 34, radius: 10),
-                SizedBox(width: EcoSpace.sm),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonBox(width: 168, height: 11),
-                    SizedBox(height: 6),
-                    SkeletonBox(width: 220, height: 9, radius: 4),
-                  ],
-                ),
-              ],
-            )
-          : Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      height: 34,
-                      width: 34,
-                      decoration: BoxDecoration(
-                        color: AppColors.mint,
-                        borderRadius: BorderRadius.circular(EcoRadius.sm),
-                      ),
-                      child: const Icon(
-                        Icons.done_all_rounded,
-                        size: 17,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    const SizedBox(width: EcoSpace.sm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '$acknowledged of $total acknowledged',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'The rest are waiting for the receiving desk.',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              height: 1.35,
-                              color: AppColors.inkMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${(ratio * 100).round()}%',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.moss,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: EcoSpace.sm),
-                GrowBar(value: ratio),
-              ],
-            ),
-    );
-  }
-}
-
-class _MemoList extends StatelessWidget {
-  const _MemoList({
-    required this.memos,
-    required this.loading,
-    required this.error,
-    required this.emptyTitle,
-    required this.emptyMessage,
-    this.emptyActionLabel,
-    this.onEmptyAction,
-    this.highlightUnsigned = false,
-    this.emptyIcon = Icons.mail_outline_rounded,
-  });
-
-  final List<Memo> memos;
-  final bool loading;
-  final Object? error;
-  final String emptyTitle;
-  final String emptyMessage;
-  final String? emptyActionLabel;
-  final VoidCallback? onEmptyAction;
-  final bool highlightUnsigned;
-  final IconData emptyIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    if (error != null) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
-        children: [
-          EcoBanner(
-            message: AppFeedback.describe(error!),
-            icon: Icons.cloud_off_rounded,
-            color: AppColors.error,
-          ),
-        ],
-      );
-    }
-    if (loading) return const _MemoSkeleton();
-    if (memos.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
-        children: [
-          const SizedBox(height: EcoSpace.xl),
-          EmptyState(
-            icon: emptyIcon,
-            title: emptyTitle,
-            message: emptyMessage,
-            actionLabel: emptyActionLabel,
-            onAction: onEmptyAction,
-          ),
-        ],
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(20, 2, 20, 96),
-      itemCount: memos.length,
-      separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
-      itemBuilder: (context, i) => FadeSlideIn(
-        index: i,
-        offset: 10,
-        child: MemoCard(
-          memo: memos[i],
-          needsAction: highlightUnsigned && !memos[i].isSigned,
-        ),
-      ),
-    );
-  }
-}
-
-class _MemoSkeleton extends StatelessWidget {
-  const _MemoSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(20, 2, 20, 96),
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: 3,
-      separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
-      itemBuilder: (context, i) => Container(
-        padding: const EdgeInsets.all(EcoSpace.md),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(EcoRadius.lg),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
-        ),
-        child: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                SkeletonBox(width: 34, height: 34, radius: 10),
-                SizedBox(width: EcoSpace.sm),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonBox(width: 78, height: 9, radius: 4),
-                    SizedBox(height: 6),
-                    SkeletonBox(width: 188, height: 12, radius: 6),
-                  ],
-                ),
-              ],
-            ),
-            SizedBox(height: EcoSpace.sm + 2),
-            SkeletonBox(width: double.infinity, height: 10, radius: 5),
-            SizedBox(height: 7),
-            SkeletonBox(width: 214, height: 10, radius: 5),
-            SizedBox(height: EcoSpace.sm + 2),
-            SkeletonBox(width: 160, height: 9, radius: 4),
-          ],
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.forest,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: const StadiumBorder(),
         ),
       ),
     );

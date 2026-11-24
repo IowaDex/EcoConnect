@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/motion.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../memos/services/memo_service.dart';
 import '../../memos/widgets/memo_widgets.dart';
@@ -25,32 +26,19 @@ class SignatureQueueScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 32),
-              children: [
-                AppPageHeader(
-                  title: 'Signature queue',
-                  subtitle:
-                      'The last step before a record is closed at City Hall.',
-                  onBack: () => context.pop(),
-                ),
-                const SizedBox(height: EcoSpace.xs),
-                const _SigningNote(),
-                const SizedBox(height: EcoSpace.lg),
-                const FadeSlideIn(index: 0, child: _MemoQueue()),
-                const SizedBox(height: EcoSpace.xl),
-                const FadeSlideIn(index: 1, child: _TicketQueue()),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return EcoPageScaffold(
+      title: 'Signature queue',
+      eyebrow: 'CITY HALL · DOCUMENT DESK',
+      subtitle: 'The last step before a record is closed at City Hall.',
+      icon: Icons.draw_rounded,
+      onBack: () => context.pop(),
+      children: const [
+        _SigningNote(),
+        SizedBox(height: EcoSpace.lg),
+        FadeSlideIn(index: 0, child: _MemoQueue()),
+        SizedBox(height: EcoSpace.xl),
+        FadeSlideIn(index: 1, child: _TicketQueue()),
+      ],
     );
   }
 }
@@ -68,20 +56,16 @@ class _SigningNote extends StatelessWidget {
         borderRadius: BorderRadius.circular(EcoRadius.md),
         border: Border.all(color: AppColors.sage.withValues(alpha: 0.65)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.draw_rounded, size: 16, color: AppColors.forest),
-          SizedBox(width: 9),
+          const Icon(Icons.draw_rounded, size: 16, color: AppColors.forest),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
               'Signing happens on the document itself — open a record to '
               'review it before you sign.',
-              style: TextStyle(
-                fontSize: 10.5,
-                height: 1.5,
-                color: AppColors.forest,
-              ),
+              style: EcoType.bodySmall(context, color: AppColors.forest),
             ),
           ),
         ],
@@ -194,63 +178,11 @@ class _QueueSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 34,
-              width: 34,
-              decoration: BoxDecoration(
-                color: AppColors.mint,
-                borderRadius: BorderRadius.circular(EcoRadius.sm + 2),
-              ),
-              child: Icon(icon, size: 16, color: AppColors.forest),
-            ),
-            const SizedBox(width: EcoSpace.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.1,
-                      color: AppColors.forest,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      height: 1.5,
-                      color: AppColors.inkMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (count != null && count! > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.warning,
-                  borderRadius: BorderRadius.circular(EcoRadius.pill),
-                ),
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-            ],
-          ],
+        DeskSectionHeader(
+          icon: icon,
+          title: title,
+          subtitle: subtitle,
+          count: count != null && count! > 0 ? count : null,
         ),
         const SizedBox(height: EcoSpace.sm),
         if (error != null)

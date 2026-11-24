@@ -19,7 +19,6 @@ import 'features/driver/screens/driver_profile_screen.dart';
 import 'features/admin/screens/admin_dashboard_screen.dart';
 import 'features/admin/screens/live_routes_screen.dart';
 import 'features/ai/screens/ask_ai_screen.dart';
-import 'features/alerts/screens/alerts_screen.dart';
 import 'features/community/screens/community_screen.dart';
 import 'features/community/screens/post_detail_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
@@ -191,6 +190,10 @@ const _staffRoutes = {
   '/audit-log',
   '/assignments',
   '/schedule',
+  // The barangay makes the logins for its own truck guides. The desk shows
+  // those guides only — Iswim's crew and the other staff desks are not its
+  // to manage.
+  '/accounts',
   ..._ticketRoutes,
   ..._sharedRoutes,
 };
@@ -406,14 +409,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/memos/:channel',
           builder: (_, state) {
             final channel = state.pathParameters['channel'] ?? 'cityHall';
-            return MemoInboxScreen(
-              channel: channel,
-              title: switch (channel) {
-                'iswim' => 'Memos · Iswim',
-                'barangay' => 'Memos · Barangay',
-                _ => 'Memos · City Hall',
-              },
-            );
+            return MemoInboxScreen(channel: channel, title: 'Memos');
           },
         ),
         GoRoute(path: '/email-log', builder: (_, __) => const EmailLogScreen()),
@@ -469,7 +465,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
               PostDetailScreen(postId: state.pathParameters['id'] ?? ''),
         ),
         GoRoute(path: '/ask-ai', builder: (_, __) => const AskAiScreen()),
-        GoRoute(path: '/alerts', builder: (_, __) => const AlertsScreen()),
+        // Alerts used to be a second, hard-coded copy of the notification
+        // list. One feed now: the real centre, with read state and routing.
+        GoRoute(path: '/alerts', redirect: (_, __) => '/notifications'),
         GoRoute(
           path: '/incidents',
           builder: (_, __) => const IncidentDeskScreen(),
@@ -562,7 +560,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
         ),
         GoRoute(
           path: '/assignments',
-          builder: (_, __) => const AssignmentScheduleScreen(staffView: true),
+          builder: (_, __) => const AssignmentScheduleScreen(),
         ),
         GoRoute(
           path: '/schedule',

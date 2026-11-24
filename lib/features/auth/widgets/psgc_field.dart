@@ -151,14 +151,6 @@ class _PsgcPickerSheetState extends State<_PsgcPickerSheet> {
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Container(
-              height: 4,
-              width: 44,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
               child: Row(

@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../models/desk_document.dart';
 
 /// One row in the City Hall desk.
 ///
-/// The card carries everything an officer needs before opening the document:
-/// what it is, who sent it, its reference number, the trip or barangay it
-/// belongs to and where it sits in the signature chain. The originating
-/// office is signalled by a thin accent strip and a small pill, so a long
-/// queue stays calm while remaining scannable.
+/// The card answers four questions before the officer opens anything: what it
+/// is, where it came from, which record it belongs to, and what happens next.
+/// The originating office is carried by a thin rail and a pill rather than a
+/// second header, so a long queue stays calm while remaining scannable.
+///
+/// It is built on [EcoCard], which supplies the hover lift and press dip every
+/// other desk surface has — the queue should feel like part of the product,
+/// not a list bolted onto it.
 class DeskDocumentCard extends StatelessWidget {
   const DeskDocumentCard({
     super.key,
@@ -41,64 +47,43 @@ class DeskDocumentCard extends StatelessWidget {
     return FadeSlideIn(
       index: index,
       offset: 8,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.75)),
-          boxShadow: AppColors.cardShadow,
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: EcoCard(
+        padding: EdgeInsets.zero,
+        onTap: onOpen,
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Subtle category indicator: a 3px strip on the leading edge.
+              // The rail is the office, so the queue can be scanned by colour
+              // before a single word is read.
               Container(
-                width: 3,
-                color: document.category.color.withValues(alpha: 0.55),
+                width: 4,
+                color: document.category.color.withValues(alpha: 0.7),
               ),
               Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onOpen,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(13, 12, 13, 11),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _head(),
-                          const SizedBox(height: 8),
-                          Text(
-                            document.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              height: 1.3,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          _sender(),
-                          const SizedBox(height: 9),
-                          _meta(),
-                          if (document.hasAttachment) ...[
-                            const SizedBox(height: 9),
-                            _attachment(),
-                          ],
-                          const SizedBox(height: 11),
-                          Container(
-                            height: 1,
-                            color: AppColors.sage.withValues(alpha: 0.55),
-                          ),
-                          const SizedBox(height: 9),
-                          _actions(),
-                        ],
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _head(context),
+                      const SizedBox(height: EcoSpace.xs + 2),
+                      Text(
+                        document.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.cardTitleLarge(
+                          context,
+                          color: AppColors.forest,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 5),
+                      _sender(context),
+                      const SizedBox(height: EcoSpace.sm),
+                      _meta(context),
+                      const SizedBox(height: EcoSpace.sm),
+                      _actions(context),
+                    ],
                   ),
                 ),
               ),
@@ -109,10 +94,10 @@ class DeskDocumentCard extends StatelessWidget {
     );
   }
 
-  Widget _head() {
-    // A Wrap, not a Row: the category, the document type and the status all
-    // fit on one line at normal sizes, and the status drops to its own line on
-    // a narrow phone instead of overflowing the card.
+  Widget _head(BuildContext context) {
+    // A Wrap, not a Row: the office, the document type and the status all fit
+    // on one line at normal sizes, and the status drops to its own line on a
+    // narrow phone instead of overflowing the card.
     return Wrap(
       spacing: 7,
       runSpacing: 5,
@@ -121,12 +106,7 @@ class DeskDocumentCard extends StatelessWidget {
         _CategoryPill(category: document.category),
         Text(
           document.kind.label,
-          style: const TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.2,
-            color: AppColors.inkMuted,
-          ),
+          style: EcoType.meta(context, color: AppColors.inkMuted),
         ),
         StatusBadge(
           label: document.status.label,
@@ -138,26 +118,18 @@ class DeskDocumentCard extends StatelessWidget {
     );
   }
 
-  Widget _sender() {
+  Widget _sender(BuildContext context) {
     return Row(
       children: [
-        const Icon(
-          Icons.person_outline_rounded,
-          size: 13,
-          color: AppColors.inkMuted,
-        ),
-        const SizedBox(width: 5),
+        DeskInitialAvatar(name: document.senderName, size: 22),
+        const SizedBox(width: 7),
         Flexible(
           flex: 3,
           child: Text(
             document.senderName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
+            style: EcoType.bodyStrong(context, color: AppColors.textDark),
           ),
         ),
         const SizedBox(width: 5),
@@ -172,70 +144,34 @@ class DeskDocumentCard extends StatelessWidget {
             document.senderRole,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            style: EcoType.meta(context, color: AppColors.inkMuted),
           ),
         ),
       ],
     );
   }
 
-  Widget _meta() {
+  Widget _meta(BuildContext context) {
     return Wrap(
-      spacing: 13,
+      spacing: 12,
       runSpacing: 6,
       children: [
-        _MetaItem(
-          icon: Icons.tag_rounded,
-          label: 'Ref',
-          value: document.displayReference,
-        ),
+        _MetaItem(icon: Icons.tag_rounded, value: document.displayReference),
         _MetaItem(
           icon: Icons.event_outlined,
-          label: document.dateCaption,
-          value: dateLabel(document.date),
+          value: '${document.dateCaption} ${dateLabel(document.date)}',
         ),
         if (document.area.isNotEmpty)
-          _MetaItem(
-            icon: Icons.place_outlined,
-            label: 'Area',
-            value: document.area,
-          ),
+          _MetaItem(icon: Icons.place_outlined, value: document.area),
         if (document.truck.isNotEmpty)
-          _MetaItem(
-            icon: Icons.local_shipping_outlined,
-            label: 'Truck',
-            value: document.truck,
-          ),
+          _MetaItem(icon: Icons.local_shipping_outlined, value: document.truck),
+        if (document.hasAttachment)
+          const _MetaItem(icon: Icons.attach_file_rounded, value: 'Attachment'),
       ],
     );
   }
 
-  Widget _attachment() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.mint,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.attach_file_rounded, size: 10, color: AppColors.forest),
-          SizedBox(width: 4),
-          Text(
-            'Attachment included',
-            style: TextStyle(
-              fontSize: 8.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actions() {
+  Widget _actions(BuildContext context) {
     final view = _CardButton(
       label: 'View document',
       icon: Icons.visibility_outlined,
@@ -269,6 +205,9 @@ class DeskDocumentCard extends StatelessWidget {
   }
 }
 
+/// The sender's initials come from the shared [DeskInitialAvatar], so the same
+/// person looks the same here, on a complaint and on an incident.
+
 class _CategoryPill extends StatelessWidget {
   const _CategoryPill({required this.category});
 
@@ -280,7 +219,7 @@ class _CategoryPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: category.color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
         border: Border.all(color: category.color.withValues(alpha: 0.32)),
       ),
       child: Row(
@@ -292,7 +231,7 @@ class _CategoryPill extends StatelessWidget {
             category.label,
             style: TextStyle(
               fontSize: 8.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               letterSpacing: 0.2,
               color: category.color,
             ),
@@ -304,14 +243,9 @@ class _CategoryPill extends StatelessWidget {
 }
 
 class _MetaItem extends StatelessWidget {
-  const _MetaItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+  const _MetaItem({required this.icon, required this.value});
 
   final IconData icon;
-  final String label;
   final String value;
 
   @override
@@ -321,22 +255,14 @@ class _MetaItem extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: AppColors.inkMuted),
+          Icon(icon, size: 11, color: AppColors.inkMuted),
           const SizedBox(width: 4),
-          Text(
-            '$label ',
-            style: const TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
-          ),
           Flexible(
             child: Text(
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.forest,
-              ),
+              style: EcoType.meta(context, color: AppColors.inkMuted),
             ),
           ),
         ],
@@ -378,7 +304,7 @@ class _CardButton extends StatelessWidget {
     );
 
     const shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(9)),
+      borderRadius: BorderRadius.all(Radius.circular(EcoRadius.sm)),
     );
     const padding = EdgeInsets.symmetric(horizontal: 10);
 

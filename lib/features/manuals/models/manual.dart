@@ -39,6 +39,14 @@ extension ManualStatusX on ManualStatus {
     ManualStatus.acknowledged => 'Received by City Hall',
   };
 
+  /// The one-word form for a filter row, where three options share one line
+  /// and the badge on each card already spells the full status out.
+  String get shortLabel => switch (this) {
+    ManualStatus.draft => 'Draft',
+    ManualStatus.submitted => 'Sent',
+    ManualStatus.acknowledged => 'Received',
+  };
+
   Color get color => switch (this) {
     ManualStatus.draft => AppColors.inkMuted,
     ManualStatus.submitted => AppColors.warning,

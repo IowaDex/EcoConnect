@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
-import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/motion.dart';
-import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../notifications/widgets/notification_bell.dart';
@@ -51,177 +50,135 @@ class _FleetScreenState extends State<FleetScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.creamBright,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        backgroundColor: AppColors.forest,
-        foregroundColor: Colors.white,
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(EcoRadius.lg),
+    return EcoPageScaffold(
+      eyebrow: 'ISWIM · FLEET',
+      title: 'Fleet registry',
+      subtitle: 'Every plate and its body. Drivers are assigned in a manual.',
+      onBack: () => ecoBack(context, '/iswim'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.add_rounded,
+          tooltip: 'Add truck',
+          onTap: () => _openForm(context),
         ),
-        icon: const Icon(Icons.add_rounded, size: 19),
-        label: const Text(
-          'Truck',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: StreamBuilder<List<GarbageTruck>>(
-              stream: FleetService().watchTrucks(),
-              builder: (context, snapshot) {
-                final loading =
-                    snapshot.connectionState == ConnectionState.waiting;
-                final trucks = snapshot.data ?? const <GarbageTruck>[];
-                final paired = trucks
-                    .where((truck) => (truck.driverAccountId ?? '').isNotEmpty)
-                    .length;
-                final searching = _query.trim().isNotEmpty;
-                final visible = _filter(trucks);
+        const NotificationBell(),
+      ],
+      body: StreamBuilder<List<GarbageTruck>>(
+        stream: FleetService().watchTrucks(),
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting;
+          final trucks = snapshot.data ?? const <GarbageTruck>[];
+          final paired = trucks
+              .where((truck) => (truck.driverAccountId ?? '').isNotEmpty)
+              .length;
+          final unpaired = trucks.length - paired;
+          final searching = _query.trim().isNotEmpty;
+          final visible = _filter(trucks);
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 96),
-                  children: [
-                    AppPageHeader(
-                      title: 'Fleet registry',
-                      subtitle:
-                          'Every plate and its body. Drivers are assigned in '
-                          'a collection manual.',
-                      onBack: () => context.canPop()
-                          ? context.pop()
-                          : context.go('/iswim'),
-                      actions: const [NotificationBell()],
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            children: [
+              _SeedPrompt(count: trucks.length, onSeed: () => _seed(context)),
+              FadeSlideIn(
+                index: 0,
+                child: DeskMetricRow(
+                  metrics: [
+                    DeskMetric(
+                      icon: Icons.local_shipping_rounded,
+                      label: 'Trucks',
+                      value: loading ? '—' : '${trucks.length}',
                     ),
-                    const SizedBox(height: EcoSpace.xs),
-                    FadeSlideIn(
-                      index: 0,
-                      child: _SeedPrompt(
-                        count: trucks.length,
-                        onSeed: () => _seed(context),
-                      ),
+                    DeskMetric(
+                      icon: Icons.person_outline_rounded,
+                      label: 'Paired',
+                      value: loading ? '—' : '$paired',
+                      accent: AppColors.primary,
                     ),
-                    FadeSlideIn(
-                      index: 1,
-                      child: DeskMetricRow(
-                        metrics: [
-                          DeskMetric(
-                            icon: Icons.local_shipping_rounded,
-                            label: 'Trucks',
-                            value: loading ? '—' : '${trucks.length}',
-                          ),
-                          DeskMetric(
-                            icon: Icons.person_outline_rounded,
-                            label: 'Paired',
-                            value: loading ? '—' : '$paired',
-                          ),
-                          DeskMetric(
-                            icon: Icons.key_off_outlined,
-                            label: 'No login',
-                            value: loading ? '—' : '${trucks.length - paired}',
-                            accent: AppColors.warning,
-                            highlight: !loading && trucks.length > paired,
-                          ),
-                        ],
-                      ),
+                    DeskMetric(
+                      icon: Icons.key_off_outlined,
+                      label: 'No login',
+                      value: loading ? '—' : '$unpaired',
+                      accent: AppColors.warning,
+                      highlight: !loading && unpaired > 0,
                     ),
-                    const SizedBox(height: EcoSpace.md),
-                    if (!loading && trucks.length > paired)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: EcoSpace.sm),
-                        child: EcoBanner(
-                          message:
-                              '${trucks.length - paired} '
-                              '${trucks.length - paired == 1 ? 'truck has' : 'trucks have'} '
-                              'no driver login yet. Assign a driver in a '
-                              'collection manual, or pair the account from the '
-                              'accounts desk.',
-                          icon: Icons.key_off_outlined,
-                        ),
-                      ),
-                    EcoSearchField(
-                      controller: _search,
-                      hint: 'Search plate or body',
-                      onChanged: (value) => setState(() => _query = value),
-                    ),
-                    AnimatedSize(
-                      duration: EcoMotion.fast,
-                      curve: EcoMotion.enter,
-                      alignment: Alignment.topCenter,
-                      child: searching
-                          ? Padding(
-                              padding: const EdgeInsets.only(
-                                top: EcoSpace.xs + 2,
-                              ),
-                              child: EcoResultCount(
-                                shown: visible.length,
-                                total: trucks.length,
-                                singular: 'truck',
-                                plural: 'trucks',
-                              ),
-                            )
-                          : const SizedBox(width: double.infinity),
-                    ),
-                    const SizedBox(height: EcoSpace.lg),
-                    // The add action lives in the FAB only — a second "Add
-                    // truck" link beside the list heading duplicated it.
-                    SectionLabel(
-                      searching
-                          ? 'TRUCKS · ${visible.length} OF ${trucks.length}'
-                          : 'TRUCKS · ${trucks.length}',
-                    ),
-                    const SizedBox(height: EcoSpace.sm),
-                    if (snapshot.hasError)
-                      EcoBanner(
-                        message: AppFeedback.describe(snapshot.error!),
-                        icon: Icons.cloud_off_rounded,
-                        color: AppColors.error,
-                      )
-                    else if (loading)
-                      const _FleetSkeleton()
-                    else if (trucks.isEmpty)
-                      EmptyState(
-                        icon: Icons.local_shipping_outlined,
-                        title: 'No trucks registered',
-                        message:
-                            'Add the first plate so it can be assigned to a '
-                            'driver in a collection manual.',
-                        actionLabel: 'Add a truck',
-                        onAction: () => _openForm(context),
-                        compact: true,
-                      )
-                    else if (visible.isEmpty)
-                      EmptyState(
-                        icon: Icons.search_off_rounded,
-                        title: 'No truck matches',
-                        message:
-                            'No plate, driver or zone matches '
-                            '"${_query.trim()}".',
-                        actionLabel: 'Clear search',
-                        onAction: _clearSearch,
-                        compact: true,
-                      )
-                    else
-                      for (var i = 0; i < visible.length; i++) ...[
-                        FadeSlideIn(
-                          index: i + 2,
-                          child: FleetTruckTile(
-                            truck: visible[i],
-                            onTap: () => _openForm(context, truck: visible[i]),
-                          ),
-                        ),
-                        if (i < visible.length - 1)
-                          const SizedBox(height: EcoSpace.sm),
-                      ],
                   ],
-                );
-              },
-            ),
-          ),
-        ),
+                ),
+              ),
+              const SizedBox(height: EcoSpace.md),
+              if (!loading && unpaired > 0) ...[
+                EcoBanner(
+                  message:
+                      '$unpaired '
+                      '${unpaired == 1 ? 'truck has' : 'trucks have'} no driver '
+                      'login yet. Assign a driver in a collection manual, or '
+                      'pair the account from the accounts desk.',
+                  icon: Icons.key_off_outlined,
+                ),
+                const SizedBox(height: EcoSpace.sm),
+              ],
+              EcoSearchField(
+                controller: _search,
+                hint: 'Search plate, body or driver',
+                onChanged: (value) => setState(() => _query = value),
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              DeskResultLine(
+                label: searching
+                    ? 'Showing ${visible.length} of ${trucks.length}'
+                    : '${trucks.length} '
+                          '${trucks.length == 1 ? 'truck' : 'trucks'}',
+                onClear: searching ? _clearSearch : null,
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              if (snapshot.hasError)
+                EcoBanner(
+                  message: AppFeedback.describe(snapshot.error!),
+                  icon: Icons.cloud_off_rounded,
+                  color: AppColors.error,
+                )
+              else if (loading)
+                const SkeletonCardList(count: 4, leading: true, gap: 8)
+              else if (trucks.isEmpty)
+                DeskEmptyQueue(
+                  icon: Icons.local_shipping_outlined,
+                  title: 'No trucks registered',
+                  message:
+                      'Add the first plate so it can be assigned to a driver '
+                      'in a collection manual.',
+                  steps: const [
+                    'Save the plate and its body type',
+                    'Assign the plate to a driver in a manual',
+                    'Pair the driver login from the accounts desk',
+                  ],
+                  actionLabel: 'Add a truck',
+                  actionIcon: Icons.add_rounded,
+                  onAction: () => _openForm(context),
+                )
+              else if (visible.isEmpty)
+                DeskEmptyQueue(
+                  icon: Icons.search_off_rounded,
+                  title: 'No truck matches',
+                  message:
+                      'No plate, driver or zone matches "${_query.trim()}".',
+                  actionLabel: 'Clear search',
+                  actionIcon: Icons.refresh_rounded,
+                  onAction: _clearSearch,
+                )
+              else
+                for (var i = 0; i < visible.length; i++) ...[
+                  FadeSlideIn(
+                    index: i + 1,
+                    child: FleetTruckTile(
+                      truck: visible[i],
+                      onTap: () => _openForm(context, truck: visible[i]),
+                    ),
+                  ),
+                  if (i < visible.length - 1)
+                    const SizedBox(height: EcoSpace.sm),
+                ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -265,33 +222,25 @@ class _SeedPrompt extends StatelessWidget {
         if (seeded.data != false) return const SizedBox.shrink();
         return Container(
           margin: const EdgeInsets.only(bottom: EcoSpace.md),
-          padding: const EdgeInsets.all(EcoSpace.md),
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
           decoration: BoxDecoration(
-            color: AppColors.mint,
+            color: AppColors.mint.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(EcoRadius.md),
             border: Border.all(color: AppColors.sage),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'This is still a mock list',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.forest,
-                ),
+              Text(
+                'THIS IS STILL A MOCK LIST',
+                style: EcoType.eyebrow(context, color: AppColors.primary),
               ),
-              const SizedBox(height: EcoSpace.xxs),
+              const SizedBox(height: EcoSpace.xs),
               Text(
                 'Save the $count seeded trucks to make this the real registry. '
                 'Once even one is saved, this becomes the only list — so start '
                 'with all of them.',
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  height: 1.45,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
               ),
               const SizedBox(height: EcoSpace.sm),
               SizedBox(
@@ -299,15 +248,13 @@ class _SeedPrompt extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: onSeed,
                   icon: const Icon(Icons.save_alt_rounded, size: 15),
-                  label: const Text(
+                  label: Text(
                     'Save all to registry',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: EcoType.label(context, color: Colors.white),
                   ),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.forest,
+                    foregroundColor: Colors.white,
                     minimumSize: const Size(0, 34),
                     padding: const EdgeInsets.symmetric(
                       horizontal: EcoSpace.md,
@@ -322,45 +269,6 @@ class _SeedPrompt extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _FleetSkeleton extends StatelessWidget {
-  const _FleetSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < 4; i++) ...[
-          Container(
-            height: 66,
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(EcoRadius.md),
-              border: Border.all(color: AppColors.sage.withValues(alpha: 0.5)),
-            ),
-            child: const Row(
-              children: [
-                SkeletonBox(width: 38, height: 38, radius: 19),
-                SizedBox(width: EcoSpace.sm + 1),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonBox(width: 92, height: 12),
-                    SizedBox(height: 7),
-                    SkeletonBox(width: 158, height: 10, radius: 5),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (i < 3) const SizedBox(height: EcoSpace.sm),
-        ],
-      ],
     );
   }
 }
@@ -442,34 +350,16 @@ class _TruckFormState extends State<_TruckForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  height: 4,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.sage,
-                    borderRadius: BorderRadius.circular(EcoRadius.pill),
-                  ),
-                ),
-              ),
               const SizedBox(height: EcoSpace.md),
               Text(
                 widget.truck == null ? 'New truck' : 'Edit truck',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
-                ),
+                style: EcoType.panelTitle(context, color: AppColors.forest),
               ),
               const SizedBox(height: 2),
-              const Text(
+              Text(
                 'The plate is the registry key — saving it twice updates the '
                 'same truck.',
-                style: TextStyle(
-                  fontSize: 9.5,
-                  height: 1.45,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
               const SizedBox(height: EcoSpace.md),
               TextFormField(
@@ -533,41 +423,17 @@ class _TruckFormState extends State<_TruckForm> {
                 ],
               ),
               const SizedBox(height: EcoSpace.sm + 2),
-              const Text(
+              Text(
                 'Drivers and collection areas are set per manual, not on the '
                 'truck. Pair the driver login from the accounts desk.',
-                style: TextStyle(
-                  fontSize: 9.5,
-                  height: 1.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
               const SizedBox(height: EcoSpace.lg),
-              SizedBox(
+              PrimaryButton(
+                label: 'Save truck',
+                loading: _busy,
                 height: 48,
-                child: FilledButton(
-                  onPressed: _busy ? null : _save,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.forest,
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(EcoRadius.md),
-                    ),
-                  ),
-                  child: _busy
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Save truck'),
-                ),
+                onPressed: _save,
               ),
             ],
           ),

@@ -9,8 +9,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/file_saver.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
-import '../../../core/widgets/motion.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../services/memo_service.dart';
 
@@ -324,6 +324,10 @@ class MemoAttachmentChip extends StatelessWidget {
 
 /// One memo in a list: kind, status, subject, a preview of the body and the
 /// sender → recipient line. Tapping opens the full record.
+///
+/// Built on [DeskRailCard] so the rail carries the delivery state, the same
+/// way a complaint, a request and a manual do: a clerk scans the queue by
+/// colour before reading a single word.
 class MemoCard extends StatelessWidget {
   const MemoCard({super.key, required this.memo, this.needsAction});
 
@@ -340,161 +344,91 @@ class MemoCard extends StatelessWidget {
     MemoKind.manualRequest => Icons.menu_book_outlined,
   };
 
+  static Color _railFor(MemoStatus status) => switch (status) {
+    MemoStatus.sent => const Color(0xFF1565C0),
+    MemoStatus.received => AppColors.warning,
+    MemoStatus.acknowledged => AppColors.primary,
+  };
+
   @override
   Widget build(BuildContext context) {
     final action = needsAction ?? memo.status == MemoStatus.received;
+    // "New" is the inbox's own read state: addressed here, not opened yet.
     final unopened = action && memo.status == MemoStatus.sent;
-    final accent = action ? AppColors.warning : AppColors.forest;
+    final rail = _railFor(memo.status);
 
-    return HoverLift(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => context.push('/memo/${memo.id}'),
-          borderRadius: BorderRadius.circular(EcoRadius.lg),
-          child: Ink(
-            padding: const EdgeInsets.all(EcoSpace.md),
-            decoration: BoxDecoration(
-              color: action
-                  ? AppColors.warning.withValues(alpha: 0.04)
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(EcoRadius.lg),
-              border: Border.all(
-                color: action
-                    ? AppColors.warning.withValues(alpha: 0.45)
-                    : AppColors.sage,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      height: 34,
-                      width: 34,
-                      decoration: BoxDecoration(
-                        color: action
-                            ? AppColors.warning.withValues(alpha: 0.14)
-                            : AppColors.mint,
-                        borderRadius: BorderRadius.circular(EcoRadius.sm),
-                      ),
-                      child: Icon(_iconFor(memo.kind), size: 17, color: accent),
-                    ),
-                    const SizedBox(width: EcoSpace.sm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              if (action) ...[
-                                Container(
-                                  height: 6,
-                                  width: 6,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.warning,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                              ],
-                              Flexible(
-                                child: Text(
-                                  '${memo.kind.label} · '
-                                  '${timeAgo(memo.createdAt)}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.3,
-                                    color: AppColors.inkMuted,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            memo.subject,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: EcoSpace.xs),
-                    if (unopened)
-                      const StatusBadge(
-                        label: 'New',
-                        color: Color(0xFF1565C0),
-                        icon: Icons.fiber_new_rounded,
-                      )
-                    else
-                      MemoStatusBadge(status: memo.status),
-                  ],
-                ),
-                const SizedBox(height: EcoSpace.sm),
-                Text(
-                  memo.body,
-                  maxLines: 2,
+    return DeskRailCard(
+      railColor: rail,
+      onTap: () => context.push('/memo/${memo.id}'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_iconFor(memo.kind), size: 13, color: rail),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '${memo.kind.label} · ${timeAgo(memo.createdAt)}',
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    height: 1.45,
-                    color: AppColors.inkMuted,
-                  ),
+                  style: EcoType.eyebrow(context, color: AppColors.moss),
                 ),
-                const SizedBox(height: EcoSpace.sm + 2),
-                Container(
-                  height: 1,
-                  color: AppColors.sage.withValues(alpha: 0.55),
+              ),
+              const SizedBox(width: 8),
+              if (unopened)
+                const StatusBadge(
+                  label: 'New',
+                  color: Color(0xFF1565C0),
+                  icon: Icons.fiber_new_rounded,
+                )
+              else
+                MemoStatusBadge(status: memo.status),
+            ],
+          ),
+          const SizedBox(height: EcoSpace.xs),
+          Text(
+            memo.subject,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.cardTitleLarge(context, color: AppColors.darkGreen),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            memo.body,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+          ),
+          const SizedBox(height: EcoSpace.sm),
+          Row(
+            children: [
+              DeskInitialAvatar(name: memo.fromName, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${memo.fromName} → ${memo.recipientLabel}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
                 ),
-                const SizedBox(height: EcoSpace.xs + 2),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.person_outline_rounded,
-                      size: 12,
-                      color: AppColors.inkMuted,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '${memo.fromName} → ${memo.recipientLabel}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ),
-                    if (memo.attachment != null) ...[
-                      const SizedBox(width: EcoSpace.sm),
-                      Flexible(
-                        child: MemoAttachmentChip(attachment: memo.attachment!),
-                      ),
-                    ],
-                    const SizedBox(width: EcoSpace.xxs),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 18,
-                      color: AppColors.moss,
-                    ),
-                  ],
+              ),
+              if (memo.attachment != null) ...[
+                const SizedBox(width: EcoSpace.sm),
+                Flexible(
+                  child: MemoAttachmentChip(attachment: memo.attachment!),
                 ),
               ],
-            ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 17,
+                color: AppColors.inkMuted,
+              ),
+            ],
           ),
-        ),
+        ],
       ),
     );
   }

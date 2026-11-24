@@ -129,7 +129,8 @@ class DriverProfileScreen extends StatelessWidget {
                 _InfoRow(
                   icon: Icons.home_outlined,
                   label: 'Address',
-                  value: user.houseStreet == null ||
+                  value:
+                      user.houseStreet == null ||
                           user.houseStreet!.trim().isEmpty
                       ? 'Tap to add your address'
                       : user.houseStreet!,
@@ -332,11 +333,7 @@ class _InfoRow extends StatelessWidget {
               color: AppColors.inkMuted,
             )
           else if (onTap != null)
-            const Icon(
-              Icons.edit_outlined,
-              size: 13,
-              color: AppColors.moss,
-            ),
+            const Icon(Icons.edit_outlined, size: 13, color: AppColors.moss),
         ],
       ),
     );
@@ -423,16 +420,6 @@ class _EditCrewProfileSheetState extends State<_EditCrewProfileSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                height: 4,
-                width: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.sage,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 18),
             const Text(
               'My details',
@@ -476,7 +463,9 @@ class _EditCrewProfileSheetState extends State<_EditCrewProfileSheet> {
               decoration: BoxDecoration(
                 color: AppColors.creamBright,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.sage.withValues(alpha: 0.7)),
+                border: Border.all(
+                  color: AppColors.sage.withValues(alpha: 0.7),
+                ),
               ),
               child: const Row(
                 children: [

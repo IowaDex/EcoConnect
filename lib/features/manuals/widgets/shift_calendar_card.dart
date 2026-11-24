@@ -13,10 +13,19 @@ import '../services/assignment_manual_service.dart';
 /// City Hall is drawn too so the desk can see what is about to join the
 /// roster. Tapping a day lists the driver, plate, start time and streets.
 class ShiftCalendarCard extends StatefulWidget {
-  const ShiftCalendarCard({super.key, this.showPending = true});
+  const ShiftCalendarCard({
+    super.key,
+    this.showPending = true,
+    this.collapsible = false,
+  });
 
   /// Iswim and City Hall see drafts; a resident-facing copy would not.
   final bool showPending;
+
+  /// Opens with the month grid folded away, showing only the crew on the
+  /// selected day. A dashboard that puts work first keeps the roster compact
+  /// until the officer asks to see the whole month.
+  final bool collapsible;
 
   @override
   State<ShiftCalendarCard> createState() => _ShiftCalendarCardState();
@@ -25,6 +34,7 @@ class ShiftCalendarCard extends StatefulWidget {
 class _ShiftCalendarCardState extends State<ShiftCalendarCard> {
   late DateTime _month;
   late DateTime _selected;
+  late bool _expanded;
 
   @override
   void initState() {
@@ -32,6 +42,7 @@ class _ShiftCalendarCardState extends State<ShiftCalendarCard> {
     final today = DateTime.now();
     _month = DateTime(today.year, today.month);
     _selected = DateTime(today.year, today.month, today.day);
+    _expanded = !widget.collapsible;
   }
 
   static bool _sameDay(DateTime a, DateTime b) =>
@@ -77,11 +88,7 @@ class _ShiftCalendarCardState extends State<ShiftCalendarCard> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SectionLabel(
-              'SHIFT CALENDAR',
-              action: 'Schedules',
-              onAction: () => context.push('/assignments'),
-            ),
+            const SectionLabel('SHIFT CALENDAR'),
             const SizedBox(height: EcoSpace.xs),
             const Text(
               'Who is on duty, and on which day.',
@@ -106,10 +113,12 @@ class _ShiftCalendarCardState extends State<ShiftCalendarCard> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _monthHeader(manuals),
-                  const SizedBox(height: 6),
-                  _weekdayHeader(),
-                  const SizedBox(height: 2),
-                  ..._monthGrid(manuals),
+                  if (_expanded) ...[
+                    const SizedBox(height: 6),
+                    _weekdayHeader(),
+                    const SizedBox(height: 2),
+                    ..._monthGrid(manuals),
+                  ],
                   const SizedBox(height: 8),
                   const Divider(height: 1, color: AppColors.sage),
                   const SizedBox(height: 10),
@@ -186,6 +195,12 @@ class _ShiftCalendarCardState extends State<ShiftCalendarCard> {
         _arrow(Icons.chevron_right_rounded, 'Next month', () {
           _shiftMonth(1);
         }),
+        if (widget.collapsible)
+          _arrow(
+            _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+            _expanded ? 'Hide the month' : 'Show the month',
+            () => setState(() => _expanded = !_expanded),
+          ),
       ],
     );
   }

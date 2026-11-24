@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../dashboard/widgets/quick_action_grid.dart';
 
@@ -8,7 +8,8 @@ import '../../dashboard/widgets/quick_action_grid.dart';
 ///
 /// The grid itself lives in [QuickActionGrid], the same component the other
 /// role dashboards use, so a shortcut looks and behaves identically no matter
-/// which desk the officer signed in to.
+/// which desk the officer signed in to. The tiles are deliberately short: this
+/// block is navigation, and the queue underneath is the work.
 class DeskTools extends StatelessWidget {
   const DeskTools({super.key, required this.pendingSignatures});
 
@@ -82,24 +83,12 @@ class DeskTools extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shortcuts = tools;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionLabel('DESK TOOLS'),
-        const SizedBox(height: 2),
-        Text(
-          '${shortcuts.length} shortcuts — every record the DSQC can open, '
-          'one tap away.',
-          style: const TextStyle(
-            fontSize: 10,
-            height: 1.4,
-            color: AppColors.inkMuted,
-          ),
-        ),
-        const SizedBox(height: 9),
-        QuickActionGrid(actions: shortcuts),
+        const SizedBox(height: EcoSpace.xs),
+        QuickActionGrid(actions: tools),
       ],
     );
   }

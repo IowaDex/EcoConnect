@@ -5,20 +5,25 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/models/waste_category.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/collection_request.dart';
 import '../services/collection_request_service.dart';
+
+/// Which requests are on screen.
+enum _RequestView { all, open, closed }
 
 /// The resident's collection request history.
 class MyRequestsScreen extends StatefulWidget {
@@ -31,7 +36,7 @@ class MyRequestsScreen extends StatefulWidget {
 class _MyRequestsScreenState extends State<MyRequestsScreen> {
   final _search = TextEditingController();
   String _query = '';
-  bool _openOnly = false;
+  _RequestView _view = _RequestView.all;
   int _page = 0;
   int _pageSize = 10;
 
@@ -44,7 +49,8 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
   List<CollectionRequest> _filter(List<CollectionRequest> items) {
     final q = _query.trim().toLowerCase();
     return items.where((r) {
-      if (_openOnly && !r.status.isOpen) return false;
+      if (_view == _RequestView.open && !r.status.isOpen) return false;
+      if (_view == _RequestView.closed && r.status.isOpen) return false;
       if (q.isEmpty) return true;
       return r.title.toLowerCase().contains(q) ||
           r.description.toLowerCase().contains(q) ||
@@ -60,132 +66,156 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
     if (user == null) {
       return const Scaffold(body: LoadingView(label: 'Loading requests'));
     }
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'My requests',
-              subtitle: 'Track approval, scheduling and collection.',
-              onBack: () => context.go('/user'),
-              actions: [
-                IconButton(
-                  onPressed: () => context.go('/request-collection'),
-                  icon: const Icon(Icons.add_rounded),
-                  tooltip: 'New request',
+
+    return EcoPageScaffold(
+      eyebrow: 'RESIDENT · REQUESTS',
+      title: 'My requests',
+      subtitle: 'Track approval, scheduling and collection.',
+      onBack: () => ecoBack(context, '/user'),
+      actions: [
+        EcoIconAction(
+          icon: Icons.add_rounded,
+          tooltip: 'New request',
+          onTap: () => context.push('/request-collection'),
+        ),
+      ],
+      body: StreamBuilder<List<CollectionRequest>>(
+        stream: CollectionRequestService().watchMine(user.uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const _RequestsSkeleton();
+          }
+          if (snapshot.hasError) {
+            return ErrorView(message: AppFeedback.describe(snapshot.error!));
+          }
+
+          final all = snapshot.data ?? const <CollectionRequest>[];
+          final open = all.where((r) => r.status.isOpen).length;
+          final closed = all.length - open;
+          final items = _filter(all);
+          final page = clampPage(_page, items.length, _pageSize);
+          final visible = pageSlice(items, page, _pageSize);
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: Icons.pending_actions_outlined,
+                label: 'Open',
+                value: '$open',
+                accent: AppColors.warning,
+                highlight: open > 0,
+              ),
+              DeskMetric(
+                icon: Icons.task_alt_rounded,
+                label: 'Closed',
+                value: '$closed',
+                accent: AppColors.primary,
+              ),
+              DeskMetric(
+                icon: Icons.assignment_outlined,
+                label: 'Requests',
+                value: '${all.length}',
+                accent: AppColors.forest,
+              ),
+            ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search title, location, status',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+            ),
+            filters: DeskSegmented<_RequestView>(
+              value: _view,
+              onChanged: (next) => setState(() {
+                _view = next;
+                _page = 0;
+              }),
+              segments: [
+                DeskSegment<_RequestView>(
+                  value: _RequestView.all,
+                  label: 'All',
+                  count: all.length,
+                ),
+                DeskSegment<_RequestView>(
+                  value: _RequestView.open,
+                  label: 'Open',
+                  count: open,
+                ),
+                DeskSegment<_RequestView>(
+                  value: _RequestView.closed,
+                  label: 'Closed',
+                  count: closed,
                 ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                children: [
-                  FilterChip(
-                    label: const Text('Open only'),
-                    selected: _openOnly,
-                    onSelected: (value) => setState(() {
-                      _openOnly = value;
+            resultLine: DeskResultLine(
+              label: items.length == all.length
+                  ? '${all.length} '
+                        '${all.length == 1 ? 'request' : 'requests'}'
+                  : 'Showing ${items.length} of ${all.length}',
+              onClear: _query.isEmpty && _view == _RequestView.all
+                  ? null
+                  : () => setState(() {
+                      _search.clear();
+                      _query = '';
+                      _view = _RequestView.all;
                       _page = 0;
                     }),
-                    selectedColor: AppColors.lightGreen,
-                    checkmarkColor: AppColors.primary,
-                    labelStyle: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.darkGreen,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => context.go('/request-collection'),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('New request'),
-                  ),
-                ],
-              ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
-              child: EcoSearchField(
-                controller: _search,
-                hint: 'Search title, location, status',
-                onChanged: (value) => setState(() {
-                  _query = value;
-                  _page = 0;
-                }),
-              ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<CollectionRequest>>(
-                stream: CollectionRequestService().watchMine(user.uid),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SkeletonList();
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  final items = _filter(
-                    snapshot.data ?? const <CollectionRequest>[],
-                  );
-                  if (items.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.assignment_outlined,
-                      title: _query.isEmpty && !_openOnly
-                          ? 'No requests yet'
-                          : 'Nothing matches',
-                      message: _query.isEmpty && !_openOnly
-                          ? 'Ask the barangay to collect bulky or special '
-                                'waste.'
-                          : 'Try a different search or clear the open-only '
-                                'filter.',
-                      actionLabel: _query.isEmpty && !_openOnly
-                          ? 'Create a request'
-                          : null,
-                      onAction: _query.isEmpty && !_openOnly
-                          ? () => context.go('/request-collection')
-                          : null,
-                    );
-                  }
-                  final page = clampPage(_page, items.length, _pageSize);
-                  final visible = pageSlice(items, page, _pageSize);
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
-                          itemCount: visible.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, i) => _RequestHistoryCard(
-                            request: visible[i],
-                            onTap: () => _openDetail(context, visible[i]),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                        child: EcoPaginationBar(
-                          page: page,
-                          pageSize: _pageSize,
-                          total: items.length,
-                          onPageChanged: (next) => setState(() => _page = next),
-                          onPageSizeChanged: (size) => setState(() {
-                            _pageSize = size;
-                            _page = 0;
-                          }),
-                        ),
-                      ),
+            empty: all.isEmpty
+                ? DeskEmptyQueue(
+                    icon: Icons.assignment_outlined,
+                    title: 'No requests yet',
+                    message:
+                        'Ask the barangay to collect bulky or special waste '
+                        'that the regular route does not take.',
+                    steps: const [
+                      'Send the request with a photo and quantity',
+                      'The barangay desk approves and schedules it',
+                      'Track the crew here until it is collected',
                     ],
-                  );
-                },
-              ),
+                    actionLabel: 'Create a request',
+                    actionIcon: Icons.add_rounded,
+                    onAction: () => context.push('/request-collection'),
+                  )
+                : DeskEmptyQueue(
+                    icon: Icons.search_off_rounded,
+                    title: 'Nothing in this view',
+                    message: _query.trim().isEmpty
+                        ? 'No request is at this stage right now. Switch back '
+                              'to All to see the full history.'
+                        : 'No request matches "$_query" at this stage.',
+                    actionLabel: 'Show all requests',
+                    actionIcon: Icons.inbox_outlined,
+                    onAction: () => setState(() {
+                      _search.clear();
+                      _query = '';
+                      _view = _RequestView.all;
+                      _page = 0;
+                    }),
+                  ),
+            itemCount: visible.length,
+            separator: 10,
+            itemBuilder: (context, i) => _RequestHistoryCard(
+              request: visible[i],
+              onTap: () => _openDetail(context, visible[i]),
             ),
-          ],
-        ),
+            pagination: items.isEmpty
+                ? null
+                : EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: items.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+          );
+        },
       ),
     );
   }
@@ -197,6 +227,10 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(EcoRadius.xl)),
+      ),
       builder: (ctx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.8,
@@ -204,8 +238,9 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
         maxChildSize: 0.95,
         builder: (context, controller) => ListView(
           controller: controller,
-          padding: const EdgeInsets.fromLTRB(22, 4, 22, 26),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 26),
           children: [
+            const SizedBox(height: EcoSpace.md),
             Row(
               children: [
                 StatusBadge(
@@ -219,26 +254,22 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                     label: 'Special',
                     color: Color(0xFF1565C0),
                     icon: Icons.badge_outlined,
+                    compact: true,
                   ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: EcoSpace.sm),
             Text(
               request.title,
-              style: const TextStyle(
-                fontSize: 20,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
-                color: AppColors.darkGreen,
-              ),
+              style: EcoType.panelTitle(context, color: AppColors.darkGreen),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               'Submitted ${timeAgo(request.createdAt)}',
-              style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
+              style: EcoType.meta(context, color: AppColors.inkMuted),
             ),
             if (request.images.isNotEmpty) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: EcoSpace.md),
               SizedBox(
                 height: 150,
                 child: PageView.builder(
@@ -246,90 +277,144 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                   itemBuilder: (context, i) => Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(EcoRadius.md),
                       child: Image.memory(
                         _bytes(request.images[i].dataUrl),
                         fit: BoxFit.cover,
+                        width: double.infinity,
                       ),
                     ),
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            _row(Icons.notes_rounded, request.description),
-            if (request.isWave2)
-              _row(
-                Icons.layers_outlined,
-                'Wave 2 · ${request.wave2StageLabel}',
-              ),
-            _row(request.category.icon, request.category.label),
-            _row(
-              Icons.scale_outlined,
-              'Quantity: ${request.estimatedQuantity}',
-            ),
-            _row(Icons.place_outlined, request.location),
-            _row(
-              Icons.event_outlined,
-              'Preferred: ${dateLabel(request.preferredDate)}',
-            ),
-            if (request.scheduledAt != null)
-              _row(
-                Icons.event_available_rounded,
-                'Scheduled: ${dateTimeLabel(request.scheduledAt)}',
-              ),
-            if (request.assignedDriverName != null)
-              _row(
-                Icons.person_pin_circle_outlined,
-                'Collector: ${request.assignedDriverName}',
-              ),
-            if (request.staffNote?.trim().isNotEmpty == true)
-              _row(Icons.support_agent_rounded, request.staffNote!),
-            if (request.responses.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const SectionHeader(title: 'City Hall responses'),
-              const SizedBox(height: 8),
-              for (final response in request.responses) ...[
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.sage),
+            const SizedBox(height: EcoSpace.md),
+            EcoCard(
+              padding: const EdgeInsets.fromLTRB(15, 13, 15, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'WHAT YOU ASKED FOR',
+                    style: EcoType.eyebrow(context, color: AppColors.inkMuted),
                   ),
+                  const SizedBox(height: EcoSpace.sm),
+                  Text(
+                    request.description,
+                    style: EcoType.body(context, color: AppColors.textDark),
+                  ),
+                  const SizedBox(height: EcoSpace.sm),
+                  _SheetRow(
+                    icon: request.category.icon,
+                    text:
+                        '${request.category.label} · '
+                        '${request.estimatedQuantity}',
+                  ),
+                  const SizedBox(height: 5),
+                  _SheetRow(icon: Icons.place_outlined, text: request.location),
+                  const SizedBox(height: 5),
+                  _SheetRow(
+                    icon: Icons.event_outlined,
+                    text: 'Preferred ${dateLabel(request.preferredDate)}',
+                  ),
+                  if (request.isWave2) ...[
+                    const SizedBox(height: 5),
+                    _SheetRow(
+                      icon: Icons.layers_outlined,
+                      text: 'Wave 2 · ${request.wave2StageLabel}',
+                    ),
+                  ],
+                  if (request.scheduledAt != null) ...[
+                    const SizedBox(height: 5),
+                    _SheetRow(
+                      icon: Icons.event_available_rounded,
+                      text: 'Scheduled ${dateTimeLabel(request.scheduledAt)}',
+                    ),
+                  ],
+                  if (request.assignedDriverName != null) ...[
+                    const SizedBox(height: 5),
+                    _SheetRow(
+                      icon: Icons.person_pin_circle_outlined,
+                      text: 'Collector ${request.assignedDriverName}',
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (request.staffNote?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: EcoSpace.md),
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+                decoration: BoxDecoration(
+                  color: request.status.color.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(EcoRadius.md),
+                  border: Border.all(
+                    color: request.status.color.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.support_agent_rounded,
+                      size: 15,
+                      color: request.status.color,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'Desk note: ${request.staffNote}',
+                        style: EcoType.bodySmall(
+                          context,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (request.responses.isNotEmpty) ...[
+              const SizedBox(height: EcoSpace.lg),
+              DeskSectionHeader(
+                icon: Icons.forum_outlined,
+                title: 'City Hall responses',
+                count: request.responses.length,
+              ),
+              const SizedBox(height: EcoSpace.sm),
+              for (final response in request.responses) ...[
+                DeskRailCard(
+                  railColor: AppColors.primary,
+                  padding: const EdgeInsets.fromLTRB(15, 12, 14, 13),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         response.message,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          height: 1.55,
-                          color: AppColors.textDark,
-                        ),
+                        style: EcoType.body(context, color: AppColors.textDark),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 5),
                       Text(
                         '${response.byName} · ${timeAgo(response.at)}',
-                        style: const TextStyle(
-                          fontSize: 8,
-                          color: AppColors.inkMuted,
-                        ),
+                        style: EcoType.meta(context, color: AppColors.inkMuted),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: EcoSpace.sm),
               ],
             ],
             if (request.history.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const SectionHeader(title: 'Progress'),
-              const SizedBox(height: 8),
+              const SizedBox(height: EcoSpace.lg),
+              const DeskSectionHeader(
+                icon: Icons.timeline_rounded,
+                title: 'Progress',
+                subtitle: 'Newest first.',
+              ),
+              const SizedBox(height: EcoSpace.sm),
               for (final entry in request.history.reversed)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(bottom: 9),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -342,37 +427,33 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                           shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 9),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               entry.status.label,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
+                              style: EcoType.bodyStrong(
+                                context,
                                 color: AppColors.textDark,
                               ),
                             ),
                             if (entry.note?.trim().isNotEmpty == true)
                               Text(
                                 entry.note!,
-                                style: const TextStyle(
-                                  fontSize: 9,
-                                  height: 1.45,
+                                style: EcoType.meta(
+                                  context,
                                   color: AppColors.inkMuted,
                                 ),
                               ),
                           ],
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         timeAgo(entry.at),
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          color: AppColors.inkMuted,
-                        ),
+                        style: EcoType.meta(context, color: AppColors.inkMuted),
                       ),
                     ],
                   ),
@@ -383,27 +464,54 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
       ),
     );
   }
+}
 
-  Widget _row(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: AppColors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 10.5,
-                height: 1.5,
-                color: AppColors.inkMuted,
-              ),
-            ),
+/// A labelled fact inside the detail sheet.
+class _SheetRow extends StatelessWidget {
+  const _SheetRow({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 13, color: AppColors.primary),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: EcoType.bodySmall(context, color: AppColors.inkMuted),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A compact fact on the card's second line.
+class _CardFact extends StatelessWidget {
+  const _CardFact({required this.icon, required this.text, this.color});
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = color ?? AppColors.inkMuted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: tint),
+        const SizedBox(width: 4),
+        Text(text, style: EcoType.meta(context, color: tint)),
+      ],
     );
   }
 }
@@ -416,85 +524,98 @@ class _RequestHistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EcoCard(
+    return DeskRailCard(
+      railColor: request.status.color,
       onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(15, 12, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Expanded(
+                child: Text(
+                  request.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitle(context, color: AppColors.textDark),
+                ),
+              ),
+              const SizedBox(width: 8),
               StatusBadge(
                 label: request.status.label,
                 color: request.status.color,
                 icon: request.status.icon,
-              ),
-              const SizedBox(width: 6),
-              if (request.isSpecial)
-                const StatusBadge(
-                  label: 'Special',
-                  color: Color(0xFF1565C0),
-                  icon: Icons.badge_outlined,
-                  compact: true,
-                ),
-              const Spacer(),
-              Text(
-                timeAgo(request.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                compact: true,
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            request.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
           ),
           const SizedBox(height: 6),
-          Row(
+          Wrap(
+            spacing: 10,
+            runSpacing: 3,
             children: [
-              Icon(
-                request.category.icon,
-                size: 12,
+              _CardFact(
+                icon: request.category.icon,
+                text: request.category.shortLabel,
                 color: request.category.color,
               ),
-              const SizedBox(width: 4),
-              Text(
-                request.category.shortLabel,
-                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+              _CardFact(
+                icon: Icons.event_outlined,
+                text: dateLabel(request.preferredDate),
               ),
-              const SizedBox(width: 10),
+              if (request.isSpecial)
+                const _CardFact(
+                  icon: Icons.badge_outlined,
+                  text: 'Special',
+                  color: Color(0xFF1565C0),
+                ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: request.assignedDriverName == null
+                    ? Text(
+                        'Submitted ${timeAgo(request.createdAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.meta(context, color: AppColors.inkMuted),
+                      )
+                    : _CardFact(
+                        icon: Icons.person_pin_circle_outlined,
+                        text: 'Collector ${request.assignedDriverName}',
+                        color: AppColors.primary,
+                      ),
+              ),
               const Icon(
-                Icons.event_outlined,
-                size: 12,
+                Icons.chevron_right_rounded,
+                size: 17,
                 color: AppColors.inkMuted,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                dateLabel(request.preferredDate),
-                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
-          if (request.assignedDriverName != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Collector: ${request.assignedDriverName}',
-              style: const TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestsSkeleton extends StatelessWidget {
+  const _RequestsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(width: 120, height: 10, radius: 5),
+          SizedBox(height: 14),
+          SkeletonCardList(count: 4),
         ],
       ),
     );

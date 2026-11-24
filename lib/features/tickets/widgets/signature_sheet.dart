@@ -133,16 +133,6 @@ class _SignatureSheetState extends State<_SignatureSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
           const SizedBox(height: 14),
           Text(
             '${widget.signerLabel} signature',

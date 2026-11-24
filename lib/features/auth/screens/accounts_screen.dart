@@ -4,24 +4,48 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_page.dart';
+import '../../../core/widgets/eco_skeleton.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/eco_pagination.dart';
-import '../../driver/models/garbage_truck.dart';
 import '../../driver/models/truck_crew_role.dart';
-import '../../fleet/services/fleet_service.dart';
 import '../providers/auth_provider.dart';
 import '../services/provisioning_service.dart';
 import '../utils/validators.dart';
 import '../widgets/password_strength.dart';
 
-/// Iswim's account desk — the only place a driver or guide login is made.
+/// The state tabs above the account list.
 ///
-/// Nobody signs themselves up for a crew account, and no other desk can mint
-/// one: the barangay and City Hall do not create logins any more. Iswim also
-/// creates its own colleagues' accounts. A truck is never left without a
-/// driver, so a crew account must be tied to a plate before it can be saved.
+/// The desk only ever lists one kind of account — Iswim's crew, or the
+/// barangay's guides — so the tabs filter by state, not by role. Role tabs
+/// would have been three permanently empty tabs.
+enum _StatusFilter { all, active, suspended }
+
+extension on _StatusFilter {
+  String get label => switch (this) {
+    _StatusFilter.all => 'All',
+    _StatusFilter.active => 'Active',
+    _StatusFilter.suspended => 'Suspended',
+  };
+
+  bool matches(ProvisionedAccount account) => switch (this) {
+    _StatusFilter.all => true,
+    _StatusFilter.active => account.isActive,
+    _StatusFilter.suspended => !account.isActive,
+  };
+}
+
+/// The account desk. Two roles reach it and each sees only its own people:
+/// Iswim makes the driver logins, the barangay makes its truck guides.
+/// Neither may touch an Iswim, City Hall or barangay account.
+///
+/// Nobody signs themselves up for a crew account. This desk hands out
+/// credentials and nothing else — the plate is assigned later, in the
+/// collection manual Iswim writes, so a brand-new driver holds no truck.
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
 
@@ -32,7 +56,7 @@ class AccountsScreen extends StatefulWidget {
 class _AccountsScreenState extends State<AccountsScreen> {
   final _search = TextEditingController();
   String _query = '';
-  String _role = 'all';
+  _StatusFilter _filter = _StatusFilter.all;
   int _page = 0;
   int _pageSize = 10;
 
@@ -42,49 +66,67 @@ class _AccountsScreenState extends State<AccountsScreen> {
     super.dispose();
   }
 
+  void _clear() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      _filter = _StatusFilter.all;
+      _page = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final me = context.watch<AuthProvider>().currentUser;
-    // Iswim is the only role that may create a login.
-    final canManage = me?.role == UserRole.iswim;
+    final scope = accountScopeFor(me?.role);
+    final drivers = scope == AccountScope.drivers;
 
     return EcoPageScaffold(
-      eyebrow: 'ISWIM · ACCOUNTS',
-      title: 'Accounts',
-      subtitle:
-          'Driver and guide logins are created here; nobody else can provision '
-          'them.',
-      onBack: () => ecoBack(context, '/iswim'),
-      fab: canManage
-          ? FloatingActionButton.extended(
-              onPressed: () => _openForm(context, true),
-              backgroundColor: AppColors.forest,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-              label: const Text(
-                'Account',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            )
-          : null,
+      eyebrow: drivers ? 'ISWIM · ACCOUNTS' : 'BARANGAY · TRUCK GUIDES',
+      title: drivers ? 'Driver accounts' : 'Truck guides',
+      subtitle: drivers
+          ? 'Driver logins are created here. Guides belong to the barangay; '
+                'Iswim, City Hall and barangay accounts are not managed from '
+                'this desk.'
+          : 'Your truck guide logins are created here. Iswim, City Hall and '
+                'barangay accounts are not managed from this desk.',
+      icon: Icons.badge_outlined,
+      onBack: () => ecoBack(context, drivers ? '/iswim' : '/admin-dashboard'),
+      // An icon action, not a floating button: the FAB sat on top of the
+      // pagination bar once the list grew past one page.
+      actions: [
+        if (scope.canProvision)
+          EcoIconAction(
+            icon: Icons.person_add_alt_1_rounded,
+            tooltip: drivers
+                ? 'Create a driver account'
+                : 'Create a truck guide account',
+            onTap: () => _openForm(context, scope),
+          ),
+      ],
       body: StreamBuilder<List<ProvisionedAccount>>(
-        stream: ProvisioningService().watchAccounts(),
+        stream: ProvisioningService().watchAccounts(scope),
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: SkeletonCardList(count: 4, leading: true, gap: 8),
+            );
+          }
           if (snapshot.hasError) {
-            return _Message(
-              text: 'Could not load the list.\n${snapshot.error}',
+            return DeskEmptyQueue(
+              icon: Icons.cloud_off_rounded,
+              title: 'Accounts are not loading',
+              message: '${snapshot.error}',
             );
           }
+
           final all = snapshot.data ?? const <ProvisionedAccount>[];
-          if (all.isEmpty) {
-            return const _Message(
-              text: 'No accounts yet. Tap "Account" to create the first one.',
-            );
-          }
           final query = _query.trim().toLowerCase();
           final accounts = all
               .where((account) {
-                if (_role != 'all' && account.role.name != _role) return false;
+                if (!_filter.matches(account)) return false;
                 if (query.isEmpty) return true;
                 return account.name.toLowerCase().contains(query) ||
                     account.email.toLowerCase().contains(query);
@@ -93,91 +135,107 @@ class _AccountsScreenState extends State<AccountsScreen> {
           final page = clampPage(_page, accounts.length, _pageSize);
           final visible = pageSlice(accounts, page, _pageSize);
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
-                child: EcoSearchField(
-                  controller: _search,
-                  hint: 'Search name, email or role',
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
-                ),
+          // The desk only counts logins. A driver holds no plate until a
+          // collection manual puts him on one, so "no truck" is not a fault
+          // here and does not belong in the numbers.
+          final suspended = all.where((a) => !a.isActive).length;
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: drivers
+                    ? Icons.local_shipping_outlined
+                    : Icons.person_pin_circle_outlined,
+                label: drivers ? 'Drivers' : 'Guides',
+                value: '${all.length}',
+                accent: AppColors.primary,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: SizedBox(
-                  height: 32,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      for (final option in const [
-                        ('all', 'All'),
-                        ('driver', 'Crew'),
-                        ('iswim', 'Iswim'),
-                        ('admin', 'Barangay'),
-                        ('cityHall', 'City Hall'),
-                      ])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: FilterChip(
-                            label: Text(option.$2),
-                            selected: _role == option.$1,
-                            onSelected: (_) => setState(() {
-                              _role = option.$1;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: accounts.isEmpty
-                    ? const _Message(text: 'No accounts match this filter.')
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                        children: [
-                          for (final account in visible) ...[
-                            _AccountTile(
-                              account: account,
-                              canManage: canManage,
-                              onTap: () => _openActions(context, account),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-                        ],
-                      ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: EcoPaginationBar(
-                  page: page,
-                  pageSize: _pageSize,
-                  total: accounts.length,
-                  onPageChanged: (value) => setState(() => _page = value),
-                  onPageSizeChanged: (value) => setState(() {
-                    _pageSize = value;
-                    _page = 0;
-                  }),
-                ),
+              DeskMetric(
+                icon: Icons.pause_circle_outlined,
+                label: 'Suspended',
+                value: '$suspended',
+                accent: AppColors.warning,
+                highlight: suspended > 0,
               ),
             ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search name or email',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+            ),
+            filters: DeskSegmented<_StatusFilter>(
+              value: _filter,
+              onChanged: (next) => setState(() {
+                _filter = next;
+                _page = 0;
+              }),
+              segments: [
+                for (final filter in _StatusFilter.values)
+                  DeskSegment<_StatusFilter>(
+                    value: filter,
+                    label: filter.label,
+                  ),
+              ],
+            ),
+            resultLine: DeskResultLine(
+              label: accounts.isEmpty
+                  ? 'No accounts match'
+                  : '${accounts.length} account${accounts.length == 1 ? '' : 's'}',
+              onClear: _query.isNotEmpty || _filter != _StatusFilter.all
+                  ? _clear
+                  : null,
+            ),
+            empty: DeskEmptyQueue(
+              icon: all.isEmpty
+                  ? Icons.badge_outlined
+                  : Icons.search_off_rounded,
+              title: all.isEmpty ? 'No accounts yet' : 'No accounts match',
+              message: all.isEmpty
+                  ? drivers
+                        ? 'Create the first driver login with the button in the '
+                              'header. A driver cannot sign in until his '
+                              'account exists.'
+                        : 'Create the first guide login with the button in the '
+                              'header. A guide cannot sign in until his '
+                              'account exists.'
+                  : 'Try another word, or clear the filter.',
+              actionLabel: all.isEmpty ? 'Create an account' : 'Clear filters',
+              actionIcon: all.isEmpty
+                  ? Icons.person_add_alt_1_rounded
+                  : Icons.filter_alt_off_outlined,
+              onAction: all.isEmpty ? () => _openForm(context, scope) : _clear,
+            ),
+            itemCount: visible.length,
+            itemBuilder: (context, i) => _AccountTile(
+              account: visible[i],
+              canManage: scope.canProvision,
+              onTap: () => _openActions(context, visible[i]),
+            ),
+            pagination: EcoPaginationBar(
+              page: page,
+              pageSize: _pageSize,
+              total: accounts.length,
+              onPageChanged: (value) => setState(() => _page = value),
+              onPageSizeChanged: (value) => setState(() {
+                _pageSize = value;
+                _page = 0;
+              }),
+            ),
           );
         },
       ),
     );
   }
 
-  Future<void> _openForm(BuildContext context, bool allowIswim) async {
+  Future<void> _openForm(BuildContext context, AccountScope scope) async {
     final handover = await showModalBottomSheet<_Handover>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AccountForm(allowIswim: allowIswim),
+      builder: (_) => _AccountForm(scope: scope),
     );
     if (handover == null || !context.mounted) return;
     await _showHandover(context, handover);
@@ -190,30 +248,25 @@ class _AccountsScreenState extends State<AccountsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.creamBright,
-        title: const Text(
+        title: Text(
           'Account created',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
-          ),
+          style: EcoType.panelTitle(dialogContext, color: AppColors.forest),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Show this to the crew now — it cannot be shown again. '
               'Once they sign in, they can change it in their profile.',
-              style: TextStyle(
-                fontSize: 10,
-                height: 1.5,
+              style: EcoType.bodySmall(
+                dialogContext,
                 color: AppColors.inkMuted,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: EcoSpace.sm),
             _HandoverRow(label: 'Email', value: handover.email),
-            const SizedBox(height: 6),
+            const SizedBox(height: EcoSpace.xs),
             _HandoverRow(label: 'Password', value: handover.password),
           ],
         ),
@@ -245,28 +298,6 @@ class _Handover {
   final String password;
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 60),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 10.5,
-          height: 1.6,
-          color: AppColors.inkMuted,
-        ),
-      ),
-    );
-  }
-}
-
 class _AccountTile extends StatelessWidget {
   const _AccountTile({
     required this.account,
@@ -280,127 +311,87 @@ class _AccountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final crew = account.crewRole?.label;
+    // The role is always "driver" — a guide is a driver profile with a
+    // crewRole — so the crew role is what names the person, and repeating
+    // "Driver · Truck Driver" would just stutter.
     final subtitle = [
-      account.role.label,
-      if (crew != null) crew,
+      account.crewRole?.label ?? account.role.label,
       account.email,
     ].join(' · ');
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: canManage ? onTap : null,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.sage),
+    // A fresh driver has no plate yet — the manual assigns it — so the only
+    // state worth flagging on this desk is a suspended login.
+    return DeskRailCard(
+      railColor: account.isActive ? AppColors.primary : AppColors.error,
+      onTap: canManage ? onTap : null,
+      child: Row(
+        children: [
+          DeskInitialAvatar(name: account.name, size: 34),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  account.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitle(
+                    context,
+                    color: AppColors.forest,
+                    weight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ],
+            ),
           ),
-          child: Row(
-            children: [
-              Container(
-                height: 36,
-                width: 36,
-                decoration: const BoxDecoration(
-                  color: AppColors.cream,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _iconFor(account.role),
-                  size: 17,
-                  color: AppColors.forest,
-                ),
+          if (!account.isActive)
+            const _StatePill(label: 'suspended', color: AppColors.error),
+          if (canManage)
+            const Padding(
+              padding: EdgeInsets.only(left: EcoSpace.xxs),
+              child: Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppColors.moss,
               ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      account.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (!account.isActive)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'suspended',
-                    style: TextStyle(
-                      fontSize: 7.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.error,
-                    ),
-                  ),
-                )
-              else if (account.role == UserRole.driver &&
-                  (account.truckId == null || account.truckId!.isEmpty))
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'no truck',
-                    style: TextStyle(
-                      fontSize: 7.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.warning,
-                    ),
-                  ),
-                ),
-              if (canManage)
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: AppColors.moss,
-                ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
+}
 
-  static IconData _iconFor(UserRole role) => switch (role) {
-    UserRole.cityHall => Icons.account_balance_rounded,
-    UserRole.iswim => Icons.business_center_rounded,
-    UserRole.admin => Icons.shield_outlined,
-    UserRole.driver => Icons.local_shipping_rounded,
-    UserRole.user => Icons.person_outline_rounded,
-    UserRole.auditor => Icons.fact_check_outlined,
-  };
+/// The one-word state on an account row: suspended, or no plate yet.
+class _StatePill extends StatelessWidget {
+  const _StatePill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+      ),
+      child: Text(
+        label,
+        style: EcoType.meta(
+          context,
+          color: color,
+        ).copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
 }
 
 /// Reset the password, or freeze the login.
@@ -443,43 +434,40 @@ class _ActionsSheetState extends State<_ActionsSheet> {
   Widget build(BuildContext context) {
     final account = widget.account;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 26),
+      padding: const EdgeInsets.fromLTRB(
+        EcoSpace.lg,
+        EcoSpace.sm,
+        EcoSpace.lg,
+        EcoSpace.xl,
+      ),
       decoration: const BoxDecoration(
         color: AppColors.creamBright,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(EcoRadius.xl)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.sage,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
+          // The theme's bottomSheetTheme already draws the drag handle.
+          Text(
+            account.crewRole?.label.toUpperCase() ?? 'ACCOUNT',
+            style: EcoType.eyebrow(context, color: AppColors.primary),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: EcoSpace.xxs),
           Text(
             account.name,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.forest,
-            ),
+            style: EcoType.panelTitle(context, color: AppColors.forest),
           ),
+          const SizedBox(height: EcoSpace.xxs),
           Text(
             account.email,
-            style: const TextStyle(fontSize: 10, color: AppColors.inkMuted),
+            style: EcoType.meta(context, color: AppColors.inkMuted),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: EcoSpace.lg),
           _Action(
             icon: Icons.lock_reset_rounded,
             label: 'Send a password reset',
-            detail: 'Email from Firebase',
+            detail: 'Firebase emails the link',
             onTap: _busy
                 ? null
                 : () => _run(
@@ -487,7 +475,7 @@ class _ActionsSheetState extends State<_ActionsSheet> {
                     'Reset email sent to ${account.email}',
                   ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: EcoSpace.xs),
           _Action(
             icon: account.isActive
                 ? Icons.block_rounded
@@ -532,64 +520,60 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = danger ? AppColors.error : AppColors.forest;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(13),
-        child: Ink(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: AppColors.sage),
+    final tint = danger ? AppColors.error : AppColors.primary;
+    return DeskRailCard(
+      railColor: tint,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+      child: Row(
+        children: [
+          Container(
+            height: 32,
+            width: 32,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 16, color: tint),
           ),
-          child: Row(
-            children: [
-              Icon(icon, size: 17, color: tint),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: tint,
-                      ),
-                    ),
-                    Text(
-                      detail,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                  ],
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: EcoType.cardTitle(
+                    context,
+                    color: danger ? AppColors.error : AppColors.forest,
+                    weight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
+                Text(
+                  detail,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ],
+            ),
           ),
-        ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 17,
+            color: AppColors.moss,
+          ),
+        ],
       ),
     );
   }
 }
 
-/// What the desk is creating. Iswim manages both its own logins and the
-/// crew accounts; City Hall only sees the crew options.
-enum _AccountKind { driver, guide, iswim }
-
-/// The form the desk fills in. It only makes **crew** accounts: Iswim and City
-/// Hall are separate accounts that already exist, so a driver and his truck is
-/// the only thing left to provision.
+/// The form the desk fills in. It makes exactly one kind of login — the one
+/// its [AccountScope] owns — because Iswim, City Hall and the barangay are
+/// separate accounts that already exist.
 class _AccountForm extends StatefulWidget {
-  const _AccountForm({required this.allowIswim});
+  const _AccountForm({required this.scope});
 
-  final bool allowIswim;
+  final AccountScope scope;
 
   @override
   State<_AccountForm> createState() => _AccountFormState();
@@ -602,34 +586,18 @@ class _AccountFormState extends State<_AccountForm> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
 
-  _AccountKind _kind = _AccountKind.driver;
-  GarbageTruck? _truck;
   bool _busy = false;
   bool _showPassword = false;
-  List<GarbageTruck> _trucks = const [];
+
+  /// The desk's one kind of login. Never null: the sheet only opens when the
+  /// scope can provision.
+  TruckCrewRole get _kind => widget.scope.kind ?? TruckCrewRole.driver;
+  bool get _isGuide => _kind == TruckCrewRole.guide;
 
   @override
   void initState() {
     super.initState();
     _password.text = _suggestPassword();
-    FleetService()
-        .watchTrucks()
-        .first
-        .then((trucks) {
-          if (!mounted) return;
-          setState(() {
-            _trucks = trucks;
-            // A plate without a login is the one that needs this account.
-            _truck = trucks.cast<GarbageTruck?>().firstWhere(
-              (t) => t?.driverAccountId == null || t?.driverAccountId == '',
-              orElse: () => trucks.isEmpty ? null : trucks.first,
-            );
-          });
-        })
-        .catchError((Object _) {
-          // Offline: the form still opens, the truck list just stays empty and
-          // the dropdown validator asks for one.
-        });
   }
 
   @override
@@ -653,17 +621,13 @@ class _AccountFormState extends State<_AccountForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
-      final isIswim = _kind == _AccountKind.iswim;
       await ProvisioningService().create(
         ProvisionRequest(
           name: _name.text,
           email: _email.text,
           password: _password.text,
-          role: isIswim ? UserRole.iswim : UserRole.driver,
-          crewRole: _kind == _AccountKind.guide
-              ? TruckCrewRole.guide
-              : TruckCrewRole.driver,
-          truckId: isIswim ? null : _truck?.id,
+          role: UserRole.driver,
+          crewRole: _kind,
           phone: _phone.text,
         ),
       );
@@ -687,14 +651,14 @@ class _AccountFormState extends State<_AccountForm> {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        left: EcoSpace.lg,
+        right: EcoSpace.lg,
+        top: EcoSpace.sm,
+        bottom: EcoSpace.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       decoration: const BoxDecoration(
         color: AppColors.creamBright,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(EcoRadius.xl)),
       ),
       child: Form(
         key: _formKey,
@@ -703,39 +667,23 @@ class _AccountFormState extends State<_AccountForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(
-                  height: 4,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.sage,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'New account',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.forest,
-                ),
-              ),
-              const SizedBox(height: 2),
+              // The theme's bottomSheetTheme already draws the drag handle.
               Text(
-                widget.allowIswim
-                    ? 'Create a driver, a truck guide, or another Iswim login. '
-                          'City Hall accounts are never created here.'
-                    : 'Only Driver and Truck Guide accounts are created here. '
-                          'Iswim manages its own logins.',
-                style: const TextStyle(
-                  fontSize: 9,
-                  height: 1.45,
-                  color: AppColors.inkMuted,
-                ),
+                _isGuide ? 'NEW TRUCK GUIDE' : 'NEW DRIVER',
+                style: EcoType.eyebrow(context, color: AppColors.primary),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: EcoSpace.xxs),
+              Text(
+                _isGuide ? 'Create a guide login' : 'Create a driver login',
+                style: EcoType.panelTitle(context, color: AppColors.forest),
+              ),
+              const SizedBox(height: EcoSpace.xs),
+              Text(
+                'Iswim, City Hall and barangay accounts are never created '
+                'here.',
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+              ),
+              const SizedBox(height: EcoSpace.lg),
               TextFormField(
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
@@ -746,7 +694,7 @@ class _AccountFormState extends State<_AccountForm> {
                 validator: (value) =>
                     (value ?? '').trim().isEmpty ? 'Enter a name' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: EcoSpace.sm),
               TextFormField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
@@ -765,7 +713,7 @@ class _AccountFormState extends State<_AccountForm> {
                   return null;
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: EcoSpace.sm),
               TextFormField(
                 controller: _phone,
                 keyboardType: TextInputType.phone,
@@ -774,7 +722,7 @@ class _AccountFormState extends State<_AccountForm> {
                   isDense: true,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: EcoSpace.sm),
               TextFormField(
                 controller: _password,
                 obscureText: !_showPassword,
@@ -827,85 +775,58 @@ class _AccountFormState extends State<_AccountForm> {
                 ),
                 validator: Validators.validatePasswordStrength,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: EcoSpace.xs),
               PasswordStrengthChecklist(password: _password.text),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 7,
-                children: [
-                  for (final kind in _AccountKind.values)
-                    if (kind != _AccountKind.iswim || widget.allowIswim)
-                      ChoiceChip(
-                        label: Text(switch (kind) {
-                          _AccountKind.driver => 'Driver',
-                          _AccountKind.guide => 'Truck guide',
-                          _AccountKind.iswim => 'Iswim account',
-                        }),
-                        selected: _kind == kind,
-                        onSelected: (_) => setState(() => _kind = kind),
-                      ),
-                ],
+              const SizedBox(height: EcoSpace.lg),
+              _FormNote(
+                icon: Icons.assignment_outlined,
+                text: _isGuide
+                    ? 'No truck is chosen here. The guide joins a crew in the '
+                          'collection manual.'
+                    : 'No truck is chosen here. The driver gets his plate from '
+                          'the collection manual Iswim writes.',
               ),
-              if (_kind != _AccountKind.iswim) ...[
-                const SizedBox(height: 10),
-                DropdownButtonFormField<GarbageTruck>(
-                  initialValue: _truck,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Assigned truck',
-                    isDense: true,
-                  ),
-                  items: [
-                    for (final truck in _trucks)
-                      DropdownMenuItem(
-                        value: truck,
-                        child: Text(
-                          '${truck.plateNumber} · ${truck.wheelerLabel}'
-                          '${truck.driverAccountId == null ? ' · no login' : ''}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _truck = value),
-                  validator: (value) => value == null ? 'Select a truck' : null,
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'This truck opens first on their dashboard when they sign in.',
-                  style: TextStyle(fontSize: 8.5, color: AppColors.inkMuted),
-                ),
-              ],
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 46,
-                child: FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.forest,
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  child: _busy
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(switch (_kind) {
-                          _AccountKind.driver => 'Create driver account',
-                          _AccountKind.guide => 'Create guide account',
-                          _AccountKind.iswim => 'Create Iswim account',
-                        }),
-                ),
+              const SizedBox(height: EcoSpace.lg),
+              PrimaryButton(
+                label: 'Create ${_isGuide ? 'guide' : 'driver'} account',
+                loading: _busy,
+                onPressed: _submit,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A quiet line that answers the question the missing field would raise.
+class _FormNote extends StatelessWidget {
+  const _FormNote({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(EcoSpace.sm),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.md),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: AppColors.primary),
+          const SizedBox(width: EcoSpace.xs),
+          Expanded(
+            child: Text(
+              text,
+              style: EcoType.bodySmall(context, color: AppColors.forest),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -921,10 +842,13 @@ class _HandoverRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: EcoSpace.sm,
+        vertical: EcoSpace.xs,
+      ),
       decoration: BoxDecoration(
         color: AppColors.mint,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(EcoRadius.md),
         border: Border.all(color: AppColors.sage),
       ),
       child: Column(
@@ -932,23 +856,14 @@ class _HandoverRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 8,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AppColors.inkMuted,
-            ),
+            style: EcoType.eyebrow(context, color: AppColors.inkMuted),
           ),
           Row(
             children: [
               Expanded(
                 child: SelectableText(
                   value,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
+                  style: EcoType.identifier(context, color: AppColors.forest),
                 ),
               ),
               IconButton(

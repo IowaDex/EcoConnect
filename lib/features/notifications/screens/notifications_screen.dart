@@ -2,18 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/widgets/section_header.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';
 
+/// Which slice of the feed is on screen.
+enum _Feed { all, unread }
+
 /// In-app notification centre shared by residents, drivers and staff.
+///
+/// Same shell as every other desk page: three figures, one search + view
+/// switch, a result line, then records on a rail card. The rail carries the
+/// notification type, so a verification alert reads the same colour here as
+/// it does on the verification desk.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -26,6 +36,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   String _query = '';
   int _page = 0;
   int _pageSize = 10;
+  _Feed _feed = _Feed.all;
 
   @override
   void dispose() {
@@ -44,6 +55,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }).toList();
   }
 
+  bool _isToday(DateTime? date) {
+    if (date == null) return false;
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
+
+  static String _homeFor(UserRole role) => switch (role) {
+    UserRole.admin => '/admin-dashboard',
+    UserRole.driver => '/driver',
+    UserRole.user => '/user',
+    UserRole.iswim => '/iswim',
+    UserRole.cityHall => '/cityhall',
+    UserRole.auditor => '/audit-log',
+  };
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
@@ -58,178 +86,196 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _ => null,
     };
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            AppPageHeader(
-              title: 'Notifications',
-              subtitle: 'Route, request and verification updates.',
-              onBack: () => context.go(switch (user.role) {
-                UserRole.admin => '/admin-dashboard',
-                UserRole.driver => '/driver',
-                UserRole.user => '/user',
-                UserRole.iswim => '/iswim',
-                UserRole.cityHall => '/cityhall',
-                UserRole.auditor => '/audit-log',
+    return EcoPageScaffold(
+      eyebrow: 'ALERT CENTRE',
+      title: 'Notifications',
+      subtitle: 'Route, request and verification updates.',
+      onBack: () => context.go(_homeFor(user.role)),
+      actions: [
+        EcoIconAction(
+          icon: Icons.done_all_rounded,
+          tooltip: 'Mark all read',
+          onTap: () => _markAllRead(context, service, user.uid, deskChannel),
+        ),
+      ],
+      body: StreamBuilder<List<AppNotification>>(
+        stream: deskChannel == null
+            ? service.watch(user.uid)
+            : service.watchForDesk(user.uid, deskChannel),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingView(label: 'Loading notifications');
+          }
+          if (snapshot.hasError) {
+            return ErrorView(message: AppFeedback.describe(snapshot.error!));
+          }
+
+          final items = snapshot.data ?? const <AppNotification>[];
+          final unread = items.where((n) => !n.read).toList(growable: false);
+          final base = _feed == _Feed.unread ? unread : items;
+          final filtered = _filter(base);
+          final page = clampPage(_page, filtered.length, _pageSize);
+          final visible = pageSlice(filtered, page, _pageSize);
+
+          final today = visible
+              .where((n) => _isToday(n.createdAt))
+              .toList(growable: false);
+          final earlier = visible
+              .where((n) => !_isToday(n.createdAt))
+              .toList(growable: false);
+
+          // One flat list of headers and records, because DeskQueueView pages
+          // a single index range. The header rows travel with their group.
+          final entries = <_FeedEntry>[
+            if (today.isNotEmpty) _FeedEntry.header('Today', today.length),
+            ...today.map(_FeedEntry.item),
+            if (earlier.isNotEmpty)
+              _FeedEntry.header('Earlier', earlier.length),
+            ...earlier.map(_FeedEntry.item),
+          ];
+
+          final todayTotal = items.where((n) => _isToday(n.createdAt)).length;
+
+          return DeskQueueView(
+            metrics: [
+              DeskMetric(
+                icon: Icons.mark_email_unread_outlined,
+                label: 'Unread',
+                value: '${unread.length}',
+                accent: AppColors.primary,
+                highlight: unread.isNotEmpty,
+              ),
+              DeskMetric(
+                icon: Icons.today_outlined,
+                label: 'Today',
+                value: '$todayTotal',
+                accent: const Color(0xFF1565C0),
+              ),
+              DeskMetric(
+                icon: Icons.inbox_outlined,
+                label: 'All alerts',
+                value: '${items.length}',
+                accent: AppColors.forest,
+              ),
+            ],
+            search: EcoSearchField(
+              controller: _search,
+              hint: 'Search alerts',
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
               }),
-              actions: [
-                IconButton(
-                  onPressed: () async {
-                    try {
-                      await (deskChannel == null
-                          ? service.markAllRead(user.uid)
-                          : service.markAllReadForDesk(user.uid, deskChannel));
-                      if (context.mounted) {
-                        AppFeedback.success(context, 'All notifications read');
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        AppFeedback.error(context, AppFeedback.describe(e));
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.done_all_rounded),
-                  tooltip: 'Mark all read',
+            ),
+            filters: DeskSegmented<_Feed>(
+              value: _feed,
+              onChanged: (next) => setState(() {
+                _feed = next;
+                _page = 0;
+              }),
+              segments: [
+                DeskSegment<_Feed>(
+                  value: _Feed.all,
+                  label: 'All',
+                  count: items.length,
+                ),
+                DeskSegment<_Feed>(
+                  value: _Feed.unread,
+                  label: 'Unread',
+                  count: unread.length,
                 ),
               ],
             ),
-            Expanded(
-              child: StreamBuilder<List<AppNotification>>(
-                stream: deskChannel == null
-                    ? service.watch(user.uid)
-                    : service.watchForDesk(user.uid, deskChannel),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const LoadingView(label: 'Loading notifications');
-                  }
-                  if (snapshot.hasError) {
-                    return ErrorView(
-                      message: AppFeedback.describe(snapshot.error!),
-                    );
-                  }
-                  final items = snapshot.data ?? const <AppNotification>[];
-                  if (items.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.notifications_none_rounded,
-                      title: 'You are all caught up',
-                      message:
-                          'Route changes, approvals and announcements will appear here.',
-                    );
-                  }
-                  final filtered = _filter(items);
-                  final page = clampPage(_page, filtered.length, _pageSize);
-                  final visible = pageSlice(filtered, page, _pageSize);
-                  final today = visible
-                      .where((n) => _isToday(n.createdAt))
-                      .toList();
-                  final earlier = visible
-                      .where((n) => !_isToday(n.createdAt))
-                      .toList();
-
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
-                        child: EcoSearchField(
-                          controller: _search,
-                          hint: 'Search alerts',
-                          onChanged: (value) => setState(() {
-                            _query = value;
-                            _page = 0;
-                          }),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 2, 18, 0),
-                        child: EcoResultCount(
-                          shown: filtered.length,
-                          total: items.length,
-                          singular: 'alert',
-                          plural: 'alerts',
-                        ),
-                      ),
-                      Expanded(
-                        child: filtered.isEmpty
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(28),
-                                  child: Text(
-                                    'No alert matches your search.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.inkMuted,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : ListView(
-                                padding: const EdgeInsets.fromLTRB(
-                                  18,
-                                  8,
-                                  18,
-                                  10,
-                                ),
-                                children: [
-                                  if (today.isNotEmpty) ...[
-                                    const SectionHeader(title: 'Today'),
-                                    const SizedBox(height: 8),
-                                    for (final item in today)
-                                      _NotificationTile(
-                                        notification: item,
-                                        onTap: () =>
-                                            _open(context, item, user.role),
-                                        onDelete: () => _delete(context, item),
-                                      ),
-                                  ],
-                                  if (earlier.isNotEmpty) ...[
-                                    const SizedBox(height: 14),
-                                    const SectionHeader(title: 'Earlier'),
-                                    const SizedBox(height: 8),
-                                    for (final item in earlier)
-                                      _NotificationTile(
-                                        notification: item,
-                                        onTap: () =>
-                                            _open(context, item, user.role),
-                                        onDelete: () => _delete(context, item),
-                                      ),
-                                  ],
-                                ],
-                              ),
-                      ),
-                      if (filtered.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                          child: EcoPaginationBar(
-                            page: page,
-                            pageSize: _pageSize,
-                            total: filtered.length,
-                            onPageChanged: (next) =>
-                                setState(() => _page = next),
-                            onPageSizeChanged: (size) => setState(() {
-                              _pageSize = size;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+            resultLine: DeskResultLine(
+              label: filtered.length == items.length
+                  ? '${items.length} ${items.length == 1 ? 'alert' : 'alerts'}'
+                  : 'Showing ${filtered.length} of ${items.length}',
+              onClear: _query.isEmpty && _feed == _Feed.all
+                  ? null
+                  : () => setState(() {
+                      _search.clear();
+                      _query = '';
+                      _feed = _Feed.all;
+                      _page = 0;
+                    }),
             ),
-          ],
-        ),
+            empty: items.isEmpty
+                ? const DeskEmptyQueue(
+                    icon: Icons.notifications_none_rounded,
+                    title: 'You are all caught up',
+                    message:
+                        'Route changes, approvals and announcements land here '
+                        'the moment a desk acts on them.',
+                    steps: [
+                      'A desk approves, assigns or rejects something',
+                      'An alert is written to your feed',
+                      'Tap it to open the record it came from',
+                    ],
+                  )
+                : DeskEmptyQueue(
+                    icon: Icons.search_off_rounded,
+                    title: 'No alert matches',
+                    message:
+                        'Nothing in this view matches "$_query". Try a shorter '
+                        'word, or switch back to All.',
+                    actionLabel: 'Show all alerts',
+                    actionIcon: Icons.inbox_outlined,
+                    onAction: () => setState(() {
+                      _search.clear();
+                      _query = '';
+                      _feed = _Feed.all;
+                      _page = 0;
+                    }),
+                  ),
+            itemCount: entries.length,
+            separator: 8,
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              if (entry.label != null) {
+                return _FeedHeader(label: entry.label!, count: entry.count);
+              }
+              final item = entry.notification!;
+              return _NotificationTile(
+                notification: item,
+                onTap: () => _open(context, item, user.role),
+                onDelete: () => _delete(context, item),
+              );
+            },
+            pagination: filtered.isEmpty
+                ? null
+                : EcoPaginationBar(
+                    page: page,
+                    pageSize: _pageSize,
+                    total: filtered.length,
+                    onPageChanged: (next) => setState(() => _page = next),
+                    onPageSizeChanged: (size) => setState(() {
+                      _pageSize = size;
+                      _page = 0;
+                    }),
+                  ),
+          );
+        },
       ),
     );
   }
 
-  bool _isToday(DateTime? date) {
-    if (date == null) return false;
-    final now = DateTime.now();
-    return date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
+  Future<void> _markAllRead(
+    BuildContext context,
+    NotificationService service,
+    String uid,
+    String? deskChannel,
+  ) async {
+    try {
+      await (deskChannel == null
+          ? service.markAllRead(uid)
+          : service.markAllReadForDesk(uid, deskChannel));
+      if (context.mounted) {
+        AppFeedback.success(context, 'All notifications read');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        AppFeedback.error(context, AppFeedback.describe(e));
+      }
+    }
   }
 
   Future<void> _delete(BuildContext context, AppNotification item) async {
@@ -386,6 +432,46 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 }
 
+/// One row of the flat feed: either a day header or a notification.
+class _FeedEntry {
+  const _FeedEntry.header(this.label, this.count) : notification = null;
+  const _FeedEntry.item(this.notification) : label = null, count = 0;
+
+  final String? label;
+  final int count;
+  final AppNotification? notification;
+}
+
+/// `TODAY · 4` with a hairline filling the rest of the row.
+class _FeedHeader extends StatelessWidget {
+  const _FeedHeader({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 2),
+      child: Row(
+        children: [
+          Text(
+            '$label · $count',
+            style: EcoType.eyebrow(context, color: AppColors.inkMuted),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: AppColors.sage.withValues(alpha: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.notification,
@@ -400,6 +486,8 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unread = !notification.read;
+    final accent = notification.type.color;
+
     return Dismissible(
       key: ValueKey(notification.id),
       direction: DismissDirection.endToStart,
@@ -407,105 +495,81 @@ class _NotificationTile extends StatelessWidget {
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 18),
-        margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
           color: AppColors.error,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Material(
-          color: unread ? Colors.white : Colors.white.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.all(13),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: unread
-                      ? notification.type.color.withValues(alpha: 0.45)
-                      : AppColors.sage.withValues(alpha: 0.6),
+      child: DeskRailCard(
+        railColor: unread ? accent : accent.withValues(alpha: 0.35),
+        onTap: onTap,
+        padding: const EdgeInsets.fromLTRB(15, 12, 13, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 32,
+                  width: 32,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(EcoRadius.sm),
+                  ),
+                  child: Icon(notification.type.icon, size: 16, color: accent),
                 ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                const SizedBox(width: EcoSpace.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        notification.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.cardTitle(
+                          context,
+                          color: AppColors.textDark,
+                          weight: unread ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${notification.type.label.toUpperCase()} · '
+                        '${timeAgo(notification.createdAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.meta(context, color: AppColors.inkMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                if (unread) ...[
+                  const SizedBox(width: 8),
                   Container(
-                    height: 36,
-                    width: 36,
-                    decoration: BoxDecoration(
-                      color: notification.type.color.withValues(alpha: 0.12),
+                    margin: const EdgeInsets.only(top: 5),
+                    height: 7,
+                    width: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      notification.type.icon,
-                      size: 17,
-                      color: notification.type.color,
-                    ),
                   ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                notification.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: unread
-                                      ? FontWeight.w700
-                                      : FontWeight.w600,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              timeAgo(notification.createdAt),
-                              style: const TextStyle(
-                                fontSize: 8,
-                                color: AppColors.inkMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          notification.body,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            height: 1.45,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (unread)
-                    Container(
-                      margin: const EdgeInsets.only(left: 6, top: 4),
-                      height: 7,
-                      width: 7,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
                 ],
-              ),
+              ],
             ),
-          ),
+            if (notification.body.trim().isNotEmpty) ...[
+              const SizedBox(height: 7),
+              Text(
+                notification.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+              ),
+            ],
+          ],
         ),
       ),
     );

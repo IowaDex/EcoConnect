@@ -2,15 +2,18 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
+import '../../../core/widgets/eco_loading.dart';
+import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/status_badge.dart';
@@ -20,216 +23,243 @@ import '../services/manual_service.dart';
 
 /// One manual: current file, complete version history, and the two role
 /// actions — Iswim uploads a revision, City Hall acknowledges receipt.
-class ManualDetailScreen extends StatelessWidget {
+class ManualDetailScreen extends StatefulWidget {
   const ManualDetailScreen({super.key, required this.manualId});
 
   final String manualId;
+
+  @override
+  State<ManualDetailScreen> createState() => _ManualDetailScreenState();
+}
+
+class _ManualDetailScreenState extends State<ManualDetailScreen> {
+  /// Cached so a rebuild from the action sheets does not resubscribe and flash
+  /// the loading state.
+  late final Stream<Manual?> _manual = ManualService().watchOne(
+    widget.manualId,
+  );
 
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final isIswim = user?.role == UserRole.iswim;
     final isCityHall = user?.role == UserRole.cityHall;
+    final fallback = switch (user?.role) {
+      UserRole.iswim => '/iswim',
+      UserRole.cityHall => '/cityhall',
+      UserRole.admin => '/admin-dashboard',
+      _ => '/user',
+    };
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.forest),
-          onPressed: () => context.canPop()
-              ? context.pop()
-              : context.go(isIswim ? '/iswim' : '/cityhall'),
-        ),
-        title: const Text(
-          'Manual',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.forest,
+    return StreamBuilder<Manual?>(
+      stream: _manual,
+      builder: (context, snapshot) {
+        final manual = snapshot.data;
+        final waiting = snapshot.connectionState == ConnectionState.waiting;
+
+        return EcoPageScaffold(
+          eyebrow: isIswim
+              ? 'ISWIM · MANUALS'
+              : isCityHall
+              ? 'CITY HALL · MANUALS'
+              : 'BARANGAY · MANUALS',
+          title: manual?.title ?? 'Manual',
+          subtitle: manual == null
+              ? null
+              : '${manual.category.label} · by ${manual.createdByName}',
+          onBack: () => ecoBack(context, fallback),
+          actions: [
+            if (manual != null) ...[
+              StatusBadge(
+                label: 'v${manual.version}',
+                color: AppColors.primary,
+                compact: true,
+              ),
+              const SizedBox(width: 4),
+              StatusBadge(
+                label: manual.status.label,
+                color: manual.status.color,
+                compact: true,
+              ),
+            ],
+          ],
+          body: snapshot.hasError
+              ? DeskEmptyQueue(
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Could not load this manual',
+                  message: AppFeedback.describe(snapshot.error!),
+                )
+              : waiting && manual == null
+              ? const EcoLoadingView(label: 'Loading manual')
+              : manual == null
+              ? const DeskEmptyQueue(
+                  icon: Icons.menu_book_outlined,
+                  title: 'Manual not found',
+                  message: 'This manual no longer exists or was withdrawn.',
+                )
+              : _body(
+                  context,
+                  manual,
+                  user: user,
+                  isIswim: isIswim,
+                  isCityHall: isCityHall,
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    Manual manual, {
+    required AppUser? user,
+    required bool isIswim,
+    required bool isCityHall,
+  }) {
+    final summary = manual.summary.trim();
+    final notes = manual.currentNotes.trim();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+      children: [
+        if (summary.isNotEmpty)
+          EcoCard(
+            child: SelectableText(
+              summary,
+              style: EcoType.body(
+                context,
+                color: AppColors.textDark,
+              ).copyWith(height: 1.7),
+            ),
           ),
-        ),
-      ),
-      body: StreamBuilder<Manual?>(
-        stream: ManualService().watchOne(manualId),
-        builder: (context, snapshot) {
-          final manual = snapshot.data;
-          if (manual == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: EcoSpace.sm),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+            decoration: BoxDecoration(
+              color: AppColors.lightGreen.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(EcoRadius.md),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'WHAT CHANGED IN v${manual.version}',
+                  style: EcoType.eyebrow(context, color: AppColors.primary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  notes,
+                  style: EcoType.bodySmall(
+                    context,
+                    color: AppColors.darkGreen,
+                  ).copyWith(height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (manual.acknowledgedAt != null) ...[
+          const SizedBox(height: EcoSpace.sm),
+          Row(
             children: [
-              EcoCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        StatusBadge(
-                          label: 'v${manual.version}',
-                          color: AppColors.primary,
-                          compact: true,
-                        ),
-                        const SizedBox(width: 6),
-                        StatusBadge(
-                          label: manual.status.label,
-                          color: manual.status.color,
-                          compact: true,
-                        ),
-                        const Spacer(),
-                        Text(
-                          timeAgo(manual.updatedAt ?? manual.createdAt),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.inkMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      manual.title,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        height: 1.25,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.darkGreen,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${manual.category.label} · by ${manual.createdByName}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.inkMuted,
-                      ),
-                    ),
-                    if (manual.summary.trim().isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        manual.summary,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          height: 1.6,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ],
-                    if (manual.currentNotes.trim().isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(11),
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGreen.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          'v${manual.version} notes: ${manual.currentNotes}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            height: 1.5,
-                            color: AppColors.darkGreen,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (manual.acknowledgedAt != null) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.verified_rounded,
-                            size: 14,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Received by ${manual.acknowledgedByName ?? 'City Hall'} '
-                              '· ${timeAgo(manual.acknowledgedAt)}',
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.inkMuted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
+              const Icon(
+                Icons.verified_rounded,
+                size: 14,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Received by ${manual.acknowledgedByName ?? 'City Hall'} '
+                  '· ${timeAgo(manual.acknowledgedAt)}',
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
                 ),
               ),
-              const SizedBox(height: 12),
-              _FileCard(file: manual.file),
-              const SizedBox(height: 14),
-              if (isIswim)
-                SizedBox(
-                  height: 44,
-                  child: FilledButton.icon(
-                    onPressed: () => _openRevision(context, manual, user!),
+            ],
+          ),
+        ],
+        const SizedBox(height: EcoSpace.md),
+        _FileCard(file: manual.file),
+        if (isIswim ||
+            (isCityHall && manual.status != ManualStatus.acknowledged)) ...[
+          const SizedBox(height: EcoSpace.md),
+          SizedBox(
+            height: 46,
+            child: isIswim
+                ? FilledButton.icon(
+                    onPressed: user == null
+                        ? null
+                        : () => _openRevision(context, manual, user),
                     icon: const Icon(Icons.upload_file_rounded, size: 17),
                     label: const Text(
                       'Upload a new version',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.forest,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(EcoRadius.md),
+                      ),
                     ),
-                  ),
-                ),
-              if (isCityHall && manual.status != ManualStatus.acknowledged) ...[
-                SizedBox(
-                  height: 44,
-                  child: FilledButton.icon(
-                    onPressed: () => _acknowledge(context, manual, user!),
+                  )
+                : FilledButton.icon(
+                    onPressed: user == null
+                        ? null
+                        : () => _acknowledge(context, manual, user),
                     icon: const Icon(Icons.task_alt_rounded, size: 17),
                     label: const Text(
                       'Mark as received',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(EcoRadius.md),
+                      ),
                     ),
                   ),
-                ),
+          ),
+        ],
+        const SizedBox(height: EcoSpace.lg),
+        const SectionLabel('VERSION HISTORY'),
+        const SizedBox(height: EcoSpace.sm),
+        StreamBuilder<List<ManualVersion>>(
+          stream: ManualService().watchVersions(manual.id),
+          builder: (context, versionSnapshot) {
+            final versions = versionSnapshot.data ?? const <ManualVersion>[];
+            if (versions.isEmpty) {
+              return Text(
+                'No versions recorded yet.',
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
+              );
+            }
+            return Column(
+              children: [
+                for (final version in versions) ...[
+                  _VersionTile(
+                    version: version,
+                    current: version.version == manual.version,
+                  ),
+                  const SizedBox(height: EcoSpace.sm),
+                ],
               ],
-              const SizedBox(height: 18),
-              const SectionHeader(title: 'Version history'),
-              const SizedBox(height: 8),
-              StreamBuilder<List<ManualVersion>>(
-                stream: ManualService().watchVersions(manual.id),
-                builder: (context, versionSnapshot) {
-                  final versions =
-                      versionSnapshot.data ?? const <ManualVersion>[];
-                  if (versions.isEmpty) {
-                    return const Text(
-                      'No versions recorded.',
-                      style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
-                    );
-                  }
-                  return Column(
-                    children: [
-                      for (final version in versions) ...[
-                        _VersionTile(version: version),
-                        const SizedBox(height: 8),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            ],
-          );
-        },
-      ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -278,19 +308,19 @@ class _FileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final payload = file;
     if (payload == null) {
-      return const EcoCard(
+      return EcoCard(
         child: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.attach_file_rounded,
               size: 18,
               color: AppColors.inkMuted,
             ),
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'No file attached to this revision.',
-                style: TextStyle(fontSize: 10, color: AppColors.inkMuted),
+                style: EcoType.bodySmall(context, color: AppColors.inkMuted),
               ),
             ),
           ],
@@ -321,19 +351,15 @@ class _FileCard extends StatelessWidget {
                       payload.fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                      style: EcoType.bodyStrong(
+                        context,
                         color: AppColors.darkGreen,
                       ),
                     ),
                     Text(
                       '${payload.sizeKb.toStringAsFixed(0)} KB · '
                       '${payload.isPdf ? 'PDF' : 'image'}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.inkMuted,
-                      ),
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
                   ],
                 ),
@@ -342,7 +368,7 @@ class _FileCard extends StatelessWidget {
                 onPressed: () => _open(context, payload),
                 child: const Text(
                   'Open',
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                 ),
               ),
             ],
@@ -350,7 +376,7 @@ class _FileCard extends StatelessWidget {
           if (bytes != null && !payload.isPdf) ...[
             const SizedBox(height: 10),
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EcoRadius.md),
               child: Image.memory(
                 bytes,
                 height: 170,
@@ -391,19 +417,20 @@ class _FileCard extends StatelessWidget {
 }
 
 class _VersionTile extends StatelessWidget {
-  const _VersionTile({required this.version});
+  const _VersionTile({required this.version, required this.current});
 
   final ManualVersion version;
 
+  /// The version the manual is on right now.
+  final bool current;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: AppColors.sage),
-      ),
+    final notes = version.notes.trim();
+
+    return DeskRailCard(
+      railColor: current ? AppColors.primary : AppColors.sage,
+      padding: const EdgeInsets.fromLTRB(15, 11, 13, 11),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -412,15 +439,15 @@ class _VersionTile extends StatelessWidget {
             width: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: AppColors.lightGreen,
-              borderRadius: BorderRadius.circular(9),
+              color: current ? AppColors.primary : AppColors.lightGreen,
+              borderRadius: BorderRadius.circular(EcoRadius.sm),
             ),
             child: Text(
               'v${version.version}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w800,
-                color: AppColors.primary,
+                color: current ? Colors.white : AppColors.primary,
               ),
             ),
           ),
@@ -429,25 +456,37 @@ class _VersionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  version.notes.trim().isEmpty
-                      ? 'Version ${version.version}'
-                      : version.notes,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    height: 1.45,
-                    color: AppColors.textDark,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        notes.isEmpty ? 'Version ${version.version}' : notes,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: EcoType.bodySmall(
+                          context,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                    if (current) ...[
+                      const SizedBox(width: 6),
+                      const StatusBadge(
+                        label: 'Current',
+                        color: AppColors.primary,
+                        compact: true,
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
                   '${version.submittedByName} · '
                   '${timeAgo(version.submittedAt)}'
                   '${version.file == null ? '' : ' · ${version.file!.fileName}'}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.inkMuted,
-                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
                 ),
               ],
             ),
@@ -527,16 +566,6 @@ class _RevisionFormState extends State<_RevisionForm> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                height: 4,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.sage,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
             const SizedBox(height: 14),
             Text(
               'New version of ${widget.manual.title}',

@@ -359,21 +359,80 @@ test('signup is residents only, waits for the barangay and cannot self-verify', 
   await assertFails(updateDoc(doc(as('u4', false), 'users/u4'), {accountStatus: 'active'}));
 });
 
-test('City Hall creates every crew and staff login; Iswim creates its own and the crew', async () => {
-  const crew = (role) => ({name: 'Crew', role, accountStatus: 'active'});
-  // The barangay desk provisions nobody.
-  await assertFails(setDoc(doc(as('root'), 'users/newdriver'), crew('driver')));
-  await assertFails(setDoc(doc(as('root'), 'users/newstaff'), crew('admin')));
-  await assertSucceeds(setDoc(doc(as('carl'), 'users/newdriver'), crew('driver')));
-  // Iswim runs its own account desk: colleagues and drivers, never the
-  // barangay, City Hall or an auditor.
-  await assertSucceeds(setDoc(doc(as('ivy'), 'users/newiswim'), crew('iswim')));
-  await assertSucceeds(setDoc(doc(as('ivy'), 'users/newcrew'), crew('driver')));
-  await assertFails(setDoc(doc(as('ivy'), 'users/newadmin'), crew('admin')));
-  await assertFails(setDoc(doc(as('ivy'), 'users/newcarl'), crew('cityHall')));
-  await assertFails(setDoc(doc(as('ivy'), 'users/newauditor'), crew('auditor')));
+test('each desk provisions only its own crew, never another desk', async () => {
+  const crew = (role, extra = {}) => ({name: 'Crew', role, accountStatus: 'active', ...extra});
+  const driver = crew('driver', {crewRole: 'driver'});
+  const guide = crew('driver', {crewRole: 'guide'});
+
+  // City Hall is the only desk that makes every role.
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/c-driver'), driver));
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/c-admin'), crew('admin')));
+  await assertSucceeds(setDoc(doc(as('carl'), 'users/c-iswim'), crew('iswim')));
+
+  // Iswim makes the drivers — the people who hold a plate.
+  await assertSucceeds(setDoc(doc(as('ivy'), 'users/i-driver'), driver));
+  // A guide rides with someone else's plate: the barangay makes that login.
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-guide'), guide));
+  // Its own colleagues and the other desks are City Hall's to create.
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-iswim'), crew('iswim')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-admin'), crew('admin')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-carl'), crew('cityHall')));
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-auditor'), crew('auditor')));
+  // A driver with no crewRole would be a crew member nobody labelled.
+  await assertFails(setDoc(doc(as('ivy'), 'users/i-bare'), crew('driver')));
+
+  // The barangay makes its truck guides, and only guides.
+  await assertSucceeds(setDoc(doc(as('root'), 'users/b-guide'), guide));
+  await assertFails(setDoc(doc(as('root'), 'users/b-driver'), driver));
+  await assertFails(setDoc(doc(as('root'), 'users/b-admin'), crew('admin')));
+  await assertFails(setDoc(doc(as('root'), 'users/b-iswim'), crew('iswim')));
+  await assertFails(setDoc(doc(as('root'), 'users/b-carl'), crew('cityHall')));
+  await assertFails(setDoc(doc(as('root'), 'users/b-auditor'), crew('auditor')));
+
   // A provisioned login is active on arrival, never pending.
-  await assertFails(setDoc(doc(as('ivy'), 'users/pending'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
+  await assertFails(setDoc(doc(as('ivy'), 'users/pending'), {
+    name: 'P', role: 'driver', crewRole: 'driver', accountStatus: 'pending',
+  }));
+});
+
+test('a desk suspends and deletes only its own people', async () => {
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    await setDoc(doc(db, 'users/g1'), {name: 'G', role: 'driver', crewRole: 'guide'});
+    await setDoc(doc(db, 'users/d1'), {name: 'D', role: 'driver', crewRole: 'driver'});
+    await setDoc(doc(db, 'users/i2'), {name: 'I', role: 'iswim'});
+    await setDoc(doc(db, 'users/a2'), {name: 'A', role: 'admin'});
+    await setDoc(doc(db, 'users/c2'), {name: 'C', role: 'cityHall'});
+  });
+
+  // The barangay suspends its guides, and only them.
+  await assertSucceeds(updateDoc(doc(as('root'), 'users/g1'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('root'), 'users/d1'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('root'), 'users/i2'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('root'), 'users/a2'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('root'), 'users/c2'), {accountStatus: 'suspended'}));
+
+  // Iswim suspends the drivers, and nothing else — not a guide, not another
+  // desk. A profile from before crewRole existed still counts as a driver.
+  await assertSucceeds(updateDoc(doc(as('ivy'), 'users/d1'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('ivy'), 'users/g1'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('ivy'), 'users/i2'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('ivy'), 'users/a2'), {accountStatus: 'suspended'}));
+  await assertFails(updateDoc(doc(as('ivy'), 'users/c2'), {accountStatus: 'suspended'}));
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'users/legacy'), {name: 'L', role: 'driver'}));
+  await assertSucceeds(updateDoc(doc(as('ivy'), 'users/legacy'), {accountStatus: 'suspended'}));
+
+  // Nobody hands out a role through the desk.
+  await assertFails(updateDoc(doc(as('ivy'), 'users/d1'), {role: 'admin'}));
+  await assertFails(updateDoc(doc(as('root'), 'users/g1'), {role: 'admin'}));
+
+  // Deleting: residents and its own guides. Never another desk's login.
+  await assertSucceeds(deleteDoc(doc(as('root'), 'users/g1')));
+  await assertSucceeds(deleteDoc(doc(as('root'), 'users/alice')));
+  await assertFails(deleteDoc(doc(as('root'), 'users/d1')));
+  await assertFails(deleteDoc(doc(as('root'), 'users/i2')));
+  await assertFails(deleteDoc(doc(as('root'), 'users/c2')));
 });
 
 test('City Hall alone keeps the District Officer email address', async () => {
@@ -415,8 +474,12 @@ test('a pending resident with a confirmed email may tell the barangay, nothing m
 });
 
 test('users cannot approve themselves, edit points or set a huge photo', async () => {
+  // A guide, because a pending crew account is the barangay's to approve and
+  // guides are the crew it owns.
   await env.withSecurityRulesDisabled((c) =>
-    setDoc(doc(c.firestore(), 'users/pd'), {name: 'P', role: 'driver', accountStatus: 'pending'}));
+    setDoc(doc(c.firestore(), 'users/pd'), {
+      name: 'P', role: 'driver', crewRole: 'guide', accountStatus: 'pending',
+    }));
   await assertFails(updateDoc(doc(as('pd'), 'users/pd'), {accountStatus: 'active'}));
   await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {points: 100}));
   await assertFails(updateDoc(doc(as('alice'), 'users/alice'), {photoUrl: 'x'.repeat(150000)}));
@@ -598,9 +661,10 @@ test('admins can delete a user but cannot hand out roles; City Hall can', async 
   const root = as('root');
   await assertSucceeds(getDocs(collection(root, 'users')));
   // Provisioning moved to City Hall, so the barangay desk edits a profile but
-  // never its role.
+  // never its role. Re-roled on Bob, so Alice stays the resident this test
+  // then deletes — the barangay may only delete residents and its guides.
   await assertFails(updateDoc(doc(root, 'users/alice'), {role: 'driver'}));
-  await assertSucceeds(updateDoc(doc(as('carl'), 'users/alice'), {role: 'driver'}));
+  await assertSucceeds(updateDoc(doc(as('carl'), 'users/bob'), {role: 'driver'}));
   // Staff can list location history only once the deletion tombstone exists.
   await assertFails(getDocs(collection(root, 'users/alice/locations')));
   await assertSucceeds(setDoc(doc(root, 'removed_users/alice'), {removedAt: 1}));

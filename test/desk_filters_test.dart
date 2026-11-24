@@ -1,3 +1,4 @@
+import 'package:eco_connect/core/widgets/desk_ui.dart';
 import 'package:eco_connect/core/widgets/eco_pagination.dart';
 import 'package:eco_connect/core/widgets/empty_state.dart';
 import 'package:eco_connect/features/cityhall/models/desk_document.dart';
@@ -6,6 +7,54 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('desk segmented', () {
+    testWidgets('reports the tapped status and keeps four options readable', (
+      tester,
+    ) async {
+      SignatureFilter? picked;
+
+      await tester.pumpWidget(
+        _sized(
+          300,
+          DeskSegmented<SignatureFilter>(
+            segments: [
+              for (final filter in SignatureFilter.values)
+                DeskSegment(value: filter, label: filter.shortLabel),
+            ],
+            value: SignatureFilter.awaiting,
+            onChanged: (filter) => picked = filter,
+          ),
+        ),
+      );
+
+      expect(find.text('Awaiting'), findsOneWidget);
+      expect(find.text('Returned'), findsOneWidget);
+
+      await tester.tap(find.text('Rejected'));
+      await tester.pump();
+      expect(picked, SignatureFilter.rejected);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('carries a count without overflowing a phone', (tester) async {
+      await tester.pumpWidget(
+        _sized(
+          320,
+          DeskSegmented<String>(
+            segments: const [
+              DeskSegment(value: 'a', label: 'For signature', count: 12),
+              DeskSegment(value: 'b', label: 'Received', count: 108),
+            ],
+            value: 'a',
+            onChanged: (_) {},
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('desk filters', () {
     testWidgets('category bar reports the tapped office and its counts', (
       tester,
@@ -49,47 +98,6 @@ void main() {
       expect(cleared, isTrue);
     });
 
-    testWidgets('signature bar reports the tapped status', (tester) async {
-      SignatureFilter? selected;
-
-      await tester.pumpWidget(
-        _wrap(
-          DeskSignatureBar(
-            selected: SignatureFilter.awaiting,
-            counts: const {
-              SignatureFilter.awaiting: 4,
-              SignatureFilter.signed: 9,
-              SignatureFilter.rejected: 1,
-              SignatureFilter.returned: 2,
-            },
-            onChanged: (filter) => selected = filter,
-          ),
-        ),
-      );
-
-      expect(find.text('Awaiting'), findsOneWidget);
-      expect(find.text('Returned'), findsOneWidget);
-
-      await tester.tap(find.text('Signed'));
-      await tester.pump();
-      expect(selected, SignatureFilter.signed);
-    });
-
-    testWidgets('the status chips share one row at desk width', (tester) async {
-      await tester.pumpWidget(_sized(460, _signatureBar()));
-
-      expect(_chipRows(tester), hasLength(1));
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('a narrow window falls back to two columns', (tester) async {
-      await tester.pumpWidget(_sized(360, _signatureBar()));
-
-      // Two even rows, never one cell left alone on a third row.
-      expect(_chipRows(tester), hasLength(2));
-      expect(tester.takeException(), isNull);
-    });
-
     testWidgets('shared search field reports typing and clears', (
       tester,
     ) async {
@@ -124,6 +132,52 @@ void main() {
       expect(find.byIcon(Icons.close_rounded), findsNothing);
 
       controller.dispose();
+    });
+
+    testWidgets('the office chips share one row at desk width', (tester) async {
+      await tester.pumpWidget(_sized(460, _categoryBar()));
+
+      expect(_chipRows(tester), hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a narrow window falls back to two columns', (tester) async {
+      await tester.pumpWidget(_sized(360, _categoryBar()));
+
+      // Two even rows, never one cell left alone on a third row.
+      expect(_chipRows(tester), hasLength(2));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a chip hugs its label instead of claiming a whole row', (
+      tester,
+    ) async {
+      // The day bar stacks one chip per line when a chip expands to the width
+      // it is offered, which is how the schedule filter grew eight rows tall.
+      await tester.pumpWidget(
+        _sized(
+          360,
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final label in ['All', 'Mon', 'Tue', 'Wed'])
+                DeskFilterChip(
+                  label: label,
+                  selected: label == 'All',
+                  onTap: () {},
+                ),
+            ],
+          ),
+        ),
+      );
+
+      expect(_chipRows(tester), hasLength(1));
+      expect(
+        tester.getSize(find.byType(DeskFilterChip).first).width,
+        lessThan(120),
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('shared empty state shows its action only when one is given', (
@@ -165,19 +219,21 @@ Widget _sized(double width, Widget child) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true),
     home: Scaffold(
-      body: Center(child: SizedBox(width: width, child: child)),
+      body: Center(
+        child: SizedBox(width: width, child: child),
+      ),
     ),
   );
 }
 
-Widget _signatureBar() {
-  return DeskSignatureBar(
-    selected: SignatureFilter.awaiting,
+Widget _categoryBar() {
+  return DeskCategoryBar(
+    selected: DeskCategory.barangay,
     counts: const {
-      SignatureFilter.awaiting: 2,
-      SignatureFilter.signed: 6,
-      SignatureFilter.rejected: 0,
-      SignatureFilter.returned: 0,
+      null: 4,
+      DeskCategory.barangay: 2,
+      DeskCategory.iswim: 1,
+      DeskCategory.driver: 1,
     },
     onChanged: (_) {},
   );

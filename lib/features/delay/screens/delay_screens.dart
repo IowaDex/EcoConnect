@@ -624,32 +624,33 @@ class _DelayCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                padding: const EdgeInsets.fromLTRB(9, 5, 10, 5),
                 decoration: BoxDecoration(
                   color: AppColors.warning.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(EcoRadius.sm),
+                  borderRadius: BorderRadius.circular(EcoRadius.pill),
                   border: Border.all(
                     color: AppColors.warning.withValues(alpha: 0.35),
                   ),
                 ),
-                child: Column(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       '${report.minutesLate}',
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         height: 1,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFFB26A00),
                       ),
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(width: 3),
                     const Text(
-                      'MIN LATE',
+                      'min late',
                       style: TextStyle(
-                        fontSize: 7,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.4,
+                        fontSize: 9,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
                         color: Color(0xFFB26A00),
                       ),
                     ),
@@ -672,16 +673,16 @@ class _DelayCard extends StatelessWidget {
                   report.reason,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
+                  style: EcoType.bodySmall(
+                    context,
                     color: AppColors.textDark,
+                    weight: FontWeight.w600,
                   ),
                 ),
               ),
               Text(
                 timeAgo(report.createdAt),
-                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
@@ -850,8 +851,8 @@ class _StageTrack extends StatelessWidget {
               Text(
                 labels[i],
                 style: TextStyle(
-                  fontSize: 8,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 9,
+                  fontWeight: current >= i ? FontWeight.w800 : FontWeight.w600,
                   color: current >= i
                       ? AppColors.forest
                       : AppColors.inkMuted.withValues(alpha: 0.8),

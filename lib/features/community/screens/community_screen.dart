@@ -5,22 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/image_payload.dart';
 import '../../../core/utils/paging.dart';
 import '../../../core/widgets/app_bottom_nav.dart';
-import '../../dashboard/widgets/role_top_bar.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/desk_ui.dart';
 import '../../../core/widgets/eco_card.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/eco_pagination.dart';
-import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/eco_skeleton.dart';
 import '../../../core/widgets/image_picker_field.dart';
 import '../../../core/widgets/status_badge.dart';
 import '../../announcements/models/announcement.dart';
 import '../../announcements/services/announcement_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../dashboard/widgets/role_top_bar.dart';
 import '../../events/models/community_event.dart';
 import '../../events/services/event_service.dart';
 import '../../user/widgets/profile_sheet.dart';
@@ -63,29 +65,51 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.creamBright,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RoleTopBar(
-              actions: [
-                _HeaderAction(icon: Icons.edit_outlined, onTap: _openComposer),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                RoleTopBar(
+                  actions: [
+                    _HeaderAction(
+                      icon: Icons.edit_outlined,
+                      onTap: _openComposer,
+                    ),
+                  ],
+                ),
+                const EcoPageHeader(
+                  eyebrow: 'RESIDENT · COMMUNITY',
+                  title: 'Community',
+                  subtitle:
+                      'Announcements, events and updates from your '
+                      'barangay.',
+                  padding: EdgeInsets.fromLTRB(20, 6, 20, 12),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: DeskSegmented<CommunitySection>(
+                    value: _section,
+                    onChanged: (section) => setState(() => _section = section),
+                    segments: [
+                      for (final section in CommunitySection.values)
+                        DeskSegment<CommunitySection>(
+                          value: section,
+                          label: section.label,
+                          icon: section.icon,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: EcoSpace.md),
+                Expanded(child: _body()),
               ],
             ),
-            const EcoPageHeader(
-              eyebrow: 'RESIDENT · COMMUNITY',
-              title: 'Community',
-              subtitle: 'Announcements, events and updates from your barangay.',
-            ),
-            _SectionTabs(
-              selected: _section,
-              onSelect: (section) => setState(() => _section = section),
-            ),
-            const SizedBox(height: 12),
-            Expanded(child: _body()),
-          ],
+          ),
         ),
       ),
       bottomNavigationBar: AppBottomNav(
@@ -152,83 +176,46 @@ class _HeaderAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(icon, size: 19, color: AppColors.inkMuted),
+    return Tooltip(
+      message: 'Write a post',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        hoverColor: AppColors.lightGreen,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, size: 19, color: AppColors.inkMuted),
+        ),
       ),
     );
   }
 }
 
-class _SectionTabs extends StatelessWidget {
-  const _SectionTabs({required this.selected, required this.onSelect});
+/// Shared footer for every feed card, so the "open" affordance always sits in
+/// the same place: lower right, after whatever facts the card carries.
+class _CardFooter extends StatelessWidget {
+  const _CardFooter({this.leading});
 
-  final CommunitySection selected;
-  final ValueChanged<CommunitySection> onSelect;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: AppColors.cream,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.sage.withValues(alpha: 0.8)),
+    return Row(
+      children: [
+        // Expanded rather than a bare child: DeskFact flexes its own text, and
+        // a flex inside an unbounded Row throws.
+        Expanded(child: leading ?? const SizedBox.shrink()),
+        const SizedBox(width: EcoSpace.xs),
+        Text(
+          'Read more',
+          style: EcoType.label(context, color: AppColors.primary),
         ),
-        child: Row(
-          children: [
-            for (final section in CommunitySection.values)
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => onSelect(section),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(vertical: 9),
-                    decoration: BoxDecoration(
-                      color: selected == section
-                          ? AppColors.forest
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          section.icon,
-                          size: 14,
-                          color: selected == section
-                              ? AppColors.creamBright
-                              : AppColors.inkMuted,
-                        ),
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child: Text(
-                            section.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: selected == section
-                                  ? AppColors.creamBright
-                                  : AppColors.inkMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
+        const Icon(
+          Icons.chevron_right_rounded,
+          size: 15,
+          color: AppColors.primary,
         ),
-      ),
+      ],
     );
   }
 }
@@ -248,29 +235,32 @@ class _AnnouncementsTab extends StatelessWidget {
       stream: service.watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingView(label: 'Loading announcements');
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: SkeletonCardList(count: 3),
+          );
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              AppFeedback.describe(snapshot.error!),
-              style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-            ),
+          return DeskEmptyQueue(
+            icon: Icons.cloud_off_rounded,
+            title: 'Announcements are not loading',
+            message: AppFeedback.describe(snapshot.error!),
           );
         }
         final items = snapshot.data ?? const <Announcement>[];
         if (items.isEmpty) {
-          return const EmptyState(
+          return const DeskEmptyQueue(
             icon: Icons.campaign_outlined,
             title: 'No announcements yet',
             message:
-                'Barangay announcements will appear here as soon as they are published.',
+                'Barangay announcements will appear here as soon as they '
+                'are published.',
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
           itemBuilder: (context, i) => _AnnouncementCard(
             announcement: items[i],
             onTap: () => _openAnnouncement(context, items[i]),
@@ -284,40 +274,51 @@ class _AnnouncementsTab extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: AppColors.creamBright,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(EcoRadius.xl)),
+      ),
       builder: (ctx) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.75,
+        initialChildSize: 0.78,
         minChildSize: 0.4,
         maxChildSize: 0.95,
         builder: (context, controller) => ListView(
           controller: controller,
-          padding: const EdgeInsets.fromLTRB(22, 6, 22, 28),
+          padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
           children: [
-            StatusBadge(
-              label: item.category.label,
-              color: item.category.color,
-              icon: item.category.icon,
+            // No handle of our own: the theme's bottomSheetTheme already draws
+            // one, and a second bar under it read as a stray line.
+            Row(
+              children: [
+                StatusBadge(
+                  label: item.category.label,
+                  color: item.category.color,
+                  icon: item.category.icon,
+                  compact: true,
+                ),
+                const Spacer(),
+                Text(
+                  timeAgo(item.publishAt ?? item.createdAt),
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: EcoSpace.md),
             Text(
               item.title,
-              style: const TextStyle(
-                fontSize: 20,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
-                color: AppColors.darkGreen,
-              ),
+              style: EcoType.panelTitle(context, color: AppColors.darkGreen),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: EcoSpace.xs),
             Text(
               '${item.authorName ?? 'Barangay staff'} · '
               '${dateTimeLabel(item.publishAt ?? item.createdAt)}',
-              style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+              style: EcoType.meta(context, color: AppColors.inkMuted),
             ),
             if (item.image != null) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: EcoSpace.md),
               ClipRRect(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(EcoRadius.md),
                 child: Image.memory(
                   _bytes(item.image!.dataUrl),
                   width: double.infinity,
@@ -325,14 +326,10 @@ class _AnnouncementsTab extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: EcoSpace.md),
             Text(
               item.body,
-              style: const TextStyle(
-                fontSize: 11.5,
-                height: 1.65,
-                color: AppColors.textDark,
-              ),
+              style: EcoType.body(context, color: AppColors.textDark),
             ),
           ],
         ),
@@ -349,9 +346,9 @@ class _AnnouncementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return EcoCard(
+    return DeskRailCard(
+      railColor: announcement.category.color,
       onTap: onTap,
-      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -366,28 +363,25 @@ class _AnnouncementCard extends StatelessWidget {
               const Spacer(),
               Text(
                 timeAgo(announcement.publishAt ?? announcement.createdAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: EcoSpace.sm),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (announcement.image != null) ...[
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(EcoRadius.sm),
                   child: Image.memory(
                     _bytes(announcement.image!.dataUrl),
-                    height: 62,
-                    width: 62,
+                    height: 58,
+                    width: 58,
                     fit: BoxFit.cover,
                   ),
                 ),
-                const SizedBox(width: 11),
+                const SizedBox(width: EcoSpace.sm),
               ],
               Expanded(
                 child: Column(
@@ -397,21 +391,15 @@ class _AnnouncementCard extends StatelessWidget {
                       announcement.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
+                      style: EcoType.cardTitle(context),
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 3),
                     Text(
                       announcement.body,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        height: 1.45,
+                      style: EcoType.bodySmall(
+                        context,
                         color: AppColors.inkMuted,
                       ),
                     ),
@@ -419,6 +407,14 @@ class _AnnouncementCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: EcoSpace.sm),
+          _CardFooter(
+            leading: DeskFact(
+              icon: Icons.verified_outlined,
+              text: announcement.authorName ?? 'Barangay staff',
+              color: AppColors.inkMuted,
+            ),
           ),
         ],
       ),
@@ -441,11 +437,21 @@ class _EventsTab extends StatelessWidget {
       stream: service.watchPublished(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingView(label: 'Loading events');
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: SkeletonCardList(count: 3),
+          );
+        }
+        if (snapshot.hasError) {
+          return DeskEmptyQueue(
+            icon: Icons.cloud_off_rounded,
+            title: 'Events are not loading',
+            message: AppFeedback.describe(snapshot.error!),
+          );
         }
         final items = snapshot.data ?? const <CommunityEvent>[];
         if (items.isEmpty) {
-          return const EmptyState(
+          return const DeskEmptyQueue(
             icon: Icons.event_outlined,
             title: 'No events scheduled',
             message: 'Clean-up drives and collection days will show up here.',
@@ -455,47 +461,36 @@ class _EventsTab extends StatelessWidget {
         final past = items.where((e) => e.isCompleted).toList();
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           children: [
             if (upcoming.isNotEmpty) ...[
-              const _GroupLabel('UPCOMING & ONGOING'),
-              const SizedBox(height: 8),
+              DeskSectionHeader(
+                icon: Icons.event_available_outlined,
+                title: 'Coming up',
+                count: upcoming.length,
+              ),
+              const SizedBox(height: EcoSpace.sm),
               for (final event in upcoming) ...[
                 _EventCard(event: event),
-                const SizedBox(height: 12),
+                const SizedBox(height: EcoSpace.sm),
               ],
             ],
             if (past.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              const _GroupLabel('PAST EVENTS'),
-              const SizedBox(height: 8),
+              const SizedBox(height: EcoSpace.sm),
+              DeskSectionHeader(
+                icon: Icons.history_rounded,
+                title: 'Past events',
+                count: past.length,
+              ),
+              const SizedBox(height: EcoSpace.sm),
               for (final event in past) ...[
                 _EventCard(event: event, muted: true),
-                const SizedBox(height: 12),
+                const SizedBox(height: EcoSpace.sm),
               ],
             ],
           ],
         );
       },
-    );
-  }
-}
-
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 9,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.0,
-        color: AppColors.inkMuted,
-      ),
     );
   }
 }
@@ -508,11 +503,16 @@ class _EventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final ongoing = !event.isCompleted && event.startAt.isBefore(now);
-    return EcoCard(
-      padding: const EdgeInsets.all(14),
-      color: muted ? AppColors.cream : Colors.white,
+    final ongoing =
+        !event.isCompleted && event.startAt.isBefore(DateTime.now());
+    final accent = muted
+        ? AppColors.inkMuted
+        : ongoing
+        ? AppColors.warning
+        : AppColors.primary;
+
+    return DeskRailCard(
+      railColor: accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -527,67 +527,103 @@ class _EventCard extends StatelessWidget {
               const Spacer(),
               Text(
                 dateLabel(event.startAt),
-                style: const TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.inkMuted,
-                ),
+                style: EcoType.meta(context, color: AppColors.inkMuted),
               ),
             ],
           ),
-          const SizedBox(height: 9),
-          Text(
-            event.title,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            event.description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 9.5,
-              height: 1.45,
-              color: AppColors.inkMuted,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: EcoSpace.sm),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.place_outlined,
-                size: 12,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 4),
+              _DateBlock(date: event.startAt, muted: muted),
+              const SizedBox(width: EcoSpace.sm),
               Expanded(
-                child: Text(
-                  event.location,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.inkMuted,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.cardTitle(context),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      event.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: EcoType.bodySmall(
+                        context,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    DeskFact(
+                      icon: Icons.place_outlined,
+                      text: event.location,
+                      color: AppColors.inkMuted,
+                    ),
+                    const SizedBox(height: 3),
+                    DeskFact(
+                      icon: Icons.schedule_rounded,
+                      text: timeLabel(event.startAt),
+                      color: AppColors.inkMuted,
+                    ),
+                  ],
                 ),
-              ),
-              const Icon(
-                Icons.schedule_rounded,
-                size: 12,
-                color: AppColors.inkMuted,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                timeLabel(event.startAt),
-                style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
               ),
             ],
           ),
+          if (!muted) ...[
+            const SizedBox(height: EcoSpace.xs),
+            const _CardFooter(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Month over day, the way a calendar page reads at a glance.
+class _DateBlock extends StatelessWidget {
+  const _DateBlock({required this.date, this.muted = false});
+
+  final DateTime date;
+  final bool muted;
+
+  static const _months = [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = muted ? AppColors.inkMuted : AppColors.forest;
+    return Container(
+      width: 44,
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      decoration: BoxDecoration(
+        color: muted ? AppColors.cream : AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.sm),
+      ),
+      child: Column(
+        children: [
+          Text(
+            _months[date.month - 1],
+            style: EcoType.eyebrow(context, color: ink),
+          ),
+          const SizedBox(height: 1),
+          Text('${date.day}', style: EcoType.metricValue(context, color: ink)),
         ],
       ),
     );
@@ -620,43 +656,50 @@ class _PostsTabState extends State<_PostsTab> {
       stream: service.watchFeed(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingView(label: 'Loading community posts');
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: SkeletonCardList(count: 3),
+          );
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              AppFeedback.describe(snapshot.error!),
-              style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
-            ),
+          return DeskEmptyQueue(
+            icon: Icons.cloud_off_rounded,
+            title: 'Posts are not loading',
+            message: AppFeedback.describe(snapshot.error!),
           );
         }
         final posts = snapshot.data ?? const <CommunityPost>[];
         final page = clampPage(_page, posts.length, _pageSize);
         final visible = pageSlice(posts, page, _pageSize);
         return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           children: [
             _ComposerBar(
               name: user?.firstName ?? 'there',
               onTap: widget.onCompose,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: EcoSpace.md),
             if (posts.isEmpty)
-              const EmptyState(
+              DeskEmptyQueue(
                 icon: Icons.forum_outlined,
                 title: 'No posts yet',
-                message: 'Share a photo or a quick update with your neighbors.',
-                compact: true,
-              ),
-            for (final post in visible) ...[
-              _PostCard(
-                post: post,
-                currentUserId: user?.uid,
-                onTap: () => context.push('/community-post/${post.id}'),
-                onLike: () => _toggleLike(context, post),
-              ),
-              const SizedBox(height: 12),
-            ],
+                message:
+                    'Share a photo or a quick update with your '
+                    'neighbors. Everything you post stays inside your '
+                    'barangay.',
+                actionLabel: 'Write the first post',
+                onAction: widget.onCompose,
+              )
+            else
+              for (final post in visible) ...[
+                _PostCard(
+                  post: post,
+                  currentUserId: user?.uid,
+                  onTap: () => context.push('/community-post/${post.id}'),
+                  onLike: () => _toggleLike(context, post),
+                ),
+                const SizedBox(height: EcoSpace.sm),
+              ],
             if (posts.isNotEmpty)
               EcoPaginationBar(
                 page: page,
@@ -697,29 +740,43 @@ class _ComposerBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return EcoCard(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
       child: Row(
         children: [
+          DeskInitialAvatar(name: name, size: 34),
+          const SizedBox(width: EcoSpace.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Share something, $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.cardTitle(context),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  'A photo, a heads-up, a thank you',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: EcoType.meta(context, color: AppColors.inkMuted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: EcoSpace.xs),
           Container(
             height: 32,
             width: 32,
             decoration: const BoxDecoration(
-              color: AppColors.lightGreen,
+              color: AppColors.mint,
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.edit_outlined,
+              Icons.edit_rounded,
               size: 15,
               color: AppColors.forest,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Share something with your barangay, $name…',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10.5, color: AppColors.inkMuted),
             ),
           ),
         ],
@@ -743,35 +800,22 @@ class _PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = post.authorName.trim().isEmpty
-        ? '?'
-        : post.authorName.trim()[0].toUpperCase();
-    return EcoCard(
+    final staff = post.isStaffPost;
+    return DeskRailCard(
+      railColor: staff ? AppColors.forest : AppColors.sage,
       onTap: onTap,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(17, 13, 13, 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                height: 34,
-                width: 34,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.lightGreen,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.forest,
-                  ),
-                ),
+              DeskInitialAvatar(
+                name: post.authorName,
+                size: 32,
+                tint: staff ? AppColors.mint : null,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: EcoSpace.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -783,73 +827,45 @@ class _PostCard extends StatelessWidget {
                             post.authorName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
+                            style: EcoType.cardTitle(context),
                           ),
                         ),
-                        if (post.isStaffPost) ...[
+                        if (staff) ...[
                           const SizedBox(width: 5),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.mint,
-                              borderRadius: BorderRadius.circular(7),
-                            ),
-                            child: const Text(
-                              'Barangay',
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.forest,
-                              ),
-                            ),
-                          ),
+                          const _StaffTag(),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       timeAgo(post.createdAt),
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        color: AppColors.inkMuted,
-                      ),
+                      style: EcoType.meta(context, color: AppColors.inkMuted),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: EcoSpace.sm),
           Text(
             post.body,
             maxLines: 6,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.55,
-              color: AppColors.textDark,
-            ),
+            style: EcoType.body(context, color: AppColors.textDark),
           ),
           if (post.image != null) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: EcoSpace.sm),
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EcoRadius.md),
               child: Image.memory(
                 _bytes(post.image!.dataUrl),
                 width: double.infinity,
-                height: 170,
+                height: 176,
                 fit: BoxFit.cover,
               ),
             ),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: EcoSpace.sm),
           Row(
             children: [
               _PostAction(
@@ -860,22 +876,49 @@ class _PostCard extends StatelessWidget {
                 active: post.likedByUser(currentUserId),
                 onTap: onLike,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: EcoSpace.md),
               _PostAction(
                 icon: Icons.mode_comment_outlined,
                 label: '${post.commentCount}',
                 onTap: onTap,
               ),
               const Spacer(),
-              const Text(
+              Text(
                 'Read more',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                ),
+                style: EcoType.label(context, color: AppColors.primary),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 15,
+                color: AppColors.primary,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaffTag extends StatelessWidget {
+  const _StaffTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.mint,
+        borderRadius: BorderRadius.circular(EcoRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.shield_outlined, size: 8, color: AppColors.forest),
+          const SizedBox(width: 3),
+          Text(
+            'Barangay',
+            style: EcoType.micro(context, color: AppColors.forest),
           ),
         ],
       ),
@@ -901,21 +944,14 @@ class _PostAction extends StatelessWidget {
     final color = active ? AppColors.error : AppColors.inkMuted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(EcoRadius.sm),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Row(
           children: [
             Icon(icon, size: 15, color: color),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
+            Text(label, style: EcoType.label(context, color: color)),
           ],
         ),
       ),
@@ -951,20 +987,16 @@ class _ComposerSheetState extends State<_ComposerSheet> {
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 14, 20, viewInsets + 20),
+      padding: EdgeInsets.fromLTRB(20, 4, 20, viewInsets + 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 'New community post',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.darkGreen,
-                ),
+                style: EcoType.panelTitle(context, color: AppColors.darkGreen),
               ),
               const Spacer(),
               IconButton(
@@ -973,6 +1005,7 @@ class _ComposerSheetState extends State<_ComposerSheet> {
               ),
             ],
           ),
+          const SizedBox(height: EcoSpace.sm),
           TextField(
             controller: _body,
             minLines: 4,
@@ -984,7 +1017,7 @@ class _ComposerSheetState extends State<_ComposerSheet> {
               alignLabelWithHint: true,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: EcoSpace.md),
           ImagePickerField(
             value: _image,
             label: 'Add a photo (optional)',
@@ -992,7 +1025,7 @@ class _ComposerSheetState extends State<_ComposerSheet> {
             previewHeight: 120,
             onChanged: (value) => setState(() => _image = value),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: EcoSpace.md),
           SizedBox(
             height: 46,
             child: FilledButton(

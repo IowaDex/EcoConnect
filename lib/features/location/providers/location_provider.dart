@@ -173,6 +173,11 @@ class LocationProvider extends ChangeNotifier {
     unawaited(syncPending());
     notifyListeners();
 
+    // The stream only reports the first fix once the device moves (it is
+    // distance-filtered), so switching tracking on used to leave the map with
+    // no pin at all until the phone travelled 20 m. Ask for one fix now.
+    if (!hasLocation) unawaited(getCurrentLocation());
+
     _positionSubscription = _locationService
         .startLocationUpdates(background: background)
         .listen(
