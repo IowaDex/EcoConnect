@@ -327,6 +327,27 @@ class ProvisioningService {
         .toList(growable: false);
   }
 
+  /// Removes a crew account for good — a driver who resigned or will never
+  /// drive again.
+  ///
+  /// The Firebase login itself cannot be deleted from the app (that needs the
+  /// Admin SDK), so the profile goes and a tombstone stops it being recreated.
+  /// Login refuses an account with no profile, which leaves the credentials
+  /// inert — but the email also stays taken, so a re-hire needs a new address.
+  ///
+  /// The live route goes first: a stale presence document would keep a truck
+  /// on the residents' map after the driver left. The profile goes last, so a
+  /// failure halfway leaves the account listed for the desk to retry instead
+  /// of losing track of it.
+  Future<void> removeAccount(String uid) async {
+    await _db.collection('removed_users').doc(uid).set({
+      'removedAt': FieldValue.serverTimestamp(),
+    });
+    await _db.collection('routes').doc(uid).delete();
+    await _db.collection('sessions').doc(uid).delete();
+    await _users.doc(uid).delete();
+  }
+
   Future<FirebaseApp> _secondaryApp() async {
     try {
       return Firebase.app(_secondaryAppName);

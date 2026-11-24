@@ -290,8 +290,14 @@ service cloud.firestore {
       // Not their own profile: that would lock the admin out for good. And
       // only its own people: a resident being removed, or one of its guides.
       allow delete: if (isAdmin()
-        && request.auth.uid != userId
-        && (resource.data.role == 'user' || isGuideProfile(resource.data)));
+          && request.auth.uid != userId
+          && (resource.data.role == 'user' || isGuideProfile(resource.data)))
+        // Iswim removes a driver who has left the crew. A guide is the
+        // barangay's, and nobody removes their own login.
+        || (isIswim()
+            && request.auth.uid != userId
+            && resource.data.role == 'driver'
+            && resource.data.get('crewRole', 'driver') == 'driver');
 
       // Private location history: only its owner can read it. Staff can read
       // it solely once the user is being deleted (the tombstone exists), so the
@@ -328,7 +334,13 @@ service cloud.firestore {
         && request.resource.data.sessionId is string
         && request.resource.data.sessionId.size() >= 16
         && request.resource.data.sessionId.size() <= 64;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        // Iswim clears the device marker of a driver it is removing, so the
+        // account leaves nothing behind. Checked while the profile still
+        // exists.
+        || (isIswim()
+            && profile(userId).get('role', '') == 'driver'
+            && profile(userId).get('crewRole', 'driver') == 'driver');
     }
 
     // Trip tickets. Iswim issues them, the driver accepts and runs them, then
@@ -395,9 +407,19 @@ service cloud.firestore {
       allow delete: if isCityHall();
     }
 
-    // Written by an admin when deleting a user; blocks re-creating the profile.
+    // Written when a user is deleted; blocks re-creating the profile.
+    //
+    // Iswim lays one for a driver it is removing, and only for a driver: the
+    // tombstone is what stops the same login from putting a profile back.
     match /removed_users/{userId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      // Update as well as create: a removal that failed after the tombstone
+      // was written is retried, and the second write is an update.
+      allow create, update: if isAdmin()
+        || (isIswim()
+            && profile(userId).get('role', '') == 'driver'
+            && profile(userId).get('crewRole', 'driver') == 'driver');
+      allow delete: if isAdmin();
     }
 
     // Retired: locations are no longer published for others to see. A driver's
@@ -462,7 +484,12 @@ service cloud.firestore {
               || request.resource.data.locationState in
                    ['ok', 'disabled', 'permission', 'offline', 'unknown']))
         || isAdmin();
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        // Iswim takes a departed driver's truck off the map. The profile still
+        // exists at this point, which is how the rule knows whose route it is.
+        || (isIswim()
+            && profile(driverId).get('role', '') == 'driver'
+            && profile(driverId).get('crewRole', 'driver') == 'driver');
     }
 
     // Keep historical incident reports available to staff; new resident

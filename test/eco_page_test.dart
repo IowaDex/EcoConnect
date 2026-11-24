@@ -75,10 +75,10 @@ void main() {
   testWidgets('a bottom bar keeps its own space', (tester) async {
     await tester.pumpWidget(
       wrap(
-        EcoPageScaffold(
+        const EcoPageScaffold(
           title: 'My routes',
-          bottomBar: const SizedBox(height: 60, child: Text('nav')),
-          body: const SizedBox.expand(child: Text('content')),
+          bottomBar: SizedBox(height: 60, child: Text('nav')),
+          body: SizedBox.expand(child: Text('content')),
         ),
       ),
     );
