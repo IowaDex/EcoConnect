@@ -328,11 +328,11 @@ class _ActiveCall extends StatelessWidget {
     final counterpart = call.otherName(calls.uid ?? '');
     final role = call.otherRole(calls.uid ?? '');
     final connected = calls.connected;
-    final statusText = ringing
-        ? 'Ringing…'
-        : connected
-        ? _duration(calls.elapsedSeconds)
-        : calls.connectionLabel;
+    // The timer belongs to the call, not to the media path: it starts the
+    // moment the other desk answers, so a slow connection never looks like a
+    // call that has not begun. Whether audio is arriving is a separate, smaller
+    // line underneath.
+    final statusText = ringing ? 'Ringing…' : _duration(calls.elapsedSeconds);
 
     return Material(
       color: AppColors.forestDeep,
@@ -388,25 +388,27 @@ class _ActiveCall extends StatelessWidget {
               Text(
                 statusText,
                 style: TextStyle(
-                  fontSize: ringing || !connected ? 12 : 20,
+                  fontSize: ringing ? 12 : 20,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: ringing || !connected ? 0.3 : 0.6,
+                  letterSpacing: ringing ? 0.3 : 0.6,
                   color: Colors.white.withValues(alpha: 0.9),
                 ),
               ),
-              if (!ringing && connected) ...[
+              if (!ringing) ...[
                 const SizedBox(height: 4),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.graphic_eq_rounded,
+                    Icon(
+                      connected
+                          ? Icons.graphic_eq_rounded
+                          : Icons.sync_rounded,
                       size: 12,
                       color: Colors.white70,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Audio connected',
+                      connected ? 'Audio connected' : calls.connectionLabel,
                       style: TextStyle(
                         fontSize: 8.5,
                         fontWeight: FontWeight.w700,

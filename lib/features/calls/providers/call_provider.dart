@@ -708,7 +708,11 @@ class CallProvider extends ChangeNotifier {
 
   Future<void> _applySignalsNow(CallSession call) async {
     final pc = _pc;
-    if (pc == null) return;
+    // `_pc` is assigned before the microphone track is added, so a snapshot
+    // that lands mid-build would answer with no audio or hand a candidate to a
+    // connection that has no description yet. `_preparePeer` replays the latest
+    // snapshot once it is finished, so nothing is lost by waiting.
+    if (pc == null || !_peerReady) return;
     // The caller of this method may be holding a snapshot from before the
     // peer connection existed, so the live session is the better source: an
     // answer that arrived while the microphone was still opening would
@@ -728,10 +732,12 @@ class CallProvider extends ChangeNotifier {
         final sdp = offer['sdp'] as String?;
         final type = offer['type'] as String?;
         if (sdp != null && sdp.isNotEmpty) {
-          _offerApplied = true;
           await pc.setRemoteDescription(
             RTCSessionDescription(sdp, type ?? 'offer'),
           );
+          // Only a description that the browser accepted counts as applied; a
+          // failure here must leave the flag down so the next snapshot retries.
+          _offerApplied = true;
           final answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await _service.sendAnswer(session.id, {
@@ -750,38 +756,60 @@ class CallProvider extends ChangeNotifier {
         final sdp = answer['sdp'] as String?;
         final type = answer['type'] as String?;
         if (sdp != null && sdp.isNotEmpty) {
-          _answerApplied = true;
           await pc.setRemoteDescription(
             RTCSessionDescription(sdp, type ?? 'answer'),
           );
+          _answerApplied = true;
         }
       }
 
-      final candidates = _isCaller
-          ? session.calleeCandidates
-          : session.callerCandidates;
-      for (final candidate in candidates) {
-        final value = candidate['candidate'] as String?;
-        if (value == null || value.isEmpty) continue;
-        final key =
-            '$value|${candidate['sdpMid']}|${candidate['sdpMLineIndex']}';
-        if (!_remoteCandidates.add(key)) continue;
-        await pc.addCandidate(
-          RTCIceCandidate(
-            value,
-            candidate['sdpMid'] as String?,
-            (candidate['sdpMLineIndex'] as num?)?.toInt(),
-          ),
-        );
+      // A candidate only means something once the description it belongs to is
+      // in place. The caller starts publishing ICE candidates while it is still
+      // writing the offer, so the callee can see a candidate before the offer;
+      // handing that to the browser throws "The remote description was null",
+      // and the catch below then killed the whole call. Early candidates stay
+      // in the document, and the snapshot that carries the description applies
+      // them in the same pass.
+      final remoteReady = _isCaller ? _answerApplied : _offerApplied;
+      if (remoteReady) {
+        final candidates = _isCaller
+            ? session.calleeCandidates
+            : session.callerCandidates;
+        for (final candidate in candidates) {
+          final value = candidate['candidate'] as String?;
+          if (value == null || value.isEmpty) continue;
+          final key =
+              '$value|${candidate['sdpMid']}|${candidate['sdpMLineIndex']}';
+          if (!_remoteCandidates.add(key)) continue;
+          try {
+            await pc.addCandidate(
+              RTCIceCandidate(
+                value,
+                candidate['sdpMid'] as String?,
+                (candidate['sdpMLineIndex'] as num?)?.toInt(),
+              ),
+            );
+          } catch (error) {
+            // ICE is best effort: one candidate the browser refuses must not
+            // end a call the other candidates can still carry.
+            AppLogger.info('Dropped an ICE candidate: $error');
+          }
+        }
       }
     } catch (error) {
       final current = _call;
       final uid = _uid;
       AppLogger.error('Call signalling failed', error);
       if (current != null && uid != null) {
-        _service.markFailed(current.id, viewerUid: uid).catchError(
-          (Object _) {},
-        );
+        // The history carries the reason, so a call that dies here explains
+        // itself instead of only showing the generic alert.
+        _service
+            .markFailed(
+              current.id,
+              viewerUid: uid,
+              reason: 'The signalling exchange failed. $error',
+            )
+            .catchError((Object _) {});
       }
       _fail('The call could not connect. Please try again.');
     }

@@ -12,12 +12,16 @@ const {
   assertSucceeds,
 } = require('@firebase/rules-unit-testing');
 const {
+  arrayUnion,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
+  runTransaction,
+  serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } = require('firebase/firestore');
 
@@ -105,3 +109,101 @@ test('an officer cannot open another desk call log by id', async () => {
   );
   await assertFails(getDoc(doc(as('officer'), 'call_logs/other')));
 });
+
+// The whole ringing -> offer -> answer -> candidates -> ended handshake, with
+// the field names and write order CallService uses. If any one of these writes
+// is refused the call dies with "The call could not connect", so they are
+// asserted one by one rather than as one blob.
+test('an officer calls the barangay desk and the handshake is allowed', async () => {
+  const officer = as('officer');
+  const staff = as('staff');
+  // Each context needs its own reference; Firestore refuses one borrowed from
+  // another instance.
+  const mine = doc(officer, 'calls/live');
+  const theirs = doc(staff, 'calls/live');
+
+  await assertSucceeds(
+    setDoc(mine, {
+      fromUid: 'officer',
+      fromName: 'Officer',
+      fromRole: 'districtOfficer',
+      toRole: 'admin',
+      status: 'ringing',
+      context: 'sos',
+      district: 'District 2',
+      createdAt: serverTimestamp(),
+      callerCandidates: [],
+      calleeCandidates: [],
+    }),
+  );
+
+  // The caller writes its offer while the call is still ringing, exactly as
+  // CallProvider does, and only then does the desk pick up.
+  await assertSucceeds(
+    updateDoc(mine, {offer: {sdp: 'v=0', type: 'offer'}, offerAt: serverTimestamp()}),
+  );
+
+  // The barangay desk answers: one transaction, like CallService.accept.
+  await assertSucceeds(
+    runTransaction(staff, async (tx) => {
+      const snap = await tx.get(theirs);
+      if (snap.data().status !== 'ringing') return;
+      tx.update(theirs, {
+        status: 'active',
+        calleeId: 'staff',
+        calleeName: 'Staff',
+        acceptedAt: serverTimestamp(),
+      });
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(theirs, {answer: {sdp: 'v=0', type: 'answer'}, answerAt: serverTimestamp()}),
+  );
+  await assertSucceeds(
+    updateDoc(mine, {
+      callerCandidates: arrayUnion({
+        candidate: 'candidate:1',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      }),
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(theirs, {
+      calleeCandidates: arrayUnion({
+        candidate: 'candidate:2',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      }),
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(theirs, {
+      status: 'ended',
+      endedAt: serverTimestamp(),
+      durationSeconds: 12,
+    }),
+  );
+
+  // Both ends write the same log document.
+  for (const db of [officer, staff]) {
+    await assertSucceeds(
+      setDoc(doc(db, 'call_logs/live'), {
+        callId: 'live',
+        fromUid: 'officer',
+        fromName: 'Officer',
+        fromRole: 'districtOfficer',
+        toRole: 'admin',
+        toUid: 'staff',
+        toName: 'Staff',
+        outcome: 'completed',
+        status: 'ended',
+        context: 'sos',
+        participantIds: ['officer', 'staff'],
+        hasRecording: false,
+        recordingUrl: null,
+      }),
+    );
+  }
+});
+
