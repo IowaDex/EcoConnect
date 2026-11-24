@@ -95,13 +95,23 @@ class DelayService {
     return 'DR-$year-${next.toString().padLeft(4, '0')}';
   }
 
-  /// DSQC pushes the report to the district officer. The officer has no login,
-  /// so this is the moment the alarm has to fire on the DSQC device.
+  /// DSQC pushes the report to the district officer. The officer account is
+  /// provisioned by City Hall; this is the moment their desk gets the alert
+  /// (and the DSQC screen starts the in-app voice call).
   Future<void> forwardToDistrictOfficer(DelayReport report) async {
     await _col.doc(report.id).update({
       'stage': DelayStage.districtOfficer.wireName,
       'forwardedAt': FieldValue.serverTimestamp(),
     });
+    await _notifications.notifyDistrictOfficer(
+      title: 'Delay alert · ${report.code}',
+      body:
+          '${report.plateNumber} · ${report.reason} · '
+          '${report.minutesLate} min late. Call DSQC, then brief the barangay.',
+      type: AppNotificationType.call,
+      data: {'delayId': report.id, 'kind': 'delayAlert'},
+      dedupeKey: 'delay_${report.id}_officer',
+    );
   }
 
   /// The barangay copy — written when the officer's copy goes out.

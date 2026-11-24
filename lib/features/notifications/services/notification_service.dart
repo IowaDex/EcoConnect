@@ -133,6 +133,10 @@ class NotificationService {
   /// Iswim desk channel, used for manual requests from City Hall.
   static const iswimChannel = 'iswim';
 
+  /// District Officer channel. City Hall rings this desk when a truck runs
+  /// late, and the officer reads it beside their personal alerts.
+  static const districtOfficerChannel = 'districtOfficer';
+
   /// Writes an alert to the shared barangay staff channel.
   Future<void> notifyStaff({
     required String title,
@@ -181,6 +185,23 @@ class NotificationService {
     type: type,
     data: data,
     label: 'Iswim',
+    dedupeKey: dedupeKey,
+  );
+
+  /// Writes an alert to the District Officer desk.
+  Future<void> notifyDistrictOfficer({
+    required String title,
+    required String body,
+    AppNotificationType type = AppNotificationType.system,
+    Map<String, dynamic> data = const {},
+    String? dedupeKey,
+  }) => _notifyChannel(
+    channel: districtOfficerChannel,
+    title: title,
+    body: body,
+    type: type,
+    data: data,
+    label: 'District Officer',
     dedupeKey: dedupeKey,
   );
 

@@ -8,6 +8,7 @@ import './firebase_options.dart';
 import './core/boot/boot_progress.dart';
 import './core/network/network_status.dart';
 import './features/auth/providers/auth_provider.dart';
+import './features/calls/providers/call_provider.dart';
 import './features/driver/providers/truck_provider.dart';
 import './features/location/providers/location_provider.dart';
 import './core/database/database_initializer.dart';
@@ -42,6 +43,8 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // In-app voice calls and the ringing alert for the district officer.
+        ChangeNotifierProvider(create: (_) => CallProvider()),
         ChangeNotifierProvider(create: (_) => LocationProvider()),
         // Which garbage truck the crew is on. Chosen on the truck list and
         // remembered on this device.

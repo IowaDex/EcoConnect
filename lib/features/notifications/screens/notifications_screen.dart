@@ -73,6 +73,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 UserRole.iswim => '/iswim',
                 UserRole.cityHall => '/cityhall',
                 UserRole.auditor => '/audit-log',
+                UserRole.districtOfficer => '/district-officer',
               }),
               actions: [
                 IconButton(
@@ -276,6 +277,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         context.push('/incidents');
         return;
       }
+      if (kind == 'sos') {
+        final sosId = item.data['sosId'];
+        context.push(
+          sosId is String && sosId.isNotEmpty ? '/sos/$sosId' : '/sos',
+        );
+        return;
+      }
       if (kind == 'complaintFiled' || kind == 'complaintResponse') {
         // The alert carries the complaint id, so the reader lands on that
         // thread instead of the top of the list.
@@ -346,6 +354,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           context.push('/announcements');
         case AppNotificationType.event:
           context.push('/events');
+        case AppNotificationType.call:
+          // A call alert is answered from the call surface, not a page.
+          break;
+        case AppNotificationType.sos:
+          context.push(cityHall ? '/sos' : '/iswim');
         case AppNotificationType.system:
         case AppNotificationType.complaint:
           context.push(cityHall ? '/cityhall' : '/iswim');
@@ -380,7 +393,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         // residents desk, which is where the barangay reviews them.
         if (isStaff) context.push('/verification');
       case AppNotificationType.complaint:
+      case AppNotificationType.call:
       case AppNotificationType.system:
+        break;
+      case AppNotificationType.sos:
+        if (role == UserRole.districtOfficer || isStaff) {
+          context.push('/sos');
+        }
         break;
     }
   }

@@ -116,6 +116,7 @@ const DESK_ROLES = {
   staff: 'admin',
   cityHall: 'cityHall',
   iswim: 'iswim',
+  districtOfficer: 'districtOfficer',
 };
 
 async function deviceTokensFor(uid) {

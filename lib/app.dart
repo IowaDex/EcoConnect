@@ -52,6 +52,10 @@ import 'features/iswim/screens/iswim_dashboard_screen.dart';
 import 'features/cityhall/screens/cityhall_dashboard_screen.dart';
 import 'features/cityhall/screens/signature_queue_screen.dart';
 import 'features/delay/screens/delay_screens.dart';
+import 'features/district/screens/barangay_staff_directory_screen.dart';
+import 'features/district/screens/district_officer_dashboard_screen.dart';
+import 'features/district/screens/district_officers_screen.dart';
+import 'features/calls/screens/call_history_screen.dart';
 import 'features/memos/screens/memo_screens.dart';
 import 'features/memos/screens/memo_detail_screen.dart';
 import 'features/memos/services/memo_service.dart';
@@ -71,6 +75,11 @@ import 'features/complaints/screens/complaint_desk_screen.dart';
 import 'features/cityhall/screens/cityhall_requests_screen.dart';
 import 'features/audit/screens/audit_log_screen.dart';
 import 'features/verification/screens/verify_identity_screen.dart';
+import 'features/calls/widgets/call_host.dart';
+import 'features/sos/screens/sos_detail_screen.dart';
+import 'features/sos/screens/sos_form_screen.dart';
+import 'features/sos/screens/sos_list_screen.dart';
+import 'features/sos/widgets/sos_alert_host.dart';
 
 const _publicRoutes = {
   '/splash',
@@ -160,6 +169,10 @@ const _cityHallRoutes = {
   '/incidents',
   '/complaints',
   '/cityhall-requests',
+  '/district-officers',
+  '/calls',
+  '/sos',
+  '/sos/new',
   '/manuals',
   '/manual-requests',
   '/assignments',
@@ -169,6 +182,17 @@ const _cityHallRoutes = {
 };
 
 const _auditorRoutes = {'/audit-log'};
+
+/// The District Officer's desk: the alert queue, the call log, and the routes
+/// needed to answer a delay and hand it to the barangay.
+const _districtOfficerRoutes = {
+  '/district-officer',
+  '/district-officer/calls',
+  '/district-officer/staff',
+  '/delays',
+  '/sos',
+  ..._sharedRoutes,
+};
 
 /// The barangay desk. Dispatch (routes) and account provisioning belong to
 /// Iswim and City Hall, so those routes are deliberately absent. The incident
@@ -184,6 +208,10 @@ const _staffRoutes = {
   '/event-participation',
   '/ticket-signatures',
   '/delays',
+  '/sos',
+  // The barangay answers the officer's calls, so it reads the same call
+  // history the officer and City Hall see.
+  '/calls',
   '/memos',
   '/memo',
   '/wave2',
@@ -205,6 +233,7 @@ String _homeFor(UserRole role, {TruckCrewRole? crewRole}) => switch (role) {
     crewRole == TruckCrewRole.guide ? '/driver-trucks' : '/driver',
   UserRole.iswim => '/iswim',
   UserRole.cityHall => '/cityhall',
+  UserRole.districtOfficer => '/district-officer',
   UserRole.user => '/user',
   UserRole.auditor => '/audit-log',
 };
@@ -214,6 +243,7 @@ Set<String> _allowedFor(UserRole role) => switch (role) {
   UserRole.driver => _driverRoutes,
   UserRole.iswim => _iswimRoutes,
   UserRole.cityHall => _cityHallRoutes,
+  UserRole.districtOfficer => _districtOfficerRoutes,
   UserRole.user => _residentRoutes,
   UserRole.auditor => _auditorRoutes,
 };
@@ -266,6 +296,12 @@ String? authRedirect({
       '/schedule',
     };
     if (!open.contains(location)) return '/user';
+  }
+
+  // Filing an SOS is DSQC's action. The shared `/sos` prefix would otherwise
+  // let another desk open the form by typing the URL.
+  if (location == '/sos/new' && role != UserRole.cityHall) {
+    return _homeFor(role, crewRole: crewRole);
   }
 
   // A driver must not reach the staff desk by typing the URL, and vice versa.
@@ -366,18 +402,46 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/cityhall/signatures',
           builder: (_, __) => const SignatureQueueScreen(),
         ),
+        GoRoute(
+          path: '/district-officers',
+          builder: (_, __) => const DistrictOfficersScreen(),
+        ),
+        GoRoute(
+          path: '/district-officer',
+          builder: (_, __) => const DistrictOfficerDashboardScreen(),
+        ),
+        GoRoute(
+          path: '/district-officer/calls',
+          builder: (_, __) => const CallHistoryScreen(),
+        ),
+        GoRoute(
+          path: '/district-officer/staff',
+          builder: (_, state) => BarangayStaffDirectoryScreen(
+            barangay: state.uri.queryParameters['barangay'],
+            incidentId: state.uri.queryParameters['incidentId'],
+            incidentCode: state.uri.queryParameters['code'],
+            incidentReason: state.uri.queryParameters['reason'],
+          ),
+        ),
+        GoRoute(path: '/sos', builder: (_, __) => const SosListScreen()),
+        GoRoute(path: '/sos/new', builder: (_, __) => const SosFormScreen()),
+        GoRoute(
+          path: '/sos/:id',
+          builder: (_, state) =>
+              SosDetailScreen(incidentId: state.pathParameters['id'] ?? ''),
+        ),
+        GoRoute(path: '/calls', builder: (_, __) => const CallHistoryScreen()),
         GoRoute(path: '/fleet', builder: (_, __) => const FleetScreen()),
         GoRoute(path: '/accounts', builder: (_, __) => const AccountsScreen()),
         GoRoute(
           path: '/delays',
-          builder: (context, __) => DelayListScreen(
-            canForward:
-                context.read<AuthProvider>().currentUser?.role ==
-                UserRole.cityHall,
-            canAnnounce:
-                context.read<AuthProvider>().currentUser?.role ==
-                UserRole.admin,
-          ),
+          builder: (context, __) {
+            final role = context.read<AuthProvider>().currentUser?.role;
+            return DelayListScreen(
+              canForward: role == UserRole.cityHall,
+              canAnnounce: role == UserRole.admin,
+            );
+          },
         ),
         GoRoute(
           path: '/delays/new',
@@ -591,16 +655,21 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
       // network there is nothing worth announcing over the top of it. The
       // session notice is outermost so it is never hidden.
       builder: (context, child) => SessionEndedHost(
-        child: OfflineGate(
-          // Drivers keep working through dead spots instead of being blocked.
-          enabled: context.select<AuthProvider, bool>(
-            (auth) => auth.currentUser?.role != UserRole.driver,
-          ),
-          child: PushNotificationHost(
-            child: NotificationBannerHost(
-              child: RunBroadcastHost(
-                child: TruckProximityHost(
-                  child: child ?? const SizedBox.shrink(),
+        child: CallHost(
+          child: SosAlertHost(
+            child: OfflineGate(
+              // Drivers keep working through dead spots instead of being
+              // blocked.
+              enabled: context.select<AuthProvider, bool>(
+                (auth) => auth.currentUser?.role != UserRole.driver,
+              ),
+              child: PushNotificationHost(
+                child: NotificationBannerHost(
+                  child: RunBroadcastHost(
+                    child: TruckProximityHost(
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  ),
                 ),
               ),
             ),

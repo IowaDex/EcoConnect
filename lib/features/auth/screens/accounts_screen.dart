@@ -400,6 +400,7 @@ class _AccountTile extends StatelessWidget {
     UserRole.driver => Icons.local_shipping_rounded,
     UserRole.user => Icons.person_outline_rounded,
     UserRole.auditor => Icons.fact_check_outlined,
+    UserRole.districtOfficer => Icons.support_agent_rounded,
   };
 }
 

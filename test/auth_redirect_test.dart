@@ -215,4 +215,21 @@ void main() {
     expect(authRedirect(initialized: true, role: UserRole.admin, location: '/audit-log'), isNull);
     expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/audit-log'), isNull);
   });
+
+  test('SOS is DSQC, District Officer and barangay only', () {
+    // DSQC files and monitors every SOS.
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/sos'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/sos/new'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.cityHall, location: '/sos/sos-1'), isNull);
+    // The officer opens the incident, but never files one.
+    expect(authRedirect(initialized: true, role: UserRole.districtOfficer, location: '/sos'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.districtOfficer, location: '/sos/sos-1'), isNull);
+    expect(authRedirect(initialized: true, role: UserRole.districtOfficer, location: '/sos/new'), '/district-officer');
+    // The barangay keeps its copy of the incident.
+    expect(authRedirect(initialized: true, role: UserRole.admin, location: '/sos/sos-1'), isNull);
+    // Residents, drivers and Iswim never enter the SOS board.
+    expect(authRedirect(initialized: true, role: UserRole.user, location: '/sos'), '/user');
+    expect(authRedirect(initialized: true, role: UserRole.driver, location: '/sos/sos-1'), '/driver');
+    expect(authRedirect(initialized: true, role: UserRole.iswim, location: '/sos'), '/iswim');
+  });
 }
