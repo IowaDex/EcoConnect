@@ -30,8 +30,8 @@ class ServiceArea {
   /// Same as [covers], except that a blank barangay counts as ours and a
   /// barangay written as part of a full address still counts. The app only
   /// ever writes this one barangay, so a record without one is an old record,
-  /// not a record from somewhere else. The collection desk uses this so it can
-  /// never drop a request the dashboard is counting.
+  /// not a record from somewhere else. The collection desk and the dashboard
+  /// both use this, so the counter and the list can never disagree.
   static bool belongsToArea(String? barangayName) {
     final value = _normalize(barangayName);
     return value.isEmpty || value.contains(_key);

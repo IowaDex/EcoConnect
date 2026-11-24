@@ -2,9 +2,9 @@ import 'package:eco_connect/core/widgets/app_bottom_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The pill is placed by the Scaffold flush with the bottom of the screen, so
-/// it has to lift itself above the phone's own navigation bar. Otherwise the
-/// labels sit under the gesture bar and read half-faded on a real device.
+/// The Scaffold places the pill flush with the bottom of the screen, so the
+/// bar has to lift itself above the phone's own navigation bar. Otherwise the
+/// system menu icons (back / home / recents) draw over its labels.
 void main() {
   Future<void> pumpNav(
     WidgetTester tester, {
@@ -34,29 +34,68 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('lifts the pill above the system navigation bar', (tester) async {
+  Rect pillRect(WidgetTester tester) => tester.getRect(
+    find
+        .descendant(
+          of: find.byType(AppBottomNav),
+          matching: find.byType(Container),
+        )
+        .first,
+  );
+
+  testWidgets('lifts the resident pill above the system navigation bar', (
+    tester,
+  ) async {
     await pumpNav(tester, bottomInset: 34);
 
     expect(tester.takeException(), isNull);
-    final pill = tester.getRect(
-      find
-          .descendant(
-            of: find.byType(AppBottomNav),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
     // 844 tall, 34 reserved by the system bar: the pill ends above it.
-    expect(pill.bottom, lessThanOrEqualTo(844 - 34));
-    expect(pill.height, 62);
+    expect(pillRect(tester).bottom, lessThanOrEqualTo(844 - 34));
+    expect(pillRect(tester).height, 62);
   });
 
-  testWidgets('keeps the assistant button inside the bar', (tester) async {
-    await pumpNav(tester, bottomInset: 34);
+  testWidgets('lifts the plain pill the same way the Iswim bar sits', (
+    tester,
+  ) async {
+    await pumpNav(tester, bottomInset: 34, withAssistant: false);
 
-    final nav = tester.getRect(find.byType(AppBottomNav));
-    expect(nav.bottom, lessThanOrEqualTo(844));
-    expect(tester.getRect(find.byIcon(Icons.forum_rounded)).top, greaterThan(0));
+    expect(pillRect(tester).bottom, lessThanOrEqualTo(844 - 34));
+  });
+
+  testWidgets('stays put when the phone has no system bar', (tester) async {
+    await pumpNav(tester, bottomInset: 0);
+
+    // No inset, no extra gap: the pill keeps its own 12px margin.
+    expect(pillRect(tester).bottom, 844 - 12);
+  });
+
+  testWidgets('does not double the inset when a screen wraps it again', (
+    tester,
+  ) async {
+    // The Iswim desk still wraps the bar in its own SafeArea; the bar must
+    // resolve to the same place it does everywhere else.
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPadding();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: AppBottomNav(currentIndex: 0, onTap: (_) {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(pillRect(tester).bottom, 844 - 34 - 12);
   });
 
   testWidgets('fits a short phone without the assistant button', (

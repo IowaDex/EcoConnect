@@ -83,6 +83,11 @@ class AppBottomNav extends StatelessWidget {
       ),
     );
 
+    // The pill is placed by the Scaffold flush with the bottom of the screen,
+    // so it lifts itself above the phone's own navigation bar. Without this
+    // the system menu icons (back / home / recents) draw over the pill's
+    // labels and the bar reads half-faded. Every role gets the same inset, so
+    // the resident bar sits exactly where the Iswim bar does.
     if (onAskAi == null) {
       return _safe(
         Padding(
