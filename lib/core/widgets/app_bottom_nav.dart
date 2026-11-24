@@ -83,31 +83,42 @@ class AppBottomNav extends StatelessWidget {
       ),
     );
 
+    // The pill is placed by the Scaffold flush with the bottom of the screen,
+    // so it lifts itself above the phone's own navigation bar. Without this
+    // the system menu icons (back / home / recents) draw over the pill's
+    // labels and the bar reads half-faded. Every role gets the same inset, so
+    // the resident bar sits exactly where the Iswim bar does.
     if (onAskAi == null) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-        child: bar,
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: bar,
+        ),
       );
     }
 
     // The assistant button breaks out of the pill, so the whole bar gets a
     // taller box and the pill is pinned to its bottom.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-      child: SizedBox(
-        height: 78,
-        child: Stack(
-          children: [
-            Positioned(left: 0, right: 0, bottom: 0, child: bar),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _AskAiButton(onTap: onAskAi!, locked: askAiLocked),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        child: SizedBox(
+          height: 78,
+          child: Stack(
+            children: [
+              Positioned(left: 0, right: 0, bottom: 0, child: bar),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: _AskAiButton(onTap: onAskAi!, locked: askAiLocked),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

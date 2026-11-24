@@ -109,9 +109,12 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                 // The desk is scoped to this deployment's barangay. Requests
                 // filed anywhere else are dropped before the counts, the
                 // filters and the list are built, so the screen can never show
-                // another barangay even if such a record exists.
+                // another barangay even if such a record exists. A record with
+                // no barangay at all stays: it is an old request from this
+                // barangay, and hiding it is what made the desk disagree with
+                // the dashboard counter.
                 final all = (snapshot.data ?? const <CollectionRequest>[])
-                    .where((r) => ServiceArea.covers(r.requesterBarangay))
+                    .where((r) => ServiceArea.belongsToArea(r.requesterBarangay))
                     .toList(growable: false);
                 final items = _applyFilters(all);
                 final page = clampPage(_page, items.length, _pageSize);
