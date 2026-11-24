@@ -37,7 +37,11 @@ class CallProvider extends ChangeNotifier {
   bool _isCaller = false;
   bool _peerReady = false;
   bool _muted = false;
-  bool _speaker = false;
+
+  /// The loudspeaker is the default. An earpiece at low volume is the most
+  /// common reason a working call is reported as "no audio"; the in-call
+  /// button still switches to the earpiece.
+  bool _speaker = true;
   bool _offerApplied = false;
   bool _answerApplied = false;
   String? _error;
@@ -70,6 +74,7 @@ class CallProvider extends ChangeNotifier {
   int _ringRetries = 0;
   Timer? _disconnectGrace;
   Timer? _answerTimeout;
+  Timer? _connectTimeout;
 
   CallSession? get incoming => _incoming;
   CallSession? get call => _call;
@@ -445,6 +450,14 @@ class CallProvider extends ChangeNotifier {
     for (final track in tracks) {
       track.enabled = !_muted;
     }
+    // Disabling the track silences the sender, but on some Android devices
+    // the audio device module keeps capturing. Muting it as well makes the
+    // button behave the way the user expects.
+    try {
+      await Helper.setMicrophoneMuted(_muted);
+    } catch (_) {
+      // Not exposed on every platform; the track flag still applies.
+    }
     notifyListeners();
   }
 
@@ -498,6 +511,7 @@ class CallProvider extends ChangeNotifier {
       if (_elapsedTimer == null) {
         _startElapsedTimer(updated.acceptedAt);
       }
+      _armConnectTimeout(updated.id);
       await _applySignals(updated);
       notifyListeners();
       return;
@@ -571,7 +585,8 @@ class CallProvider extends ChangeNotifier {
             'video': false,
           })
           .timeout(const Duration(seconds: 20));
-      if (stream.getAudioTracks().isEmpty) {
+      final audioTracks = stream.getAudioTracks();
+      if (audioTracks.isEmpty) {
         await stream.dispose();
         throw const _CallSetupException(
           'The microphone returned no audio. Check that no other app is using '
@@ -584,9 +599,13 @@ class CallProvider extends ChangeNotifier {
         'sdpSemantics': 'unified-plan',
       });
       _pc = pc;
-      for (final track in stream.getAudioTracks()) {
+      for (final track in audioTracks) {
         await pc.addTrack(track, stream);
       }
+      AppLogger.info(
+        'Call ${call.id}: ${audioTracks.length} local audio track(s), '
+        '${_iceServers().length} ICE server group(s)',
+      );
       // The remote audio only becomes audible once its track is attached to a
       // media element. Mobile plays it natively too, but the web build stays
       // silent without this.
@@ -617,12 +636,16 @@ class CallProvider extends ChangeNotifier {
       // that audio is really arriving over it.
       pc.onConnectionState = (state) {
         _connection = state;
+        AppLogger.info('Call ${call.id}: peer state ${state.name}');
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _disconnectGrace?.cancel();
           _disconnectGrace = null;
+          _connectTimeout?.cancel();
+          _connectTimeout = null;
           // Android re-routes audio when the session starts, so the chosen
-          // output is applied again here rather than only before the call.
-          Helper.setSpeakerphoneOn(_speaker).catchError((Object _) {});
+          // output and the voice session are applied again here rather than
+          // only before the call.
+          unawaited(_ensureCallAudioRoute());
           _startAudioProbe();
         }
         if (state ==
@@ -681,11 +704,7 @@ class CallProvider extends ChangeNotifier {
         }
       };
       _peerReady = true;
-      try {
-        await Helper.setSpeakerphoneOn(false);
-      } catch (_) {
-        // Not available on every platform; the default route is fine.
-      }
+      await _ensureCallAudioRoute();
       if (caller) {
         final offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -697,6 +716,25 @@ class CallProvider extends ChangeNotifier {
       await _applySignals(call);
     } catch (error) {
       await _cancelAfterMediaFailure(call, error);
+    }
+  }
+
+  /// Re-asserts the voice-call session and the chosen output route.
+  ///
+  /// Android only routes a communication session once it exists, and some
+  /// devices ignore the speaker/earpiece request made before the peer
+  /// connection was up. Calling this again on `connected` is what makes the
+  /// remote voice audible through the loudspeaker.
+  Future<void> _ensureCallAudioRoute() async {
+    try {
+      await Helper.ensureAudioSession();
+    } catch (_) {
+      // Not exposed on every platform.
+    }
+    try {
+      await Helper.setSpeakerphoneOn(_speaker);
+    } catch (_) {
+      // Desktop and web route audio through the system default.
     }
   }
 
@@ -905,6 +943,10 @@ class CallProvider extends ChangeNotifier {
           }
         }
       }
+      AppLogger.info(
+        'Call ${session.id}: ${_remoteCandidates.length} remote candidate(s), '
+        'signalling ${pc.signalingState?.name}',
+      );
     } catch (error) {
       final current = _call;
       final uid = _uid;
@@ -950,8 +992,14 @@ class CallProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   /// STUN finds the public address; TURN relays the audio when both phones sit
-  /// behind a strict NAT. TURN is optional and read from `.env`, so the app
-  /// still works with STUN alone during development.
+  /// behind a strict NAT.
+  ///
+  /// Two phones on different networks — one on Wi-Fi, one on mobile data — are
+  /// almost always behind carrier-grade NAT, where STUN alone cannot open a
+  /// path. That is why a call can reach `active` in Firestore and still carry
+  /// no voice. A free public TURN relay is used as the fallback so the app
+  /// works out of the box without a paid service; set `TURN_URL`,
+  /// `TURN_USERNAME` and `TURN_CREDENTIAL` in `.env` to use your own.
   static List<Map<String, dynamic>> _iceServers() {
     final servers = <Map<String, dynamic>>[
       {
@@ -962,19 +1010,65 @@ class CallProvider extends ChangeNotifier {
       },
     ];
     final url = dotenv.env['TURN_URL']?.trim() ?? '';
-    if (url.isEmpty) return servers;
-    final username = dotenv.env['TURN_USERNAME']?.trim() ?? '';
-    final credential = dotenv.env['TURN_CREDENTIAL']?.trim() ?? '';
+    if (url.isNotEmpty) {
+      final username = dotenv.env['TURN_USERNAME']?.trim() ?? '';
+      final credential = dotenv.env['TURN_CREDENTIAL']?.trim() ?? '';
+      servers.add({
+        'urls': url
+            .split(',')
+            .map((entry) => entry.trim())
+            .where((entry) => entry.isNotEmpty)
+            .toList(growable: false),
+        if (username.isNotEmpty) 'username': username,
+        if (credential.isNotEmpty) 'credential': credential,
+      });
+      return servers;
+    }
     servers.add({
-      'urls': url
-          .split(',')
-          .map((entry) => entry.trim())
-          .where((entry) => entry.isNotEmpty)
-          .toList(growable: false),
-      if (username.isNotEmpty) 'username': username,
-      if (credential.isNotEmpty) 'credential': credential,
+      'urls': [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      'username': 'openrelayproject',
+      'credential': 'openrelayproject',
     });
     return servers;
+  }
+
+  /// Closes a call that never finds a media path.
+  ///
+  /// Without this, a call whose ICE never succeeds sits on "Connecting
+  /// audio…" with both phones silent and no explanation. The message names
+  /// the likely cause so the officer can act instead of waiting.
+  void _armConnectTimeout(String id) {
+    if (_connection == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+      return;
+    }
+    _connectTimeout?.cancel();
+    _connectTimeout = Timer(const Duration(seconds: 25), () {
+      final current = _call;
+      if (current == null || current.id != id) return;
+      if (_connection ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        return;
+      }
+      final uid = _uid;
+      if (uid != null) {
+        _service
+            .markFailed(
+              current.id,
+              viewerUid: uid,
+              reason: 'No voice path between the two phones.',
+            )
+            .catchError((Object _) {});
+      }
+      _fail(
+        'The two phones could not find a voice path. One of them is probably '
+        'on mobile data behind a strict network — try again on Wi-Fi, or set '
+        'TURN_URL in .env.',
+      );
+    });
   }
 
   void _startElapsedTimer(DateTime? acceptedAt) {
@@ -1003,6 +1097,8 @@ class CallProvider extends ChangeNotifier {
     _answerTimeout = null;
     _disconnectGrace?.cancel();
     _disconnectGrace = null;
+    _connectTimeout?.cancel();
+    _connectTimeout = null;
     _elapsedSeconds = 0;
     _call = null;
     _isCaller = false;
@@ -1010,7 +1106,7 @@ class CallProvider extends ChangeNotifier {
     _offerApplied = false;
     _answerApplied = false;
     _muted = false;
-    _speaker = false;
+    _speaker = true;
     _audioFlowing = false;
     _statsUnavailable = false;
     _connection = RTCPeerConnectionState.RTCPeerConnectionStateNew;
@@ -1036,6 +1132,13 @@ class CallProvider extends ChangeNotifier {
       renderer?.srcObject = null;
       await renderer?.dispose();
     } catch (_) {}
+    // Hands the voice session back to the phone so the next app (or the next
+    // call) starts from a clean audio route.
+    try {
+      await Helper.clearAndroidCommunicationDevice();
+    } catch (_) {
+      // Android only; other platforms ignore it.
+    }
     if (notify) notifyListeners();
   }
 
@@ -1061,6 +1164,7 @@ class CallProvider extends ChangeNotifier {
     _statsTimer?.cancel();
     _answerTimeout?.cancel();
     _disconnectGrace?.cancel();
+    _connectTimeout?.cancel();
     _clearCall(notify: false);
     super.dispose();
   }
