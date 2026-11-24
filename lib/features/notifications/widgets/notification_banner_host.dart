@@ -71,6 +71,10 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
         user.uid,
         NotificationService.iswimChannel,
       ),
+      UserRole.districtOfficer => service.watchForDesk(
+        user.uid,
+        NotificationService.districtOfficerChannel,
+      ),
       _ => service.watch(user.uid),
     }.listen(_onItems, onError: (_) {});
   }
@@ -115,8 +119,16 @@ class _NotificationBannerHostState extends State<NotificationBannerHost> {
 
   void _open(AppNotification item) {
     _dismiss();
+    final sosId = item.data['sosId'];
+    final route = item.data['route'];
     try {
-      GoRouter.of(context).push('/notifications');
+      if (sosId is String && sosId.isNotEmpty) {
+        GoRouter.of(context).push('/sos/$sosId');
+      } else if (route is String && route.startsWith('/')) {
+        GoRouter.of(context).push(route);
+      } else {
+        GoRouter.of(context).push('/notifications');
+      }
     } catch (_) {
       // Without a router (tests) the banner is still allowed to close.
     }

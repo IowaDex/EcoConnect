@@ -17,7 +17,6 @@ import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../models/delay_report.dart';
 import '../services/delay_service.dart';
-import '../widgets/district_officer_alarm.dart';
 import '../../../core/widgets/desk_ui.dart';
 
 /// Iswim files the delay report. Truck and driver come from the fleet roster,
@@ -295,6 +294,7 @@ class DelayListScreen extends StatefulWidget {
     super.key,
     required this.canForward,
     this.canAnnounce = false,
+    this.canSendToBarangay = false,
   });
 
   /// Barangay staff announce delays City Hall sent down to residents.
@@ -302,6 +302,10 @@ class DelayListScreen extends StatefulWidget {
 
   /// True on the DSQC device: shows the "push to district officer" action.
   final bool canForward;
+
+  /// True on the District Officer's device: after the DSQC call, the officer
+  /// sends the copy down to the barangay.
+  final bool canSendToBarangay;
 
   @override
   State<DelayListScreen> createState() => _DelayListScreenState();
@@ -472,6 +476,7 @@ class _DelayListScreenState extends State<DelayListScreen> {
               report: visible[i],
               canForward: canForward,
               canAnnounce: canAnnounce,
+              canSendToBarangay: widget.canSendToBarangay,
             ),
             pagination: items.isEmpty
                 ? null
@@ -497,11 +502,13 @@ class _DelayCard extends StatelessWidget {
     required this.report,
     required this.canForward,
     this.canAnnounce = false,
+    this.canSendToBarangay = false,
   });
 
   final DelayReport report;
   final bool canForward;
   final bool canAnnounce;
+  final bool canSendToBarangay;
 
   static Color _stageColor(DelayStage stage) => switch (stage) {
     DelayStage.dsqc => AppColors.warning,
@@ -717,18 +724,8 @@ class _DelayCard extends StatelessWidget {
             SizedBox(
               height: 38,
               child: FilledButton.icon(
-                onPressed: () async {
-                  final service = DelayService();
-                  await service.forwardToDistrictOfficer(report);
-                  if (!context.mounted) return;
-                  // The officer has no account: the alert has to happen here.
-                  await showDistrictOfficerAlarm(
-                    context,
-                    report,
-                    () => service.sendToBarangay(report),
-                  );
-                },
-                icon: const Icon(Icons.campaign_rounded, size: 15),
+                onPressed: () => context.push('/sos/new'),
+                icon: const Icon(Icons.sos_rounded, size: 15),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.error,
                   textStyle: const TextStyle(
@@ -736,11 +733,22 @@ class _DelayCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                label: const Text('Forward to District Officer'),
+                label: const Text('File an SOS for this report'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'The SOS form carries the incident to the District Officer with '
+              'the full description, date, time and affected barangay.',
+              style: TextStyle(
+                fontSize: 8.5,
+                height: 1.4,
+                color: AppColors.inkMuted,
               ),
             ),
           ],
-          if (canForward && stage == DelayStage.districtOfficer) ...[
+          if ((canForward || canSendToBarangay) &&
+              stage == DelayStage.districtOfficer) ...[
             const SizedBox(height: 11),
             SizedBox(
               height: 38,

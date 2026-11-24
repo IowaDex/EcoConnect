@@ -4,7 +4,7 @@ import '../../../core/design/eco_tokens.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../dashboard/widgets/quick_action_grid.dart';
 
-/// The twelve City Hall shortcuts, laid out as a responsive grid.
+/// The City Hall shortcuts, laid out as a responsive grid.
 ///
 /// The grid itself lives in [QuickActionGrid], the same component the other
 /// role dashboards use, so a shortcut looks and behaves identically no matter
@@ -18,6 +18,11 @@ class DeskTools extends StatelessWidget {
 
   /// The destinations, in the order the desk has always shown them.
   List<QuickAction> get tools => [
+    const QuickAction(
+      label: 'SOS incidents',
+      icon: Icons.notifications_active_outlined,
+      route: '/sos',
+    ),
     const QuickAction(
       label: 'Complaints',
       icon: Icons.report_outlined,
@@ -78,6 +83,16 @@ class DeskTools extends StatelessWidget {
       icon: Icons.draw_outlined,
       route: '/cityhall/signatures',
       badge: pendingSignatures,
+    ),
+    const QuickAction(
+      label: 'District Officers',
+      icon: Icons.support_agent_rounded,
+      route: '/district-officers',
+    ),
+    const QuickAction(
+      label: 'Call history',
+      icon: Icons.history_rounded,
+      route: '/calls',
     ),
   ];
 

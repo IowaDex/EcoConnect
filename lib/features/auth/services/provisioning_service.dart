@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../../../core/constants/service_area.dart';
+import '../../../core/constants/service_districts.dart';
 import '../../driver/models/truck_crew_role.dart';
 import '../models/user.dart';
 
@@ -17,6 +19,7 @@ class ProvisionRequest {
     required this.role,
     this.crewRole = TruckCrewRole.driver,
     this.phone,
+    this.district,
   });
 
   final String name;
@@ -28,6 +31,10 @@ class ProvisionRequest {
   final TruckCrewRole crewRole;
 
   final String? phone;
+
+  /// The district a District Officer covers. An SOS for that district rings
+  /// only this account.
+  final String? district;
 }
 
 /// A staff account as the desk sees it in the list.
@@ -39,6 +46,11 @@ class ProvisionedAccount {
     required this.role,
     required this.status,
     this.crewRole,
+    this.truckId,
+    this.phone,
+    this.barangay,
+    this.district,
+    this.photoUrl,
   });
 
   final String uid;
@@ -47,6 +59,16 @@ class ProvisionedAccount {
   final UserRole role;
   final String status;
   final TruckCrewRole? crewRole;
+  final String? truckId;
+  final String? phone;
+
+  /// The barangay a staff account belongs to. Shown in the District Officer's
+  /// directory so the right desk is called for the right area.
+  final String? barangay;
+
+  /// The legislative district this account covers.
+  final String? district;
+  final String? photoUrl;
 
   bool get isActive => status == 'active';
 }
@@ -130,26 +152,7 @@ class ProvisioningService {
         .snapshots()
         .map((snap) {
           final accounts = snap.docs
-              .map((doc) {
-                final data = doc.data();
-                final email = data['email'] as String? ?? '';
-                final name = (data['name'] as String?)?.trim();
-                return ProvisionedAccount(
-                  uid: doc.id,
-                  name: (name == null || name.isEmpty)
-                      ? (email.isEmpty ? 'No name' : email.split('@').first)
-                      : name,
-                  email: email,
-                  role: UserRole.values.firstWhere(
-                    (role) => role.name == data['role'],
-                    orElse: () => UserRole.user,
-                  ),
-                  status: data['accountStatus'] as String? ?? 'active',
-                  crewRole: data['crewRole'] == null
-                      ? null
-                      : TruckCrewRoleX.fromName(data['crewRole'] as String?),
-                );
-              })
+              .map((doc) => _accountFrom(doc))
               .where(scope.covers)
               .toList();
           // Drivers before the guides who ride with them, then by name.
@@ -161,6 +164,43 @@ class ProvisioningService {
           return accounts;
         });
   }
+
+  /// The District Officer accounts City Hall is responsible for.
+  ///
+  /// Its own query, not [watchAccounts]: that one is scoped to the crew a desk
+  /// owns, and City Hall is the only desk that manages officers.
+  Stream<List<ProvisionedAccount>> watchDistrictOfficers() => _users
+      .where('role', isEqualTo: UserRole.districtOfficer.name)
+      .snapshots()
+      .map((snap) {
+        final officers = snap.docs
+            .map((doc) => _accountFrom(doc, fallbackName: 'District Officer'))
+            .toList();
+        officers.sort((a, b) {
+          final byArea = (a.district ?? '').compareTo(b.district ?? '');
+          return byArea != 0 ? byArea : a.name.compareTo(b.name);
+        });
+        return officers;
+      });
+
+  /// The barangay staff a District Officer can ring.
+  ///
+  /// Queries only `admin` profiles, which is also what the security rule
+  /// allows an officer to read — residents and drivers stay private.
+  Stream<List<ProvisionedAccount>> watchBarangayStaff() => _db
+      .collection('users')
+      .where('role', isEqualTo: 'admin')
+      .snapshots()
+      .map((snap) {
+        final staff = snap.docs
+            .map((doc) => _accountFrom(doc, fallbackName: 'Barangay staff'))
+            .toList();
+        staff.sort((a, b) {
+          final byArea = (a.barangay ?? '').compareTo(b.barangay ?? '');
+          return byArea != 0 ? byArea : a.name.compareTo(b.name);
+        });
+        return staff;
+      });
 
   /// Creates the login and its profile. Returns the new uid.
   ///
@@ -210,8 +250,17 @@ class ProvisioningService {
         'provisionedBy': FirebaseAuth.instance.currentUser?.uid,
         if (request.phone != null && request.phone!.trim().isNotEmpty)
           'phone': request.phone!.trim(),
+        if (request.district != null && request.district!.trim().isNotEmpty)
+          'district': request.district!.trim(),
         if (request.role == UserRole.driver)
           'crewRole': request.crewRole.wireName,
+        // A barangay desk belongs to the served barangay; the district makes
+        // SOS routing and incident reads work without asking the desk to
+        // re-enter its area.
+        if (request.role == UserRole.admin) ...{
+          'barangay': ServiceArea.barangay,
+          'district': ServiceDistricts.defaultDistrict,
+        },
       });
     } catch (e) {
       // A login without a profile can never sign in, so it is safe to leave
@@ -245,6 +294,39 @@ class ProvisioningService {
     });
   }
 
+  /// Assigns (or moves) the district a District Officer covers. Only City Hall
+  /// may write this field, and the security rules repeat that check.
+  Future<void> setDistrict(String uid, String district) async {
+    final value = district.trim();
+    if (value.isEmpty) {
+      throw const ProvisioningException('Choose a district first.');
+    }
+    await _users.doc(uid).update({'district': value});
+  }
+
+  /// The active District Officers for one district, newest first.
+  ///
+  /// An SOS is addressed to these accounts by uid instead of the shared desk
+  /// channel, so officers in other districts are not rung. The district is
+  /// filtered here rather than in the query so no composite index is needed.
+  Future<List<ProvisionedAccount>> officersForDistrict(String district) async {
+    final value = district.trim();
+    if (value.isEmpty) return const [];
+    final snap = await _users
+        .where('role', isEqualTo: 'districtOfficer')
+        .get();
+    return snap.docs
+        .where((doc) {
+          final data = doc.data();
+          return (data['district'] as String?)?.trim() == value &&
+              (data['accountStatus'] ?? 'active') == 'active';
+        })
+        .map(
+          (doc) => _accountFrom(doc, fallbackName: 'District Officer'),
+        )
+        .toList(growable: false);
+  }
+
   Future<FirebaseApp> _secondaryApp() async {
     try {
       return Firebase.app(_secondaryAppName);
@@ -275,4 +357,38 @@ class ProvisioningException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+/// One `users` profile as the desks read it.
+///
+/// The crew desk, the barangay directory and the District Officer list all
+/// show the same record, so the mapping lives in one place and none of them
+/// can drift when a field is added.
+ProvisionedAccount _accountFrom(
+  DocumentSnapshot<Map<String, dynamic>> doc, {
+  String fallbackName = 'No name',
+}) {
+  final data = doc.data() ?? const <String, dynamic>{};
+  final email = data['email'] as String? ?? '';
+  final name = (data['name'] as String?)?.trim();
+  return ProvisionedAccount(
+    uid: doc.id,
+    name: (name == null || name.isEmpty)
+        ? (email.isEmpty ? fallbackName : email.split('@').first)
+        : name,
+    email: email,
+    role: UserRole.values.firstWhere(
+      (role) => role.name == data['role'],
+      orElse: () => UserRole.user,
+    ),
+    status: data['accountStatus'] as String? ?? 'active',
+    crewRole: data['crewRole'] == null
+        ? null
+        : TruckCrewRoleX.fromName(data['crewRole'] as String?),
+    truckId: data['assignedTruckId'] as String?,
+    phone: data['phone'] as String?,
+    barangay: data['barangay'] as String?,
+    district: data['district'] as String?,
+    photoUrl: data['photoUrl'] as String?,
+  );
 }

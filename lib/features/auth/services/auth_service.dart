@@ -107,6 +107,7 @@ class AuthService {
       crewRole: TruckCrewRoleX.fromName(data['crewRole'] as String?),
       // Provisioned drivers open straight onto the truck City Hall linked.
       assignedTruckId: data['assignedTruckId'] as String?,
+      district: data['district'] as String?,
     );
   }
 
