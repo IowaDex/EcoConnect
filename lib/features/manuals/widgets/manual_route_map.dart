@@ -6,26 +6,19 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/map_config.dart';
 import '../data/manual_areas.dart';
 
-/// The pre-made route for one assignment, drawn in its own colour.
+/// The run for one assignment, drawn in its own colour.
 class ManualRouteGroup {
-  const ManualRouteGroup({
-    required this.areas,
-    required this.color,
-    required this.label,
-  });
+  const ManualRouteGroup({required this.areas, required this.color});
 
   final List<ManualArea> areas;
   final Color color;
-
-  /// A, B, C… — matches the letter on the assignment card.
-  final String label;
 }
 
-/// Shows the pre-made loops for the areas picked in a manual.
+/// Draws the picked areas as one numbered run.
 ///
-/// Nothing is traced by hand: picking an area adds its loop, and this widget
-/// joins the loops in selection order so the officer can see the run the truck
-/// will make.
+/// Nothing is traced by hand and nothing is ringed: the first area is badge 1,
+/// the second is badge 2 with a line joining it to 1, and so on, so the officer
+/// reads the order the truck will take.
 class ManualRouteMap extends StatelessWidget {
   const ManualRouteMap({
     super.key,
@@ -46,7 +39,7 @@ class ManualRouteMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final all = <LatLng>[
       for (final group in groups)
-        for (final area in group.areas) ...area.route,
+        for (final area in group.areas) area.center,
     ];
 
     if (all.isEmpty) {
@@ -72,39 +65,43 @@ class ManualRouteMap extends StatelessWidget {
         child: FlutterMap(
           options: BatasanHills.options(
             center: all.first,
-            fit: LatLngBounds.fromPoints(all),
-            fitPadding: const EdgeInsets.all(34),
+            // One area has no extent to fit; open at street level instead of
+            // zooming the satellite sheet to its blurriest.
+            zoom: 16,
+            fit: all.length > 1 ? LatLngBounds.fromPoints(all) : null,
+            fitPadding: const EdgeInsets.all(38),
             interactive: interactive,
           ),
           children: [
-            BatasanHills.tiles(tileProvider: tileProvider),
-            BatasanHills.boundaryLayer(),
+            BatasanHills.baseLayer(tileProvider: tileProvider),
             PolylineLayer(
               polylines: [
                 for (final group in groups)
-                  if (group.areas.isNotEmpty)
+                  if (group.areas.length > 1)
                     Polyline(
                       points: manualRouteForAreas(group.areas),
-                      strokeWidth: 4,
-                      color: group.color.withValues(alpha: 0.85),
-                      borderStrokeWidth: 1.5,
-                      borderColor: Colors.white.withValues(alpha: 0.9),
+                      strokeWidth: 3.5,
+                      color: group.color,
+                      borderStrokeWidth: 2,
+                      borderColor: Colors.white.withValues(alpha: 0.95),
                     ),
               ],
             ),
             MarkerLayer(
               markers: [
                 for (final group in groups)
-                  for (final area in group.areas)
+                  for (var i = 0; i < group.areas.length; i++)
                     Marker(
-                      point: area.center,
+                      point: group.areas[i].center,
                       width: 24,
                       height: 24,
-                      child: _AreaBadge(label: group.label, color: group.color),
+                      child: _AreaBadge(
+                        number: i + 1,
+                        color: group.color,
+                      ),
                     ),
               ],
             ),
-            const OsmAttribution(),
           ],
         ),
       ),
@@ -113,9 +110,9 @@ class ManualRouteMap extends StatelessWidget {
 }
 
 class _AreaBadge extends StatelessWidget {
-  const _AreaBadge({required this.label, required this.color});
+  const _AreaBadge({required this.number, required this.color});
 
-  final String label;
+  final int number;
   final Color color;
 
   @override
@@ -135,9 +132,9 @@ class _AreaBadge extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        label,
+        '$number',
         style: const TextStyle(
-          fontSize: 9.5,
+          fontSize: 10,
           fontWeight: FontWeight.w800,
           color: Colors.white,
         ),

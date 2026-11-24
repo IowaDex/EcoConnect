@@ -99,6 +99,30 @@ class BatasanHills {
     tileProvider: tileProvider,
   );
 
+  /// Where the barangay satellite sheet sits on the globe.
+  ///
+  /// Read off the sheet's own graticule: 121°5.0'E at x=201 and 14°41.8'N at
+  /// y=145, at 30,300 px per degree of longitude and 31,120 px per degree of
+  /// latitude. The manual map draws this instead of street tiles so the whole
+  /// barangay — and nothing invented — is on screen.
+  static final LatLngBounds satelliteBounds = LatLngBounds(
+    const LatLng(14.6664289, 121.0785808),
+    const LatLng(14.7006834, 121.1157425),
+  );
+
+  /// The satellite sheet, which already carries its own barangay outline.
+  static Widget baseLayer({TileProvider? tileProvider}) {
+    if (tileProvider != null) return tiles(tileProvider: tileProvider);
+    return OverlayImageLayer(
+      overlayImages: [
+        OverlayImage(
+          bounds: satelliteBounds,
+          imageProvider: const AssetImage('assets/images/batasan_hills_map.jpg'),
+        ),
+      ],
+    );
+  }
+
   /// Dims everything outside the barangay and outlines its boundary.
   ///
   /// Place it directly above [tiles] so the map stays readable outside while

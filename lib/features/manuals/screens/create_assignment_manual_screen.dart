@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/utils/map_config.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
@@ -15,6 +17,7 @@ import '../../tickets/models/trip_ticket.dart';
 import '../data/manual_areas.dart';
 import '../models/manual_assignment.dart';
 import '../services/assignment_manual_service.dart';
+import '../services/manual_draft_store.dart';
 import '../services/manual_pdf.dart';
 import '../widgets/manual_route_map.dart';
 
@@ -56,6 +59,12 @@ class _DraftAssignment {
       '${startTime.minute.toString().padLeft(2, '0')}';
 
   String get daysLabel => ([...days]..sort()).map(manualDayLabel).join(' · ');
+
+  /// The last day this row's schedule covers, counted from today.
+  DateTime get validUntil =>
+      manualValidUntil(recurrence: recurrence, from: DateTime.now());
+
+  String get validityLabel => 'Valid until ${dateLabel(validUntil)}';
 
   List<String> get routeNames => [for (final area in routes) area.name];
 
@@ -101,6 +110,16 @@ Color _letterColor(int index) => _letterColors[index % _letterColors.length];
 String _letter(int index) =>
     String.fromCharCode('A'.codeUnitAt(0) + (index % 26));
 
+/// `HH:mm` as `8:00 AM`, for the rows of the week grid.
+String _clockLabel(String time) {
+  final parts = time.split(':');
+  final hour = int.tryParse(parts.first) ?? 0;
+  final minute = int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0;
+  final display = hour % 12 == 0 ? 12 : hour % 12;
+  return '$display:${minute.toString().padLeft(2, '0')} '
+      '${hour < 12 ? 'AM' : 'PM'}';
+}
+
 /// Iswim builds the collection manual City Hall asked for.
 ///
 /// The manual is a bulk assignment: the officer adds one row per driver, each
@@ -136,12 +155,18 @@ class _CreateAssignmentManualScreenState
   /// 0 = drivers & routes, 1 = review.
   int _step = 0;
 
+  /// The draft key: one unfinished manual per City Hall request.
+  String get _draftScope => widget.requestId ?? 'new';
+
+  /// What the title started as, so leaving an untouched page is silent.
+  late final String _initialTitle = widget.requestTitle.trim().isEmpty
+      ? 'Collection manual'
+      : widget.requestTitle.trim();
+
   @override
   void initState() {
     super.initState();
-    _title.text = widget.requestTitle.trim().isEmpty
-        ? 'Collection manual'
-        : widget.requestTitle.trim();
+    _title.text = _initialTitle;
     _truckSub = FleetService().watchTrucks().listen(
       (trucks) {
         if (mounted) setState(() => _trucks = trucks);
@@ -151,6 +176,7 @@ class _CreateAssignmentManualScreenState
       onError: (_) {},
     );
     _loadDrivers();
+    _restoreDraft();
   }
 
   @override
@@ -209,16 +235,135 @@ class _CreateAssignmentManualScreenState
     return options;
   }
 
-  void _handleBack() {
+  /// Whether leaving now would throw work away.
+  bool get _hasProgress =>
+      _assignments.isNotEmpty || _title.text.trim() != _initialTitle;
+
+  /// Rebuilds a manual the officer left half finished.
+  Future<void> _restoreDraft() async {
+    final draft = await ManualDraftStore().load(_draftScope);
+    if (draft == null || !mounted) return;
+    final rows = <_DraftAssignment>[];
+    for (final row in draft.assignments) {
+      final areas = manualAreasFor(row.routes);
+      if (areas.isEmpty) continue;
+      rows.add(
+        _DraftAssignment(
+          driverId: row.driverId,
+          driverName: row.driverName,
+          truck: _truckFor(row),
+          routes: areas,
+          days: row.days.toSet(),
+          startTime: _timeOfDay(row.startTime),
+          recurrence: row.recurrence,
+        ),
+      );
+    }
+    setState(() {
+      if (draft.title.trim().isNotEmpty) _title.text = draft.title;
+      _assignments
+        ..clear()
+        ..addAll(rows);
+    });
+    AppFeedback.success(context, 'Draft restored — pick up where you left off');
+  }
+
+  /// The live plate, or the one the draft remembered when it is no longer in
+  /// the fleet list.
+  GarbageTruck _truckFor(ManualAssignment row) {
+    for (final truck in _trucks) {
+      if (truck.id == row.truckId) return truck;
+    }
+    return GarbageTruck(
+      id: row.truckId,
+      plateNumber: row.plateNumber,
+      wheelers: row.wheelers,
+      bodyType: 'Compactor',
+      barangay: 'Barangay Batasan Hills',
+      zone: '',
+      centerLatitude: BatasanHills.center.latitude,
+      centerLongitude: BatasanHills.center.longitude,
+      driverName: row.driverName,
+    );
+  }
+
+  static TimeOfDay _timeOfDay(String time) {
+    final parts = time.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 8,
+      minute: int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0,
+    );
+  }
+
+  Future<void> _saveDraft() async {
+    await ManualDraftStore().save(
+      _draftScope,
+      ManualDraft(
+        title: _title.text.trim(),
+        assignments: [
+          for (final assignment in _assignments) assignment.toManualAssignment(),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleBack() async {
     if (_step == 1) {
       setState(() => _step = 0);
       return;
     }
+    if (_hasProgress) {
+      final choice = await _askAboutDraft();
+      if (choice == null || !mounted) return;
+      if (choice) {
+        await _saveDraft();
+        if (!mounted) return;
+        AppFeedback.success(context, 'Draft saved');
+      } else {
+        await ManualDraftStore().clear(_draftScope);
+        if (!mounted) return;
+      }
+    }
+    if (!mounted) return;
     if (context.canPop()) {
       context.pop();
     } else {
       context.go('/iswim');
     }
+  }
+
+  /// True = save the draft, false = discard it, null = stay on the page.
+  Future<bool?> _askAboutDraft() {
+    final count = _assignments.length;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save this manual as a draft?'),
+        content: Text(
+          count == 0
+              ? 'You have not added a driver yet. Leave anyway?'
+              : 'You have $count ${count == 1 ? 'assignment' : 'assignments'} '
+                    'that City Hall has not seen. Save them so you can pick up '
+                    'where you left off.',
+          style: const TextStyle(fontSize: 12, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Discard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.forest),
+            child: const Text('Save draft'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openEditor({int? index}) async {
@@ -328,6 +473,7 @@ class _CreateAssignmentManualScreenState
         byName: user.displayName ?? 'Iswim',
         requestId: widget.requestId,
       );
+      await ManualDraftStore().clear(_draftScope);
       if (!mounted) return;
       final firstTicket = manual.ticketIds.isNotEmpty
           ? manual.ticketIds.first
@@ -653,7 +799,6 @@ class _CreateAssignmentManualScreenState
               ManualRouteGroup(
                 areas: _assignments[i].routes,
                 color: _letterColor(i),
-                label: _letter(i),
               ),
           ],
         ),
@@ -664,7 +809,7 @@ class _CreateAssignmentManualScreenState
             onPressed: _busy ? null : _exportPdf,
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 17),
             label: const Text(
-              'Generate mock manual (PDF)',
+              'Generate manual (PDF)',
               style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
             ),
             style: OutlinedButton.styleFrom(
@@ -848,11 +993,14 @@ class _WeekGlance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // One row per start time actually in use. A custom time gets its own row
+    // instead of being pushed into the 8 AM or 6 PM slot.
+    final times = <String>{for (final a in assignments) a.startLabel};
+    final rows = times.isEmpty ? const ['08:00', '18:00'] : (times.toList()..sort());
     final cells = <String, int>{};
     for (var i = 0; i < assignments.length; i++) {
-      final row = assignments[i].startTime.hour < 12 ? 8 : 18;
       for (final day in assignments[i].days) {
-        cells.putIfAbsent('$day-$row', () => i);
+        cells.putIfAbsent('$day-${assignments[i].startLabel}', () => i);
       }
     }
 
@@ -867,7 +1015,7 @@ class _WeekGlance extends StatelessWidget {
         children: [
           Row(
             children: [
-              const SizedBox(width: 38),
+              const SizedBox(width: 46),
               for (var day = 1; day <= 7; day++)
                 Expanded(
                   child: Center(
@@ -883,14 +1031,14 @@ class _WeekGlance extends StatelessWidget {
                 ),
             ],
           ),
-          for (final row in const [8, 18]) ...[
+          for (final row in rows) ...[
             const SizedBox(height: 8),
             Row(
               children: [
                 SizedBox(
-                  width: 38,
+                  width: 46,
                   child: Text(
-                    row == 8 ? '8 AM' : '6 PM',
+                    _clockLabel(row),
                     style: const TextStyle(
                       fontSize: 8.5,
                       fontWeight: FontWeight.w700,
@@ -1030,6 +1178,16 @@ class _AssignmentCard extends StatelessWidget {
                         fontSize: 9.5,
                         height: 1.4,
                         color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${assignment.recurrence.label} · '
+                      '${assignment.validityLabel}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.moss,
                       ),
                     ),
                   ],
@@ -1399,9 +1557,31 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Areas another row already covers at a start time this one would clash
+  /// with, mapped to who holds them. An area can only be covered once per
+  /// slot, so these cannot be picked.
+  Map<String, String> get _takenAreas {
+    final taken = <String, String>{};
+    final start = _startLabel(_start);
+    for (final other in widget.others) {
+      if (!other.days.any(_days.contains)) continue;
+      if (!manualSlotsClash(other.startLabel, start)) continue;
+      final by = '${other.driverName} · ${other.startLabel}';
+      for (final name in other.routeNames) {
+        taken.putIfAbsent(name, () => by);
+      }
+    }
+    return taken;
+  }
+
   void _toggleRoute(String name) {
     if (_routes.contains(name)) {
       setState(() => _routes.remove(name));
+      return;
+    }
+    final takenBy = _takenAreas[name];
+    if (takenBy != null) {
+      _toast('$name is already covered by $takenBy.');
       return;
     }
     if (_maxRoutes == 0) {
@@ -1521,6 +1701,14 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
       _toast(conflict);
       return;
     }
+    // The day or start time may have moved after the areas were picked.
+    final taken = _takenAreas;
+    for (final name in _routes) {
+      final takenBy = taken[name];
+      if (takenBy == null) continue;
+      _toast('$name is already covered by $takenBy. Remove it first.');
+      return;
+    }
 
     final draft = _DraftAssignment(
       driverId: option.uid,
@@ -1540,6 +1728,7 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
   Widget build(BuildContext context) {
     final truck = _truck;
     final conflict = _conflict;
+    final taken = _takenAreas;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -1755,7 +1944,6 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                           ManualRouteGroup(
                             areas: manualAreasFor(_routes),
                             color: AppColors.forest,
-                            label: 'R',
                           ),
                         ],
                       ),
@@ -1872,12 +2060,16 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                 itemBuilder: (context, index) {
                                   final area = kManualAreas[index];
                                   final selected = _routes.contains(area.name);
+                                  final takenBy = taken[area.name];
                                   final disabled =
-                                      !selected && _routes.length >= _maxRoutes;
+                                      takenBy != null ||
+                                      (!selected &&
+                                          _routes.length >= _maxRoutes);
                                   return _AreaCheckRow(
                                     name: area.name,
                                     selected: selected,
                                     disabled: disabled,
+                                    takenBy: takenBy,
                                     onTap: () => _toggleRoute(area.name),
                                   );
                                 },
@@ -2039,6 +2231,16 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                         color: AppColors.inkMuted,
                       ),
                     ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Valid until '
+                      '${dateLabel(manualValidUntil(recurrence: _recurrence, from: DateTime.now()))}',
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.forest,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Container(
                       width: double.infinity,
@@ -2160,11 +2362,21 @@ class _QuickFill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A selected chip would otherwise take the theme's white
+    // `secondaryLabelStyle` and vanish on the pale mint fill.
+    final ink = selected ? AppColors.forest : AppColors.textDark;
     return ChoiceChip(
-      label: Text(label, style: const TextStyle(fontSize: 9.5)),
+      label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
       selectedColor: AppColors.mint,
+      backgroundColor: Colors.white,
+      labelStyle: TextStyle(
+        fontSize: 9.5,
+        fontWeight: FontWeight.w700,
+        color: ink,
+      ),
+      checkmarkColor: AppColors.forest,
       side: BorderSide(color: selected ? AppColors.primary : AppColors.sage),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     );
@@ -2252,6 +2464,7 @@ class _AreaCheckRow extends StatelessWidget {
     required this.selected,
     required this.disabled,
     required this.onTap,
+    this.takenBy,
   });
 
   final String name;
@@ -2259,8 +2472,12 @@ class _AreaCheckRow extends StatelessWidget {
   final bool disabled;
   final VoidCallback onTap;
 
+  /// Who already covers this area at the chosen time, when it is taken.
+  final String? takenBy;
+
   @override
   Widget build(BuildContext context) {
+    final holder = takenBy;
     return InkWell(
       onTap: disabled ? null : onTap,
       child: Padding(
@@ -2283,6 +2500,20 @@ class _AreaCheckRow extends StatelessWidget {
                 ),
               ),
             ),
+            if (holder != null)
+              Flexible(
+                child: Text(
+                  holder,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.warning,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

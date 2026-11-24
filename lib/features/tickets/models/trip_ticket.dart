@@ -170,6 +170,23 @@ int manualMinutes(String time) {
 bool manualSlotsClash(String a, String b) =>
     (manualMinutes(a) - manualMinutes(b)).abs() < kManualMinGapMinutes;
 
+/// The last day a schedule stays in force.
+///
+/// Weekly covers one week from [from], monthly one month and yearly one year.
+/// The manual prints the resulting date instead of the recurrence name alone,
+/// so "weekly" reads as "valid until 1 Dec 2026".
+DateTime manualValidUntil({
+  required ManualRecurrence recurrence,
+  required DateTime from,
+}) {
+  final start = DateTime(from.year, from.month, from.day);
+  return switch (recurrence) {
+    ManualRecurrence.weekly => DateTime(start.year, start.month, start.day + 7),
+    ManualRecurrence.monthly => DateTime(start.year, start.month + 1, start.day),
+    ManualRecurrence.yearly => DateTime(start.year + 1, start.month, start.day),
+  };
+}
+
 /// Whether two manual rows are the same driver.
 ///
 /// A row taken from the driver accounts carries a uid; a row typed from the
@@ -472,6 +489,12 @@ class TripTicket {
       date: date,
     );
   }
+
+  /// The last day this schedule covers, matching the manual it came from.
+  DateTime get validUntil => manualValidUntil(
+    recurrence: recurrence,
+    from: createdAt ?? DateTime.now(),
+  );
 
   /// True when today is one of the manual's collection days.
   bool get isScheduledToday => runsOn(DateTime.now());

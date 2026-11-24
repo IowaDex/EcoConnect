@@ -184,7 +184,8 @@ class _ScheduleCard extends StatelessWidget {
                 const SizedBox(height: 7),
                 Text(
                   'Approved ${timeAgo(manual.approvedAt)}'
-                  '${manual.approvedByName == null ? '' : ' by ${manual.approvedByName}'}',
+                  '${manual.approvedByName == null ? '' : ' by ${manual.approvedByName}'}'
+                  ' · valid until ${dateLabel(manual.validUntil)}',
                   style: const TextStyle(
                     fontSize: 9,
                     color: AppColors.inkMuted,

@@ -1,8 +1,10 @@
 import '../../../core/utils/file_saver.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/utils/simple_pdf.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../models/assignment_manual.dart';
 import '../models/manual_assignment.dart';
+import 'assignment_manual_service.dart';
 
 /// Writes the one-page manual PDF for a record that already exists.
 ///
@@ -21,8 +23,13 @@ Future<bool> exportAssignmentManualPdf({
   required ManualRecurrence recurrence,
   required String status,
   String? requestTitle,
+  DateTime? validFrom,
   List<ManualAssignment> assignments = const [],
 }) async {
+  final from = validFrom ?? DateTime.now();
+  String valid(ManualRecurrence repeat) =>
+      dateLabel(manualValidUntil(recurrence: repeat, from: from));
+
   final lines = <String>[
     'Collection manual',
     if (title.trim().isNotEmpty) 'Title: ${title.trim()}',
@@ -38,7 +45,8 @@ Future<bool> exportAssignmentManualPdf({
         '   Schedule: '
             '${([...assignments[i].days]..sort()).map(manualDayLabel).join(', ')}',
         '   Start time: ${assignments[i].startTime}',
-        '   Recurrence: ${assignments[i].recurrence.label}',
+        '   Recurrence: ${assignments[i].recurrence.label} · valid until '
+            '${valid(assignments[i].recurrence)}',
         '',
       ],
     ] else ...[
@@ -49,6 +57,7 @@ Future<bool> exportAssignmentManualPdf({
       'Schedule: ${([...days]..sort()).map(manualDayLabel).join(', ')}',
       'Start time: $startTime',
       'Recurrence: ${recurrence.label}',
+      'Valid until: ${valid(recurrence)}',
       '',
     ],
     'Status: $status',
@@ -63,20 +72,30 @@ Future<bool> exportAssignmentManualPdf({
 }
 
 /// The manual a trip ticket was generated from.
-Future<bool> exportManualPdfFromTicket(TripTicket ticket) =>
-    exportAssignmentManualPdf(
-      title: '${ticket.code} · collection manual',
-      driverName: ticket.driverName,
-      plateNumber: ticket.plateNumber,
-      wheelers: ticket.wheelers,
-      routes: ticket.routes,
-      days: ticket.days,
-      startTime: ticket.windowStart,
-      recurrence: ticket.recurrence,
-      status: ticket.approvalPending
-          ? 'Waiting for City Hall approval'
-          : ticket.status.label,
-    );
+///
+/// The ticket names one driver; the manual holds the whole roster, so the
+/// export reads the roster back and prints every row.
+Future<bool> exportManualPdfFromTicket(TripTicket ticket) async {
+  final id = ticket.assignmentId;
+  final manual = id == null || id.isEmpty
+      ? null
+      : await AssignmentManualService().findOne(id);
+  return exportAssignmentManualPdf(
+    title: manual?.title ?? '${ticket.code} · collection manual',
+    driverName: ticket.driverName,
+    plateNumber: ticket.plateNumber,
+    wheelers: ticket.wheelers,
+    routes: ticket.routes,
+    days: ticket.days,
+    startTime: ticket.windowStart,
+    recurrence: ticket.recurrence,
+    status: ticket.approvalPending
+        ? 'Waiting for City Hall approval'
+        : ticket.status.label,
+    validFrom: manual?.approvedAt ?? manual?.createdAt ?? ticket.createdAt,
+    assignments: manual?.assignments ?? const [],
+  );
+}
 
 /// The roster entry saved in `assignment_manuals`.
 Future<bool> exportManualPdfFromRecord(AssignmentManual manual) =>
@@ -90,5 +109,6 @@ Future<bool> exportManualPdfFromRecord(AssignmentManual manual) =>
       startTime: manual.startTime,
       recurrence: manual.recurrence,
       status: manual.status.label,
+      validFrom: manual.approvedAt ?? manual.createdAt,
       assignments: manual.assignments,
     );

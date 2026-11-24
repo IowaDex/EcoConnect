@@ -464,18 +464,60 @@ class _CollectionManualCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          // Every driver on the roster, not just the first one.
+          for (final row in manual.allAssignments)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.local_shipping_outlined,
+                    size: 12,
+                    color: AppColors.moss,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${row.driverName} · ${row.plateNumber}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.darkGreen,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          row.routesLabel.isEmpty ? '—' : row.routesLabel,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            height: 1.35,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: Text(
-                  manual.allRoutes.join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  '${manual.scheduleLabel} · '
+                  '${timeAgo(manual.updatedAt ?? manual.createdAt)}',
                   style: const TextStyle(
-                    fontSize: 9.5,
-                    height: 1.4,
-                    color: AppColors.textDark,
+                    fontSize: 9,
+                    color: AppColors.inkMuted,
                   ),
                 ),
               ),
@@ -493,10 +535,14 @@ class _CollectionManualCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
-            '${manual.scheduleLabel} · ${timeAgo(manual.updatedAt ?? manual.createdAt)}',
-            style: const TextStyle(fontSize: 9, color: AppColors.inkMuted),
+            'Valid until ${dateLabel(manual.validUntil)}',
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: AppColors.moss,
+            ),
           ),
         ],
       ),

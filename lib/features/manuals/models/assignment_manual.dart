@@ -113,6 +113,15 @@ class AssignmentManual {
 
   bool get isApproved => status == AssignmentManualStatus.approved;
 
+  /// The last day this schedule covers.
+  ///
+  /// Counted from City Hall's signature when there is one, so a manual that
+  /// waited a week for approval still gets its full week.
+  DateTime get validUntil => manualValidUntil(
+    recurrence: recurrence,
+    from: approvedAt ?? createdAt ?? DateTime.now(),
+  );
+
   /// The roster, with a one-row fallback for records written before the
   /// assignments array existed.
   List<ManualAssignment> get allAssignments {

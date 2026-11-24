@@ -46,6 +46,18 @@ class AssignmentManualService {
             : null,
       );
 
+  /// One manual, read once. Used where a live listener would outlive the
+  /// screen — the PDF export, for instance.
+  Future<AssignmentManual?> findOne(String id) async {
+    try {
+      final snap = await _col.doc(id).get();
+      if (!snap.exists) return null;
+      return AssignmentManual.fromDoc(snap.id, snap.data()!);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static List<AssignmentManual> _parse(
     QuerySnapshot<Map<String, dynamic>> snap,
   ) {
@@ -61,13 +73,14 @@ class AssignmentManualService {
     return items;
   }
 
-  /// A driver needs six hours between shifts, and a plate cannot be on two
-  /// routes at the same moment. Returns a human explanation, or null when the
-  /// slot is free.
+  /// A driver needs six hours between shifts, a plate cannot be on two routes
+  /// at the same moment, and an area is only covered once per slot. Returns a
+  /// human explanation, or null when the slot is free.
   Future<String?> findConflict({
     required String driverId,
     required String driverName,
     required String truckId,
+    required List<String> routes,
     required List<int> days,
     required String startTime,
   }) async {
@@ -93,21 +106,26 @@ class AssignmentManualService {
             otherDriverName: row.driverName,
           );
           final sameTruck = truckId.isNotEmpty && row.truckId == truckId;
-          if (!sameDriver && !sameTruck) continue;
           final clash = sameDriver
               ? manualSlotsClash(row.startTime, startTime)
               : row.startTime == startTime;
-          if (!clash) continue;
           final shared = row.days
               .where(days.contains)
               .map(manualDayLabel)
               .join(', ');
-          if (sameDriver) {
-            return '${row.driverName} already starts on $shared at '
-                '${row.startTime}. Leave 6 hours between shifts.';
+          if ((sameDriver || sameTruck) && clash) {
+            if (sameDriver) {
+              return '${row.driverName} already starts on $shared at '
+                  '${row.startTime}. Leave 6 hours between shifts.';
+            }
+            return 'Plate ${row.plateNumber} is already out on $shared at '
+                '${row.startTime}.';
           }
-          return 'Plate ${row.plateNumber} is already out on $shared at '
-              '${row.startTime}.';
+          if (!manualSlotsClash(row.startTime, startTime)) continue;
+          final taken = routes.where(row.routes.contains).toList();
+          if (taken.isEmpty) continue;
+          return '${taken.join(', ')} is already covered by '
+              '${row.driverName} on $shared at ${row.startTime}.';
         }
       }
       return null;
@@ -143,6 +161,7 @@ class AssignmentManualService {
         driverId: assignment.driverId,
         driverName: assignment.driverName,
         truckId: assignment.truckId,
+        routes: assignment.routes,
         days: assignment.days,
         startTime: assignment.startTime,
       );
@@ -238,14 +257,18 @@ class AssignmentManualService {
     return manual;
   }
 
-  /// Catches a driver or plate booked twice inside the same manual before any
-  /// write happens.
+  /// Catches a driver, plate or area booked twice inside the same manual
+  /// before any write happens.
   static void _checkBatchConflicts(List<ManualAssignment> assignments) {
     for (var i = 0; i < assignments.length; i++) {
       for (var j = i + 1; j < assignments.length; j++) {
         final left = assignments[i];
         final right = assignments[j];
         if (!left.days.any(right.days.contains)) continue;
+        final shared = left.days
+            .where(right.days.contains)
+            .map(manualDayLabel)
+            .join(', ');
         final sameDriver = manualSameDriver(
           driverId: left.driverId,
           driverName: left.driverName,
@@ -254,27 +277,32 @@ class AssignmentManualService {
         );
         final sameTruck =
             left.truckId.isNotEmpty && left.truckId == right.truckId;
-        if (!sameDriver && !sameTruck) continue;
         // Six hours between shifts for a driver; a plate cannot be on two
         // routes at the same moment.
         final clash = sameDriver
             ? manualSlotsClash(left.startTime, right.startTime)
             : left.startTime == right.startTime;
-        if (!clash) continue;
-        final shared = left.days
-            .where(right.days.contains)
-            .map(manualDayLabel)
-            .join(', ');
-        if (sameDriver) {
+        if ((sameDriver || sameTruck) && clash) {
+          if (sameDriver) {
+            throw AssignmentException(
+              '${left.driverName} is booked twice on $shared '
+              '(${left.startTime} and ${right.startTime}). Leave 6 hours '
+              'between shifts.',
+            );
+          }
           throw AssignmentException(
-            '${left.driverName} is booked twice on $shared '
-            '(${left.startTime} and ${right.startTime}). Leave 6 hours '
-            'between shifts.',
+            'Plate ${left.plateNumber} is on two assignments on $shared at '
+            '${left.startTime}. Move one to another day or time.',
           );
         }
+
+        // An area can only be covered once per slot, whoever drives it.
+        if (!manualSlotsClash(left.startTime, right.startTime)) continue;
+        final taken = left.routes.where(right.routes.contains).toList();
+        if (taken.isEmpty) continue;
         throw AssignmentException(
-          'Plate ${left.plateNumber} is on two assignments on $shared at '
-          '${left.startTime}. Move one to another day or time.',
+          '${taken.join(', ')} is already covered by ${left.driverName} on '
+          '$shared at ${left.startTime}. Pick another area or another time.',
         );
       }
     }

@@ -311,6 +311,17 @@ CityHallDocuments buildCityHallDocuments({
   final signatureKeys = <String>{};
   final receivedKeys = <String>{};
 
+  // A bulk manual is one thing to sign, however many drivers it carries, so
+  // the desk sees one card per manual and the card says how many rows it
+  // covers. One signature approves all of them.
+  final manualRows = <String, int>{};
+  final seenManuals = <String>{};
+  for (final ticket in tickets) {
+    final id = ticket.assignmentId;
+    if (id == null || id.isEmpty || !ticket.approvalPending) continue;
+    manualRows[id] = (manualRows[id] ?? 0) + 1;
+  }
+
   void addSignature(DeskDocument document) {
     if (signatureKeys.add('${document.kind.name}:${document.id}')) {
       forSignature.add(document);
@@ -336,15 +347,21 @@ CityHallDocuments buildCityHallDocuments({
         // A manual ticket is issued as `issued` but it is City Hall that acts
         // next, not the driver. Everything else waits for the driver.
         if (ticket.approvalPending) {
-          addSignature(
-            _ticketDocument(
-              ticket,
-              driverName,
-              DeskDocumentStatus.awaitingSignature,
-              dateCaption: 'Submitted',
-              canSign: true,
-            ),
-          );
+          final manualId = ticket.assignmentId;
+          final bulk = manualId != null && manualId.isNotEmpty;
+          // One card per manual: the first pending row stands for the roster.
+          if (!bulk || seenManuals.add(manualId)) {
+            addSignature(
+              _ticketDocument(
+                ticket,
+                driverName,
+                DeskDocumentStatus.awaitingSignature,
+                dateCaption: 'Submitted',
+                canSign: true,
+                manualRows: bulk ? (manualRows[manualId] ?? 1) : 1,
+              ),
+            );
+          }
         }
       case TicketStatus.valid:
         addSignature(
@@ -494,6 +511,7 @@ DeskDocument _ticketDocument(
   DeskDocumentStatus status, {
   required String dateCaption,
   bool canSign = false,
+  int manualRows = 1,
 }) {
   final date = switch (dateCaption) {
     'Signed' ||
@@ -505,14 +523,19 @@ DeskDocument _ticketDocument(
   };
 
   final route = ticket.route.trim();
+  final title = manualRows > 1
+      ? 'Collection manual · $manualRows drivers'
+      : (route.isEmpty ? 'Trip ticket ${ticket.code}' : route);
   return DeskDocument(
     id: ticket.id,
     kind: DeskDocumentKind.tripTicket,
     category: DeskCategory.driver,
-    title: route.isEmpty ? 'Trip ticket ${ticket.code}' : route,
+    title: title,
     reference: ticket.code,
     displayReference: ticket.code,
-    senderName: driverName,
+    senderName: manualRows > 1
+        ? '$driverName + ${manualRows - 1} more'
+        : driverName,
     senderRole: DeskCategory.driver.roleLabel,
     department: DeskCategory.driver.label,
     area: ticket.zone.trim(),

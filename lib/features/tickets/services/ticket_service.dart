@@ -496,14 +496,71 @@ class TicketService {
     final approvingManual =
         ticket.approvalPending && signer == TicketStatusSigner.cityHall;
 
-    final next = approvingManual
-        ? TicketStatus.valid
-        : switch (signer) {
-            TicketStatusSigner.barangay => TicketStatus.barangaySigned,
-            TicketStatusSigner.iswim => TicketStatus.iswimSigned,
-            TicketStatusSigner.cityHall => TicketStatus.completed,
-            TicketStatusSigner.driver => TicketStatus.submitted,
-          };
+    if (approvingManual) {
+      // City Hall approves the manual, not each driver's page: every ticket
+      // the manual generated is signed in the same batch.
+      final rows = await _approveManualBatch(
+        ticket,
+        uid: uid,
+        name: name,
+        image: image,
+      );
+      final count = rows.length;
+      await _notifications.notifyIswim(
+        title: 'Manual approved · ${ticket.code}',
+        body: count > 1
+            ? 'City Hall approved $count drivers on the manual for '
+                  '${ticket.plateNumber}. Every trip ticket is now valid.'
+            : 'City Hall approved ${ticket.driverName}\'s schedule for '
+                  '${ticket.plateNumber}. The trip ticket is now valid.',
+        type: AppNotificationType.system,
+        data: {'ticketId': id, 'kind': 'manualApproved'},
+        dedupeKey: 'manual_ticket_${id}_approved',
+      );
+      // The barangay keeps a copy of the approved schedule, and residents get
+      // the route and collection time on their own desk.
+      await _notifications.notifyStaff(
+        title: 'Collection schedule approved · ${ticket.code}',
+        body: count > 1
+            ? '$count drivers · ${ticket.scheduleLabel} · '
+                  '${ticket.routesLabel}'
+            : '${ticket.plateNumber} · ${ticket.driverName} · '
+                  '${ticket.scheduleLabel}. ${ticket.routesLabel}',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'manualApprovedCopy'},
+        dedupeKey: 'manual_ticket_${id}_approved_staff',
+      );
+      await _notifications.notifyResidents(
+        title: 'Collection schedule · ${ticket.routesLabel}',
+        body:
+            '${ticket.scheduleLabel}. Trucks will cover your area.',
+        type: AppNotificationType.route,
+        data: {'ticketId': id, 'kind': 'manualApprovedSchedule'},
+        dedupeKey: 'manual_ticket_${id}_approved_residents',
+      );
+      // Every driver on the roster hears about it, not just the first row.
+      for (final row in rows) {
+        if (row.driverId.isEmpty) continue;
+        await _notifications.push(
+          userId: row.driverId,
+          title: 'Collection schedule approved · ${row.code}',
+          body:
+              '${row.plateNumber} · ${row.routesLabel} · '
+              '${row.scheduleLabel}. Mark the run complete when you finish.',
+          type: AppNotificationType.route,
+          data: {'ticketId': row.id, 'kind': 'manualApprovedDriver'},
+          dedupeKey: 'assignment_${row.id}_approved',
+        );
+      }
+      return TicketStatus.valid;
+    }
+
+    final next = switch (signer) {
+      TicketStatusSigner.barangay => TicketStatus.barangaySigned,
+      TicketStatusSigner.iswim => TicketStatus.iswimSigned,
+      TicketStatusSigner.cityHall => TicketStatus.completed,
+      TicketStatusSigner.driver => TicketStatus.submitted,
+    };
 
     await _col.doc(id).update({
       'signatures.${signer.wireName}': {
@@ -514,7 +571,6 @@ class TicketService {
       },
       'status': next.name,
       'pendingSigner': next.pendingSigner?.wireName,
-      if (approvingManual) 'approvalPending': false,
       if (next == TicketStatus.completed)
         'completedAt': FieldValue.serverTimestamp(),
       'history': FieldValue.arrayUnion([
@@ -523,58 +579,10 @@ class TicketService {
           previousStatus: ticket.status,
           byUid: uid,
           byName: name,
-          note: approvingManual
-              ? 'Manual approved by City Hall'
-              : '${signer.label} signature recorded',
+          note: '${signer.label} signature recorded',
         ).toMap(),
       ]),
     });
-
-    if (approvingManual) {
-      await _approveManual(ticket, byName: name);
-      await _notifications.notifyIswim(
-        title: 'Manual request, approved · ${ticket.code}',
-        body:
-            'City Hall approved ${ticket.driverName}\'s schedule for '
-            '${ticket.plateNumber}. The trip ticket is now valid.',
-        type: AppNotificationType.system,
-        data: {'ticketId': id, 'kind': 'manualApproved'},
-        dedupeKey: 'manual_ticket_${id}_approved',
-      );
-      // The barangay keeps a copy of the approved schedule, and residents get
-      // the route and collection time on their own desk.
-      await _notifications.notifyStaff(
-        title: 'Collection schedule approved · ${ticket.code}',
-        body:
-            '${ticket.plateNumber} · ${ticket.driverName} · '
-            '${ticket.scheduleLabel}. ${ticket.routesLabel}',
-        type: AppNotificationType.route,
-        data: {'ticketId': id, 'kind': 'manualApprovedCopy'},
-        dedupeKey: 'manual_ticket_${id}_approved_staff',
-      );
-      await _notifications.notifyResidents(
-        title: 'Collection schedule · ${ticket.routesLabel}',
-        body:
-            '${ticket.scheduleLabel}. Truck ${ticket.plateNumber} will cover '
-            'your area.',
-        type: AppNotificationType.route,
-        data: {'ticketId': id, 'kind': 'manualApprovedSchedule'},
-        dedupeKey: 'manual_ticket_${id}_approved_residents',
-      );
-      // The driver only hears about the run once City Hall has signed it.
-      if (ticket.driverId.isNotEmpty) {
-        await _notifications.push(
-          userId: ticket.driverId,
-          title: 'Collection schedule approved · ${ticket.code}',
-          body:
-              '${ticket.plateNumber} · ${ticket.routesLabel} · '
-              '${ticket.scheduleLabel}. Mark the run complete when you finish.',
-          type: AppNotificationType.route,
-          data: {'ticketId': id, 'kind': 'manualApprovedDriver'},
-          dedupeKey: 'assignment_${id}_approved',
-        );
-      }
-    }
 
     // Each hop tells the next signer that the document is waiting for them.
     if (next == TicketStatus.barangaySigned) {
@@ -625,70 +633,95 @@ class TicketService {
     return next;
   }
 
-  /// Mirrors City Hall's approval onto the assignment manual and closes the
-  /// manual request that started it. Best effort: the ticket is already valid,
-  /// so a failed mirror must not surface as a signing error.
+  /// Signs every ticket a manual generated with City Hall's approval, then
+  /// marks the manual and its request approved.
   ///
-  /// A bulk manual has one ticket per driver. The manual only turns approved
-  /// once every one of those tickets carries the City Hall signature.
-  Future<void> _approveManual(
+  /// A bulk manual is one document to the DSQC, so one signature has to cover
+  /// the whole roster. Rows that already moved on are left alone. Returns the
+  /// rows that were still waiting, which are the drivers to notify.
+  Future<List<TripTicket>> _approveManualBatch(
     TripTicket ticket, {
-    required String byName,
+    required String uid,
+    required String name,
+    required String image,
   }) async {
     final assignmentId = ticket.assignmentId;
-    if (assignmentId == null || assignmentId.isEmpty) return;
-    try {
-      final manualRef = _db.collection('assignment_manuals').doc(assignmentId);
-      final manualSnap = await manualRef.get();
-      final ticketIds =
-          (manualSnap.data()?['ticketIds'] as List?)
-              ?.whereType<String>()
-              .toList() ??
-          const <String>[];
-      final assignmentCount =
-          (manualSnap.data()?['assignments'] as List?)?.length ?? 1;
-      // A bulk submission is still issuing tickets; do not approve the manual
-      // on the first signature while the rest of the roster is being written.
-      if (ticketIds.length < assignmentCount) return;
-      if (ticketIds.length > 1) {
-        for (final otherId in ticketIds) {
-          if (otherId == ticket.id) continue;
-          final snap = await _col.doc(otherId).get();
-          final other = snap.exists
-              ? TripTicket.fromDoc(snap.id, snap.data()!)
-              : null;
-          if (other == null) continue;
-          if (other.status != TicketStatus.valid &&
-              other.status != TicketStatus.completed) {
-            // City Hall still has another driver row to sign.
-            return;
-          }
-        }
-      }
+    final manualRef = assignmentId == null || assignmentId.isEmpty
+        ? null
+        : _db.collection('assignment_manuals').doc(assignmentId);
 
+    final ids = <String>{ticket.id};
+    if (manualRef != null) {
+      try {
+        final snap = await manualRef.get();
+        ids.addAll(
+          (snap.data()?['ticketIds'] as List?)?.whereType<String>() ??
+              const <String>[],
+        );
+      } catch (_) {
+        // Without the roster only this row is signed; the rest can be
+        // repaired from the manual desk.
+      }
+    }
+
+    final signed = <TripTicket>[];
+    final batch = _db.batch();
+    for (final id in ids) {
+      final snap = await _col.doc(id).get();
+      if (!snap.exists) continue;
+      final row = TripTicket.fromDoc(snap.id, snap.data()!);
+      if (row == null) continue;
+      if (row.status != TicketStatus.issued || !row.approvalPending) continue;
+      batch.update(snap.reference, {
+        'signatures.${TicketStatusSigner.cityHall.wireName}': {
+          'name': name,
+          'uid': uid,
+          'image': image,
+          'signedAt': FieldValue.serverTimestamp(),
+        },
+        'status': TicketStatus.valid.name,
+        'pendingSigner': null,
+        'approvalPending': false,
+        'history': FieldValue.arrayUnion([
+          TicketHistoryEntry(
+            status: TicketStatus.valid,
+            previousStatus: row.status,
+            byUid: uid,
+            byName: name,
+            note: 'Manual approved by City Hall',
+          ).toMap(),
+        ]),
+      });
+      signed.add(row);
+    }
+    await batch.commit();
+
+    if (manualRef == null) return signed;
+    try {
       await manualRef.update({
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
-        'approvedByName': byName,
+        'approvedByName': name,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       final requests = await _db
           .collection('manual_requests')
           .where('assignmentManualId', isEqualTo: assignmentId)
           .get();
-      if (requests.docs.isEmpty) return;
-      final batch = _db.batch();
+      if (requests.docs.isEmpty) return signed;
+      final close = _db.batch();
       for (final doc in requests.docs) {
-        batch.update(doc.reference, {
+        close.update(doc.reference, {
           'status': 'approved',
           'approvedAt': FieldValue.serverTimestamp(),
-          'approvedByName': byName,
+          'approvedByName': name,
         });
       }
-      await batch.commit();
+      await close.commit();
     } catch (_) {
-      // The ticket is the source of truth; the mirror can be repaired later.
+      // The tickets are the source of truth; the mirror can be repaired later.
     }
+    return signed;
   }
 
   Future<void> cancel(String id) async {

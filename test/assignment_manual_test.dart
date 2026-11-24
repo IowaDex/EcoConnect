@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:eco_connect/core/constants/resident_areas.dart';
 import 'package:eco_connect/core/utils/simple_pdf.dart';
 import 'package:eco_connect/features/manuals/data/manual_areas.dart';
@@ -87,6 +88,50 @@ void main() {
     });
   });
 
+  group('manual validity', () {
+    test('weekly, monthly and yearly resolve to a real date', () {
+      final from = DateTime(2026, 11, 24);
+      expect(
+        manualValidUntil(recurrence: ManualRecurrence.weekly, from: from),
+        DateTime(2026, 12, 1),
+      );
+      expect(
+        manualValidUntil(recurrence: ManualRecurrence.monthly, from: from),
+        DateTime(2026, 12, 24),
+      );
+      expect(
+        manualValidUntil(recurrence: ManualRecurrence.yearly, from: from),
+        DateTime(2027, 11, 24),
+      );
+    });
+
+    test('the month rolls over instead of clamping', () {
+      expect(
+        manualValidUntil(
+          recurrence: ManualRecurrence.monthly,
+          from: DateTime(2026, 12, 20),
+        ),
+        DateTime(2027, 1, 20),
+      );
+    });
+
+    test('a manual counts from City Hall approval', () {
+      final manual = AssignmentManual.fromDoc('m1', {
+        'title': 'Zone 3',
+        'driverName': 'Ramon Dela Cruz',
+        'plateNumber': 'SK 4821',
+        'startTime': '08:00',
+        'recurrence': 'weekly',
+        'status': 'approved',
+        'createdAt': Timestamp.fromDate(DateTime(2026, 11, 20)),
+        'approvedAt': Timestamp.fromDate(DateTime(2026, 11, 24)),
+        'createdBy': 'i1',
+      });
+
+      expect(manual!.validUntil, DateTime(2026, 12, 1));
+    });
+  });
+
   group('manual areas', () {
     test('every listed resident area has a pre-made route', () {
       final expected = [
@@ -97,13 +142,20 @@ void main() {
       expect([for (final area in kManualAreas) area.name], expected);
     });
 
-    test('the pre-made loops stay inside Batasan Hills', () {
+    test('every area pin sits inside Batasan Hills', () {
       for (final area in kManualAreas) {
-        for (final point in area.route) {
-          expect(point.latitude, inInclusiveRange(14.668, 14.697));
-          expect(point.longitude, inInclusiveRange(121.083, 121.112));
-        }
+        expect(area.center.latitude, inInclusiveRange(14.668, 14.697));
+        expect(area.center.longitude, inInclusiveRange(121.083, 121.112));
       }
+    });
+
+    test('the run joins the pins in the order they were picked', () {
+      final picked = [kManualAreas[2], kManualAreas[0], kManualAreas[1]];
+      expect(manualRouteForAreas(picked), [
+        picked[0].center,
+        picked[1].center,
+        picked[2].center,
+      ]);
     });
   });
 

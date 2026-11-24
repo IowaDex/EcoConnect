@@ -5,34 +5,13 @@ import '../../../core/constants/resident_areas.dart';
 /// One subdivision, village or sitio a manual can send a truck through.
 ///
 /// The name is what the manual prints and what the routes checklist shows.
-/// [center] is the pin, and [route] is the pre-made loop the map draws when the
-/// area is picked — Iswim never has to trace the streets by hand.
+/// [center] is the pin, and the map joins the picked pins in order — Iswim
+/// never has to trace the streets by hand.
 class ManualArea {
-  const ManualArea({
-    required this.name,
-    required this.center,
-    required this.shape,
-  });
+  const ManualArea({required this.name, required this.center});
 
   final String name;
   final LatLng center;
-
-  /// Varies the loop footprint so neighbouring areas do not overlap exactly.
-  final int shape;
-
-  /// The pre-made loop for this area. It is a small block around [center],
-  /// which is enough for the desk to see which streets a truck will cover.
-  List<LatLng> get route {
-    final dLat = 0.0008 + (shape % 3) * 0.00012;
-    final dLng = 0.0010 + (shape % 4) * 0.00018;
-    return [
-      LatLng(center.latitude - dLat, center.longitude - dLng * 0.45),
-      LatLng(center.latitude - dLat * 0.55, center.longitude + dLng),
-      LatLng(center.latitude + dLat, center.longitude + dLng * 0.72),
-      LatLng(center.latitude + dLat * 0.62, center.longitude - dLng),
-      LatLng(center.latitude - dLat, center.longitude - dLng * 0.45),
-    ];
-  }
 }
 
 /// Pins for the barangay's areas, laid out roughly south-west to north-east.
@@ -100,7 +79,7 @@ List<ManualArea> _buildAreas() {
   );
   return List<ManualArea>.unmodifiable([
     for (var i = 0; i < names.length && i < _centers.length; i++)
-      ManualArea(name: names[i], center: _centers[i], shape: i),
+      ManualArea(name: names[i], center: _centers[i]),
   ]);
 }
 
@@ -120,12 +99,10 @@ List<ManualArea> manualAreasFor(Iterable<String> names) => [
     if (manualAreaByName(name) case final area?) area,
 ];
 
-/// One continuous path through the picked areas: each area's loop joined to
-/// the next, so the map reads as a single collection run.
-List<LatLng> manualRouteForAreas(Iterable<ManualArea> areas) {
-  final points = <LatLng>[];
-  for (final area in areas) {
-    points.addAll(area.route);
-  }
-  return points;
-}
+/// One continuous run through the picked areas, in the order they were picked.
+///
+/// Each area contributes its pin, so the map draws a single line 1 -> 2 -> 3
+/// instead of a ring around every area.
+List<LatLng> manualRouteForAreas(Iterable<ManualArea> areas) => [
+  for (final area in areas) area.center,
+];
