@@ -126,18 +126,16 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
       // The trip ticket is no longer issued by hand: submitting a collection
       // manual generates it, so the dashboard has no "add ticket" button.
       // The nav lives in the Scaffold slot, not inside the body, so the page
-      // content never hides behind it.
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: AppBottomNav(
-          currentIndex: _tab,
-          onTap: (index) => setState(() => _tab = index),
-          items: const [
-            (icon: Icons.space_dashboard_outlined, label: 'Overview'),
-            (icon: Icons.confirmation_number_outlined, label: 'Tickets'),
-            (icon: Icons.local_shipping_outlined, label: 'Fleet'),
-          ],
-        ),
+      // content never hides behind it; AppBottomNav lifts itself above the
+      // phone's own navigation bar.
+      bottomNavigationBar: AppBottomNav(
+        currentIndex: _tab,
+        onTap: (index) => setState(() => _tab = index),
+        items: const [
+          (icon: Icons.space_dashboard_outlined, label: 'Overview'),
+          (icon: Icons.confirmation_number_outlined, label: 'Tickets'),
+          (icon: Icons.local_shipping_outlined, label: 'Fleet'),
+        ],
       ),
       body: SafeArea(
         bottom: false,

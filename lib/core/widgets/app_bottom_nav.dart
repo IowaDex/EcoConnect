@@ -84,33 +84,45 @@ class AppBottomNav extends StatelessWidget {
     );
 
     if (onAskAi == null) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-        child: bar,
+      return _safe(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          child: bar,
+        ),
       );
     }
 
     // The assistant button breaks out of the pill, so the whole bar gets a
     // taller box and the pill is pinned to its bottom.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-      child: SizedBox(
-        height: 78,
-        child: Stack(
-          children: [
-            Positioned(left: 0, right: 0, bottom: 0, child: bar),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _AskAiButton(onTap: onAskAi!, locked: askAiLocked),
+    return _safe(
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        child: SizedBox(
+          height: 78,
+          child: Stack(
+            children: [
+              Positioned(left: 0, right: 0, bottom: 0, child: bar),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: _AskAiButton(onTap: onAskAi!, locked: askAiLocked),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Keeps the pill clear of the phone's own navigation bar. The Scaffold
+  /// places this slot flush with the bottom of the screen, so without the
+  /// inset the pill sits under the system gesture bar and its labels read
+  /// half-faded on a real device.
+  Widget _safe(Widget child) {
+    return SafeArea(top: false, child: child);
   }
 }
 
@@ -192,6 +204,47 @@ class _AskAiButtonState extends State<_AskAiButton> {
               widget.locked ? Icons.lock_outline_rounded : Icons.forum_rounded,
               size: 20,
               color: AppColors.creamBright,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Soft fade that sits between a scrolling page and the floating nav.
+///
+/// The page ends exactly where the nav begins, so without this a card or an
+/// icon is sliced in half along that edge. With it, the last row dissolves
+/// into the background and the pill looks like it floats over the page.
+///
+/// Place it at the bottom of a [Stack] over the scroll view, and add [height]
+/// to that view's bottom padding so the last row can still scroll clear of it.
+class NavScrim extends StatelessWidget {
+  const NavScrim({super.key, this.color});
+
+  static const height = 34.0;
+
+  /// Background to fade into. Defaults to the page background.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = color ?? AppColors.background;
+    return IgnorePointer(
+      child: SizedBox(
+        height: height,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                background.withValues(alpha: 0),
+                background.withValues(alpha: 0.85),
+                background,
+              ],
+              stops: const [0, 0.65, 1],
             ),
           ),
         ),

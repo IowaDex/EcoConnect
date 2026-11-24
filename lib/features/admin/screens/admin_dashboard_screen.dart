@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/constants/service_area.dart';
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
@@ -111,12 +112,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   /// Requests still on the desk: submitted, under review or approved but not
   /// yet collected.
+  ///
+  /// Scoped the same way the collection desk scopes its list, so the figure in
+  /// the hero always opens a list with that many requests in it.
   List<CollectionRequest> get _openRequests => _requests
       .where(
         (request) =>
-            request.status == RequestStatus.pending ||
-            request.status == RequestStatus.underReview ||
-            request.status == RequestStatus.approved,
+            ServiceArea.belongsToArea(request.requesterBarangay) &&
+            (request.status == RequestStatus.pending ||
+                request.status == RequestStatus.underReview ||
+                request.status == RequestStatus.approved),
       )
       .toList(growable: false);
 

@@ -106,7 +106,19 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   ),
                 ),
                 const SizedBox(height: EcoSpace.md),
-                Expanded(child: _body()),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      _body(),
+                      const Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: NavScrim(),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -258,7 +270,7 @@ class _AnnouncementsTab extends StatelessWidget {
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24 + NavScrim.height),
           itemCount: items.length,
           separatorBuilder: (_, __) => const SizedBox(height: EcoSpace.sm),
           itemBuilder: (context, i) => _AnnouncementCard(
@@ -461,7 +473,7 @@ class _EventsTab extends StatelessWidget {
         final past = items.where((e) => e.isCompleted).toList();
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24 + NavScrim.height),
           children: [
             if (upcoming.isNotEmpty) ...[
               DeskSectionHeader(
@@ -672,7 +684,7 @@ class _PostsTabState extends State<_PostsTab> {
         final page = clampPage(_page, posts.length, _pageSize);
         final visible = pageSlice(posts, page, _pageSize);
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24 + NavScrim.height),
           children: [
             _ComposerBar(
               name: user?.firstName ?? 'there',

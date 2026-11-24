@@ -109,9 +109,12 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                 // The desk is scoped to this deployment's barangay. Requests
                 // filed anywhere else are dropped before the counts, the
                 // filters and the list are built, so the screen can never show
-                // another barangay even if such a record exists.
+                // another barangay even if such a record exists. A record with
+                // no barangay at all stays: it is an old request from this
+                // barangay, and hiding it is what made the desk disagree with
+                // the dashboard counter.
                 final all = (snapshot.data ?? const <CollectionRequest>[])
-                    .where((r) => ServiceArea.covers(r.requesterBarangay))
+                    .where((r) => ServiceArea.belongsToArea(r.requesterBarangay))
                     .toList(growable: false);
                 final items = _applyFilters(all);
                 final page = clampPage(_page, items.length, _pageSize);
@@ -129,11 +132,18 @@ class _CollectionRequestsScreenState extends State<CollectionRequestsScreen> {
                     ),
                     Expanded(
                       child: items.isEmpty
-                          ? const EmptyState(
+                          ? EmptyState(
                               icon: Icons.inbox_outlined,
-                              title: 'No requests match',
-                              message:
-                                  'Try clearing the status or date filter.',
+                              // A desk with nothing in it and a desk whose
+                              // filters hid everything are different problems,
+                              // so they get different advice.
+                              title: all.isEmpty
+                                  ? 'No requests yet'
+                                  : 'No requests match',
+                              message: all.isEmpty
+                                  ? 'Resident and government requests land '
+                                        'here the moment they are filed.'
+                                  : 'Try clearing the status or date filter.',
                             )
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
@@ -430,7 +440,8 @@ class _RequestCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${request.requesterName} · ${request.requesterBarangay ?? 'Barangay'}',
+            '${request.requesterName} · '
+            '${request.requesterBarangay ?? ServiceArea.barangay}',
             style: const TextStyle(fontSize: 9.5, color: AppColors.inkMuted),
           ),
           const SizedBox(height: 10),
@@ -700,7 +711,7 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
             _row(Icons.call_outlined, request.requesterPhone!),
           _row(
             Icons.location_on_outlined,
-            request.requesterBarangay ?? 'Barangay not set',
+            request.requesterBarangay ?? ServiceArea.barangay,
           ),
           const SizedBox(height: 14),
           _sectionTitle('Collection details'),

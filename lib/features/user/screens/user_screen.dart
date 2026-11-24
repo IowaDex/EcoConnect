@@ -77,26 +77,42 @@ class _UserScreenState extends State<UserScreen> {
                 Expanded(
                   // Pull to refresh re-reads the profile, so an approval made
                   // at the barangay desk unlocks the dashboard without a new
-                  // login.
-                  child: RefreshIndicator(
-                    onRefresh: auth.refreshUser,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                      children: [
-                        FadeSlideIn(
-                          index: 0,
-                          child: _ResidentHero(
-                            user: user,
-                            onEditProfile: () => _showProfile(context),
+                  // login. The scrim lets the last row of shortcuts dissolve
+                  // above the floating nav instead of being cut by its edge.
+                  child: Stack(
+                    children: [
+                      RefreshIndicator(
+                        onRefresh: auth.refreshUser,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(
+                            20,
+                            12,
+                            20,
+                            24 + NavScrim.height,
                           ),
+                          children: [
+                            FadeSlideIn(
+                              index: 0,
+                              child: _ResidentHero(
+                                user: user,
+                                onEditProfile: () => _showProfile(context),
+                              ),
+                            ),
+                            if (restricted)
+                              ..._restrictedBody(context, user!)
+                            else
+                              ..._residentBody(context, user),
+                          ],
                         ),
-                        if (restricted)
-                          ..._restrictedBody(context, user!)
-                        else
-                          ..._residentBody(context, user),
-                      ],
-                    ),
+                      ),
+                      const Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: NavScrim(),
+                      ),
+                    ],
                   ),
                 ),
               ],
