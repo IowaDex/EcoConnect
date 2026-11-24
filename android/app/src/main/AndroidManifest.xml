@@ -10,6 +10,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Incoming calls ring with a repeating vibration pattern. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Keeps the looping ringtone alive while the screen is off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- In-app voice calls (WebRTC): microphone and audio routing. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />

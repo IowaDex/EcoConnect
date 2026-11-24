@@ -21,8 +21,29 @@ class CallHost extends StatefulWidget {
   State<CallHost> createState() => _CallHostState();
 }
 
-class _CallHostState extends State<CallHost> {
+class _CallHostState extends State<CallHost> with WidgetsBindingObserver {
   String? _uid;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// A long spell in the background can let Android stop the ringtone. When
+  /// the desk comes back, a still-pending invitation rings again.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!mounted) return;
+    context.read<CallProvider>().resumeRingingIfNeeded();
+  }
 
   @override
   void didChangeDependencies() {
