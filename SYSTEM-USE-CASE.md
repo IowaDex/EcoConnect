@@ -1,0 +1,154 @@
+# Eco-Connect — Use Case Diagram
+
+Full version based on `SYSTEM-FLOW.md`. Actors are drawn with Mermaid's `person` shape (v11), so they render as figures, not boxes.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#ffffff","primaryBorderColor":"#14201a","primaryTextColor":"#14201a","lineColor":"#14201a","fontFamily":"Segoe UI, Arial, sans-serif","fontSize":"13px"}}}%%
+flowchart LR
+    RES@{ shape: person, label: "Resident" }
+    DRV@{ shape: person, label: "Truck Driver" }
+    GDE@{ shape: person, label: "Truck Guide" }
+    BRG@{ shape: person, label: "Barangay Staff" }
+    ISW@{ shape: person, label: "Iswim" }
+    DSQ@{ shape: person, label: "DSQC" }
+    DOF@{ shape: person, label: "District Officer" }
+    AUD@{ shape: person, label: "Auditor" }
+
+    subgraph SYS["Eco-Connect System"]
+        direction TB
+        UC01([Log in])
+        UC02([Register with valid ID])
+        UC03([Track the truck])
+        UC04([Request collection])
+        UC05([Report incident])
+        UC06([Submit waste upload])
+        UC07([Post to community])
+        UC08([File a complaint])
+        UC09([View events and announcements])
+        UC10([Ask the AI assistant])
+        UC11([Accept or decline trip ticket])
+        UC12([Start the trip])
+        UC13([End route and sign ticket])
+        UC14([Select truck to assist])
+        UC15([Review resident application])
+        UC16([Create Truck Guide account])
+        UC17([Handle collection requests])
+        UC18([Validate waste])
+        UC19([Manage collection points])
+        UC20([Send memos and wave 2])
+        UC21([Post events and announcements])
+        UC22([Track event sign-ups])
+        UC23([Handle incidents])
+        UC24([Receive delay call])
+        UC25([Sign trip ticket])
+        UC26([Create route plan])
+        UC27([Issue trip ticket])
+        UC28([Create Truck Driver account])
+        UC29([File delay report])
+        UC30([Manage assignment manuals])
+        UC31([Provision accounts])
+        UC32([Create District Officer account])
+        UC33([Alert District Officer])
+        UC34([Review delay report])
+        UC35([Manage fleet registry])
+        UC36([Handle complaints and requests])
+        UC37([View email log])
+        UC38([Answer delay call])
+        UC39([Call DSQC])
+        UC40([Call barangay staff])
+        UC41([View call history])
+        UC42([View audit log])
+    end
+
+    AUTH@{ shape: person, label: "«service»\nFirebase Auth" }
+    PUSH@{ shape: person, label: "«service»\nPush Notification" }
+    MAPS@{ shape: person, label: "«service»\nGoogle Maps" }
+    CALL@{ shape: person, label: "«service»\nVoice Call" }
+    DB@{ shape: person, label: "«service»\nFirestore" }
+
+    RES --> UC01
+    RES --> UC02
+    RES --> UC03
+    RES --> UC04
+    RES --> UC05
+    RES --> UC06
+    RES --> UC07
+    RES --> UC08
+    RES --> UC09
+    RES --> UC10
+    DRV --> UC01
+    DRV --> UC11
+    DRV --> UC12
+    DRV --> UC13
+    GDE --> UC01
+    GDE --> UC14
+    BRG --> UC01
+    BRG --> UC15
+    BRG --> UC16
+    BRG --> UC17
+    BRG --> UC18
+    BRG --> UC19
+    BRG --> UC20
+    BRG --> UC21
+    BRG --> UC22
+    BRG --> UC23
+    BRG --> UC24
+    BRG --> UC25
+    ISW --> UC01
+    ISW --> UC25
+    ISW --> UC26
+    ISW --> UC27
+    ISW --> UC28
+    ISW --> UC29
+    ISW --> UC30
+    DSQ --> UC01
+    DSQ --> UC25
+    DSQ --> UC31
+    DSQ --> UC32
+    DSQ --> UC33
+    DSQ --> UC34
+    DSQ --> UC35
+    DSQ --> UC36
+    DSQ --> UC37
+    DOF --> UC01
+    DOF --> UC38
+    DOF --> UC39
+    DOF --> UC40
+    DOF --> UC41
+    AUD --> UC01
+    AUD --> UC42
+
+    UC02 -.->|"«include»"| UC01
+    UC12 -.->|"«include»"| UC11
+    UC13 -.->|"«include»"| UC12
+    UC38 -.->|"«include»"| UC39
+    UC40 -.->|"«include»"| UC39
+    UC24 -.->|"«include»"| UC38
+
+    UC01 --- AUTH
+    UC02 --- AUTH
+    UC31 --- AUTH
+    UC33 --- PUSH
+    UC38 --- PUSH
+    UC03 --- MAPS
+    UC12 --- MAPS
+    UC13 --- MAPS
+    UC39 --- CALL
+    UC40 --- CALL
+    UC41 --- DB
+    UC15 --- DB
+    UC27 --- DB
+    UC34 --- DB
+    UC25 --- DB
+
+    classDef uc fill:#ffffff,stroke:#14201a,stroke-width:1.2px,color:#14201a
+    classDef svc fill:#ffffff,stroke:#7b8a7f,stroke-width:1.2px,color:#14201a
+    class UC01,UC02,UC03,UC04,UC05,UC06,UC07,UC08,UC09,UC10,UC11,UC12,UC13,UC14,UC15,UC16,UC17,UC18,UC19,UC20,UC21,UC22,UC23,UC24,UC25,UC26,UC27,UC28,UC29,UC30,UC31,UC32,UC33,UC34,UC35,UC36,UC37,UC38,UC39,UC40,UC41,UC42 uc
+    class AUTH,PUSH,MAPS,CALL,DB svc
+```
+
+## Notes
+
+- Needs **Mermaid 11+** for `shape: person`. On mermaid.live it works out of the box.
+- `«include»` is a dashed arrow. Plain lines on the right connect use cases to external services.
+- 42 use cases is a lot for auto-layout, so Mermaid will draw long crossing lines. The hand-drawn `USE-CASE.svg` / `USE-CASE.png` is the clean print version; this file is the editable source.

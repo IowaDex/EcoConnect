@@ -435,6 +435,45 @@ test('a desk suspends and deletes only its own people', async () => {
   await assertFails(deleteDoc(doc(as('root'), 'users/c2')));
 });
 
+test('Iswim removes a departed driver, and only a driver', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users/d1'), {
+      name: 'D', role: 'driver', crewRole: 'driver', accountStatus: 'active',
+    });
+    await setDoc(doc(db, 'users/g1'), {
+      name: 'G', role: 'driver', crewRole: 'guide', accountStatus: 'active',
+    });
+    await setDoc(doc(db, 'routes/d1'), {status: 'inTransit'});
+    await setDoc(doc(db, 'routes/g1'), {status: 'inTransit'});
+    await setDoc(doc(db, 'sessions/d1'), {sessionId: 'a'.repeat(20), authTime: 1});
+  });
+
+  // The tombstone is what stops the profile coming back, so Iswim may lay it
+  // only over a driver: never a guide, a resident, a colleague or another desk.
+  await assertFails(setDoc(doc(as('ivy'), 'removed_users/g1'), {removedAt: 1}));
+  await assertFails(setDoc(doc(as('ivy'), 'removed_users/alice'), {removedAt: 1}));
+  await assertFails(setDoc(doc(as('ivy'), 'removed_users/ivy'), {removedAt: 1}));
+  await assertFails(setDoc(doc(as('ivy'), 'removed_users/carl'), {removedAt: 1}));
+  await assertSucceeds(setDoc(doc(as('ivy'), 'removed_users/d1'), {removedAt: 1}));
+  // A removal that failed after the tombstone is retried, and the second
+  // write arrives as an update rather than a create.
+  await assertSucceeds(setDoc(doc(as('ivy'), 'removed_users/d1'), {removedAt: 2}));
+
+  // The live route and the device marker go with the account.
+  await assertFails(deleteDoc(doc(as('ivy'), 'routes/g1')));
+  await assertSucceeds(deleteDoc(doc(as('ivy'), 'routes/d1')));
+  await assertSucceeds(deleteDoc(doc(as('ivy'), 'sessions/d1')));
+
+  // The profile goes last, so a failure halfway leaves it listed to retry.
+  await assertFails(deleteDoc(doc(as('ivy'), 'users/g1')));
+  await assertFails(deleteDoc(doc(as('ivy'), 'users/alice')));
+  await assertSucceeds(deleteDoc(doc(as('ivy'), 'users/d1')));
+
+  // Nobody removes their own login through the desk.
+  await assertFails(deleteDoc(doc(as('ivy'), 'users/ivy')));
+});
+
 test('City Hall alone keeps the District Officer email address', async () => {
   const ref = (uid) => doc(as(uid), 'settings/districtOfficer');
   await assertSucceeds(setDoc(ref('carl'), {email: 'officer@qc.gov.ph'}));

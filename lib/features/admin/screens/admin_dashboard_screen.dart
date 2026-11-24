@@ -359,6 +359,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   route: '/events',
                                 ),
                                 const QuickAction(
+                                  label: 'Calls',
+                                  icon: Icons.phone_in_talk_outlined,
+                                  route: '/calls',
+                                ),
+                                const QuickAction(
                                   label: 'Sign-ups',
                                   icon: Icons.groups_2_outlined,
                                   route: '/event-participation',

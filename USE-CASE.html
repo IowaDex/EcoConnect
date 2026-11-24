@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eco-Connect — Use Case Diagram</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f2f4f2;
+    color: #14201a;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding: 16px 24px; background: #fff;
+    border-bottom: 1px solid #e2e8e2; position: sticky; top: 0; z-index: 5;
+  }
+  h1 { font-size: 16px; margin: 0; }
+  h1 span { color: #2e7d32; }
+  .sub { font-size: 12px; color: #5b6b60; margin-top: 3px; }
+  .actions { display: flex; gap: 8px; }
+  button {
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 8px 14px; border-radius: 8px;
+    border: 1px solid #cfd8cf; background: #fff; color: #14201a; cursor: pointer;
+  }
+  button.primary { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+  button:hover { filter: brightness(.96); }
+  main {
+    background: #fff; margin: 24px auto; max-width: 1180px;
+    padding: 24px; border-radius: 12px; border: 1px solid #e2e8e2;
+  }
+  #sheet svg { width: 100%; height: auto; display: block; }
+  footer { text-align: center; font-size: 12px; color: #7b8a7f; padding-bottom: 32px; }
+  @media print {
+    header, footer { display: none; }
+    body { background: #fff; }
+    main { border: 0; margin: 0; padding: 0; max-width: none; }
+    #sheet svg { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Eco-Connect <span>— Use Case Diagram</span></h1>
+    <div class="sub">8 primary actors &middot; 20 use cases &middot; 5 external services</div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="png">Download PNG</button>
+    <button id="svg">Download SVG</button>
+    <button id="print">Print</button>
+  </div>
+</header>
+
+<main><div id="sheet">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 2108" font-family="Segoe UI, Arial, Helvetica, sans-serif">
+<defs><marker id="inc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#14201a"/></marker></defs>
+<rect width="1420" height="2108" fill="#ffffff"/>
+<rect x="230" y="60" width="910" height="2015" fill="none" stroke="#14201a" stroke-width="2"/>
+<text x="685.0" y="92" text-anchor="middle" font-size="16" font-weight="700" fill="#14201a">Eco-Connect System</text>
+<line x1="150" y1="267" x2="285" y2="267" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="155" x2="338" y2="155" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="267" x2="285" y2="267" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="230" x2="608" y2="230" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="267" x2="285" y2="267" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="305" x2="878" y2="305" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="267" x2="285" y2="267" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="380" x2="338" y2="380" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="572" x2="285" y2="572" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="572" x2="338" y2="572" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="735" x2="285" y2="735" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="735" x2="338" y2="735" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="970" x2="285" y2="970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="895" x2="338" y2="895" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="970" x2="285" y2="970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="970" x2="608" y2="970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="970" x2="285" y2="970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1045" x2="878" y2="1045" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1280" x2="285" y2="1280" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1205" x2="338" y2="1205" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1280" x2="285" y2="1280" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1280" x2="608" y2="1280" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1280" x2="285" y2="1280" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1355" x2="878" y2="1355" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1537" x2="285" y2="1537" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1515" x2="338" y2="1515" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1537" x2="285" y2="1537" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1560" x2="608" y2="1560" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1765" x2="285" y2="1765" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1720" x2="328" y2="1720" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1765" x2="285" y2="1765" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1810" x2="328" y2="1810" stroke="#14201a" stroke-width="1.2"/>
+<line x1="150" y1="1970" x2="285" y2="1970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1970" x2="338" y2="1970" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="155" x2="285" y2="380" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="895" x2="285" y2="1045" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1205" x2="285" y2="1355" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1515" x2="285" y2="1560" stroke="#14201a" stroke-width="1.2"/>
+<line x1="285" y1="1720" x2="285" y2="1810" stroke="#14201a" stroke-width="1.2"/>
+<line x1="522" y1="572" x2="668" y2="572" stroke="#14201a" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#inc)"/>
+<text x="595.0" y="560" text-anchor="middle" font-size="11" fill="#14201a">«include»</text>
+<line x1="512" y1="1720" x2="628" y2="1720" stroke="#14201a" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#inc)"/>
+<text x="570.0" y="1708" text-anchor="middle" font-size="11" fill="#14201a">«include»</text>
+<line x1="812" y1="1720" x2="928" y2="1720" stroke="#14201a" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#inc)"/>
+<text x="870.0" y="1708" text-anchor="middle" font-size="11" fill="#14201a">«include»</text>
+<line x1="522" y1="155" x2="1234" y2="155" stroke="#14201a" stroke-width="1.2"/>
+<line x1="852" y1="572" x2="1234" y2="572" stroke="#14201a" stroke-width="1.2"/>
+<line x1="792" y1="1560" x2="1234" y2="1560" stroke="#14201a" stroke-width="1.2"/>
+<line x1="1112" y1="1720" x2="1234" y2="1720" stroke="#14201a" stroke-width="1.2"/>
+<line x1="522" y1="1970" x2="1234" y2="1970" stroke="#14201a" stroke-width="1.2"/>
+<circle cx="110" cy="229" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="240" x2="110" y2="269" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="251" x2="126" y2="251" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="269" x2="96" y2="293" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="269" x2="124" y2="293" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="319" text-anchor="middle" font-size="15" fill="#14201a">Resident</text>
+<circle cx="110" cy="534" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="545" x2="110" y2="574" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="556" x2="126" y2="556" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="574" x2="96" y2="598" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="574" x2="124" y2="598" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="624" text-anchor="middle" font-size="15" fill="#14201a">Truck Driver</text>
+<circle cx="110" cy="697" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="708" x2="110" y2="737" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="719" x2="126" y2="719" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="737" x2="96" y2="761" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="737" x2="124" y2="761" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="787" text-anchor="middle" font-size="15" fill="#14201a">Truck Guide</text>
+<circle cx="110" cy="932" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="943" x2="110" y2="972" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="954" x2="126" y2="954" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="972" x2="96" y2="996" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="972" x2="124" y2="996" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="1022" text-anchor="middle" font-size="15" fill="#14201a">Barangay Staff</text>
+<circle cx="110" cy="1242" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1253" x2="110" y2="1282" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="1264" x2="126" y2="1264" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1282" x2="96" y2="1306" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1282" x2="124" y2="1306" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="1332" text-anchor="middle" font-size="15" fill="#14201a">Iswim</text>
+<circle cx="110" cy="1499" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1510" x2="110" y2="1539" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="1521" x2="126" y2="1521" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1539" x2="96" y2="1563" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1539" x2="124" y2="1563" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="1589" text-anchor="middle" font-size="15" fill="#14201a">DSQC</text>
+<circle cx="110" cy="1727" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1738" x2="110" y2="1767" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="1749" x2="126" y2="1749" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1767" x2="96" y2="1791" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1767" x2="124" y2="1791" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="1817" text-anchor="middle" font-size="15" fill="#14201a">District Officer</text>
+<circle cx="110" cy="1932" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1943" x2="110" y2="1972" stroke="#14201a" stroke-width="1.6"/>
+<line x1="94" y1="1954" x2="126" y2="1954" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1972" x2="96" y2="1996" stroke="#14201a" stroke-width="1.6"/>
+<line x1="110" y1="1972" x2="124" y2="1996" stroke="#14201a" stroke-width="1.6"/>
+<text x="110" y="2022" text-anchor="middle" font-size="15" fill="#14201a">Auditor</text>
+<ellipse cx="430" cy="155" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="153" text-anchor="middle" font-size="14" fill="#14201a">Register with</text>
+<text x="430" y="168" text-anchor="middle" font-size="14" fill="#14201a">valid ID</text>
+<ellipse cx="700" cy="230" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="700" y="235" text-anchor="middle" font-size="14" fill="#14201a">Track the truck</text>
+<ellipse cx="970" cy="305" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="970" y="303" text-anchor="middle" font-size="14" fill="#14201a">Request</text>
+<text x="970" y="318" text-anchor="middle" font-size="14" fill="#14201a">collection</text>
+<ellipse cx="430" cy="380" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="385" text-anchor="middle" font-size="14" fill="#14201a">Report incident</text>
+<ellipse cx="430" cy="572" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="570" text-anchor="middle" font-size="14" fill="#14201a">Accept or decline</text>
+<text x="430" y="585" text-anchor="middle" font-size="14" fill="#14201a">trip ticket</text>
+<ellipse cx="760" cy="572" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="760" y="570" text-anchor="middle" font-size="14" fill="#14201a">Start and end</text>
+<text x="760" y="585" text-anchor="middle" font-size="14" fill="#14201a">the trip</text>
+<ellipse cx="430" cy="735" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="733" text-anchor="middle" font-size="14" fill="#14201a">Select truck</text>
+<text x="430" y="748" text-anchor="middle" font-size="14" fill="#14201a">to assist</text>
+<ellipse cx="430" cy="895" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="893" text-anchor="middle" font-size="14" fill="#14201a">Review resident</text>
+<text x="430" y="908" text-anchor="middle" font-size="14" fill="#14201a">application</text>
+<ellipse cx="700" cy="970" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="700" y="968" text-anchor="middle" font-size="14" fill="#14201a">Create Truck Guide</text>
+<text x="700" y="983" text-anchor="middle" font-size="14" fill="#14201a">account</text>
+<ellipse cx="970" cy="1045" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="970" y="1050" text-anchor="middle" font-size="14" fill="#14201a">Sign trip ticket</text>
+<ellipse cx="430" cy="1205" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="1210" text-anchor="middle" font-size="14" fill="#14201a">Create route plan</text>
+<ellipse cx="700" cy="1280" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="700" y="1285" text-anchor="middle" font-size="14" fill="#14201a">Issue trip ticket</text>
+<ellipse cx="970" cy="1355" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="970" y="1360" text-anchor="middle" font-size="14" fill="#14201a">File delay report</text>
+<ellipse cx="430" cy="1515" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="1520" text-anchor="middle" font-size="14" fill="#14201a">Provision accounts</text>
+<ellipse cx="700" cy="1560" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="700" y="1558" text-anchor="middle" font-size="14" fill="#14201a">Alert District</text>
+<text x="700" y="1573" text-anchor="middle" font-size="14" fill="#14201a">Officer</text>
+<ellipse cx="420" cy="1720" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="420" y="1725" text-anchor="middle" font-size="14" fill="#14201a">Answer delay call</text>
+<ellipse cx="720" cy="1720" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="720" y="1725" text-anchor="middle" font-size="14" fill="#14201a">Call DSQC</text>
+<ellipse cx="1020" cy="1720" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="1020" y="1718" text-anchor="middle" font-size="14" fill="#14201a">Call barangay</text>
+<text x="1020" y="1733" text-anchor="middle" font-size="14" fill="#14201a">staff</text>
+<ellipse cx="420" cy="1810" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="420" y="1815" text-anchor="middle" font-size="14" fill="#14201a">View call history</text>
+<ellipse cx="430" cy="1970" rx="92" ry="36" fill="#ffffff" stroke="#14201a" stroke-width="1.5"/>
+<text x="430" y="1975" text-anchor="middle" font-size="14" fill="#14201a">View audit log</text>
+<circle cx="1250" cy="117" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="128" x2="1250" y2="157" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1234" y1="139" x2="1266" y2="139" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="157" x2="1236" y2="181" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="157" x2="1264" y2="181" stroke="#14201a" stroke-width="1.6"/>
+<text x="1250" y="205" text-anchor="middle" font-size="15" fill="#14201a">Firebase</text>
+<text x="1250" y="220" text-anchor="middle" font-size="15" fill="#14201a">Auth</text>
+<text x="1250" y="237" text-anchor="middle" font-size="11" fill="#14201a">«service»</text>
+<circle cx="1250" cy="534" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="545" x2="1250" y2="574" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1234" y1="556" x2="1266" y2="556" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="574" x2="1236" y2="598" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="574" x2="1264" y2="598" stroke="#14201a" stroke-width="1.6"/>
+<text x="1250" y="622" text-anchor="middle" font-size="15" fill="#14201a">Google Maps</text>
+<text x="1250" y="639" text-anchor="middle" font-size="11" fill="#14201a">«service»</text>
+<circle cx="1250" cy="1522" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1533" x2="1250" y2="1562" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1234" y1="1544" x2="1266" y2="1544" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1562" x2="1236" y2="1586" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1562" x2="1264" y2="1586" stroke="#14201a" stroke-width="1.6"/>
+<text x="1250" y="1610" text-anchor="middle" font-size="15" fill="#14201a">Push</text>
+<text x="1250" y="1625" text-anchor="middle" font-size="15" fill="#14201a">Notification</text>
+<text x="1250" y="1642" text-anchor="middle" font-size="11" fill="#14201a">«service»</text>
+<circle cx="1250" cy="1682" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1693" x2="1250" y2="1722" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1234" y1="1704" x2="1266" y2="1704" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1722" x2="1236" y2="1746" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1722" x2="1264" y2="1746" stroke="#14201a" stroke-width="1.6"/>
+<text x="1250" y="1770" text-anchor="middle" font-size="15" fill="#14201a">Voice Call</text>
+<text x="1250" y="1787" text-anchor="middle" font-size="11" fill="#14201a">«service»</text>
+<circle cx="1250" cy="1932" r="11" fill="#fff" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1943" x2="1250" y2="1972" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1234" y1="1954" x2="1266" y2="1954" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1972" x2="1236" y2="1996" stroke="#14201a" stroke-width="1.6"/>
+<line x1="1250" y1="1972" x2="1264" y2="1996" stroke="#14201a" stroke-width="1.6"/>
+<text x="1250" y="2020" text-anchor="middle" font-size="15" fill="#14201a">Firestore</text>
+<text x="1250" y="2037" text-anchor="middle" font-size="11" fill="#14201a">«service»</text>
+</svg>
+</div></main>
+
+<footer>Barangay Batasan Hills, Quezon City &middot; Eco-Connect</footer>
+
+<script>
+const svgEl = document.querySelector("#sheet svg");
+document.getElementById("svg").addEventListener("click", () => {
+  const data = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([data], { type: "image/svg+xml;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "eco-connect-use-case.svg";
+  a.click();
+});
+document.getElementById("print").addEventListener("click", () => window.print());
+document.getElementById("png").addEventListener("click", () => {
+  const clone = svgEl.cloneNode(true);
+  const vb = svgEl.viewBox.baseVal;
+  const w = vb.width || 1420, h = vb.height || 2108, scale = 2;
+  clone.setAttribute("width", w);
+  clone.setAttribute("height", h);
+  const data = new XMLSerializer().serializeToString(clone);
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = w * scale; c.height = h * scale;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    const a = document.createElement("a");
+    a.download = "eco-connect-use-case.png";
+    a.href = c.toDataURL("image/png");
+    a.click();
+  };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(data);
+});
+</script>
+</body>
+</html>

@@ -13,6 +13,8 @@ enum AppNotificationType {
   event,
   system,
   complaint,
+  call,
+  sos,
 }
 
 extension AppNotificationTypeX on AppNotificationType {
@@ -26,6 +28,8 @@ extension AppNotificationTypeX on AppNotificationType {
     AppNotificationType.event => 'Event',
     AppNotificationType.system => 'System',
     AppNotificationType.complaint => 'Complaint',
+    AppNotificationType.call => 'Call',
+    AppNotificationType.sos => 'SOS',
   };
 
   IconData get icon => switch (this) {
@@ -38,6 +42,8 @@ extension AppNotificationTypeX on AppNotificationType {
     AppNotificationType.event => Icons.event_outlined,
     AppNotificationType.system => Icons.notifications_none_rounded,
     AppNotificationType.complaint => Icons.report_outlined,
+    AppNotificationType.call => Icons.phone_in_talk_outlined,
+    AppNotificationType.sos => Icons.sos_rounded,
   };
 
   Color get color => switch (this) {
@@ -50,6 +56,8 @@ extension AppNotificationTypeX on AppNotificationType {
     AppNotificationType.event => const Color(0xFF558B2F),
     AppNotificationType.system => AppColors.inkMuted,
     AppNotificationType.complaint => const Color(0xFFC62828),
+    AppNotificationType.call => const Color(0xFF00838F),
+    AppNotificationType.sos => const Color(0xFFC62828),
   };
 
   static AppNotificationType fromName(String? name) =>
