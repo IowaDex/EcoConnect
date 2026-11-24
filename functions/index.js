@@ -173,7 +173,21 @@ exports.pushNotification = onDocumentCreated(
           body: notification.body || '',
         },
         data,
-        android: {priority: 'high'},
+        android: {
+          priority: 'high',
+          // An incoming call uses the channel MainActivity creates: maximum
+          // importance, the phone's ringtone and a repeating vibration
+          // pattern. Every other notification keeps the default channel.
+          ...(notification.type === 'call'
+            ? {
+                notification: {
+                  channelId: 'ecoconnect_calls',
+                  priority: 'max',
+                  sound: 'default',
+                },
+              }
+            : {}),
+        },
         apns: {payload: {aps: {sound: 'default'}}},
       });
 
