@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/utils/app_logger.dart';
 import '../../auth/models/user.dart';
@@ -482,6 +483,27 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Asks for the microphone before WebRTC opens it.
+  ///
+  /// flutter_webrtc requests RECORD_AUDIO itself, but on Android that request
+  /// runs through a headless fragment which can come back with empty results
+  /// and re-ask forever. `getUserMedia` then stays pending, the call never
+  /// sends an answer, and the other desk waits on a call that looks live.
+  /// Asking here first turns the plugin's request into a plain check.
+  Future<void> _ensureMicrophone() async {
+    if (kIsWeb) return;
+    final current = await Permission.microphone.status;
+    if (current.isGranted) return;
+    final asked = await Permission.microphone.request();
+    if (asked.isGranted) return;
+    throw _CallSetupException(
+      asked.isPermanentlyDenied
+          ? 'Microphone access is blocked. Allow the microphone for '
+                'EcoConnect in the phone settings, then call again.'
+          : 'Microphone access is needed to make a call.',
+    );
+  }
+
   Future<void> _preparePeer(CallSession call, {required bool caller}) async {
     if (_peerReady) {
       await _applySignals(call);
@@ -492,14 +514,26 @@ class CallProvider extends ChangeNotifier {
       // opens. Without it Android stays in media mode and iOS never activates
       // the record route, which is a call that "connects" in silence.
       await _configureAudioSession();
-      final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-        },
-        'video': false,
-      });
+      await _ensureMicrophone();
+      // A permission prompt that is never answered must not leave the call
+      // half open: the other desk would wait for an answer that never comes.
+      final stream = await navigator.mediaDevices
+          .getUserMedia({
+            'audio': {
+              'echoCancellation': true,
+              'noiseSuppression': true,
+              'autoGainControl': true,
+            },
+            'video': false,
+          })
+          .timeout(const Duration(seconds: 20));
+      if (stream.getAudioTracks().isEmpty) {
+        await stream.dispose();
+        throw const _CallSetupException(
+          'The microphone returned no audio. Check that no other app is using '
+          'it and try again.',
+        );
+      }
       _localStream = stream;
       final pc = await createPeerConnection({
         'iceServers': _iceServers(),
@@ -542,6 +576,9 @@ class CallProvider extends ChangeNotifier {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _disconnectGrace?.cancel();
           _disconnectGrace = null;
+          // Android re-routes audio when the session starts, so the chosen
+          // output is applied again here rather than only before the call.
+          Helper.setSpeakerphoneOn(_speaker).catchError((Object _) {});
           _startAudioProbe();
         }
         if (state ==
@@ -588,6 +625,16 @@ class CallProvider extends ChangeNotifier {
           return;
         }
         notifyListeners();
+      };
+      // Android can report the ICE state before the aggregate one, and some
+      // builds only report the ICE state. The probe is started from either so
+      // a working call is never stuck on "Connecting audio".
+      pc.onIceConnectionState = (state) {
+        if (state == RTCIceConnectionState.RTCIceConnectionStateConnected &&
+            _connection !=
+                RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _startAudioProbe();
+        }
       };
       _peerReady = true;
       try {
@@ -820,9 +867,10 @@ class CallProvider extends ChangeNotifier {
     Object error,
   ) async {
     AppLogger.error('Call media failed', error);
-    _error =
-        'Microphone unavailable. Allow microphone access for EcoConnect and '
-        'try the call again.';
+    _error = error is _CallSetupException
+        ? error.message
+        : 'Microphone unavailable. Allow microphone access for EcoConnect and '
+              'try the call again.';
     try {
       await _service.markFailed(
         call.id,
@@ -952,4 +1000,14 @@ class CallProvider extends ChangeNotifier {
     _clearCall(notify: false);
     super.dispose();
   }
+}
+
+/// A media problem the user can act on, with the words to act on it.
+class _CallSetupException implements Exception {
+  const _CallSetupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
