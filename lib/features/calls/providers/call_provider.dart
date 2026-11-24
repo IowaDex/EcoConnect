@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,6 +9,7 @@ import '../../../core/utils/app_logger.dart';
 import '../../auth/models/user.dart';
 import '../models/call_log.dart';
 import '../models/call_session.dart';
+import '../services/call_ringer.dart';
 import '../services/call_service.dart';
 
 /// The app-wide voice-call state.
@@ -22,6 +22,10 @@ class CallProvider extends ChangeNotifier {
   CallProvider({CallService? service}) : _service = service ?? CallService();
 
   final CallService _service;
+
+  /// Owns the looping ringtone and vibration. One instance for the whole app,
+  /// so a repeated snapshot cannot start a second ring.
+  final CallRinger _ringer = CallRinger.instance;
 
   String? _uid;
   String _name = '';
@@ -59,7 +63,6 @@ class CallProvider extends ChangeNotifier {
   /// Signalling writes run one at a time; see [_applySignals].
   Future<void> _signalQueue = Future<void>.value();
 
-  Timer? _ringTimer;
   Timer? _ringTimeout;
   Timer? _elapsedTimer;
   Timer? _statsTimer;
@@ -196,9 +199,33 @@ class CallProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _onRinging(List<CallSession> calls) {
-    if (_uid == null || _call != null || _incoming != null) return;
+    final uid = _uid;
+    if (uid == null || _call != null) return;
+
+    final incoming = _incoming;
+    if (incoming != null) {
+      // The watch only returns calls that are still ringing, so a missing
+      // entry means it was accepted, declined, cancelled, ended or expired.
+      final still = calls.where(
+        (call) => call.id == incoming.id && call.status == CallStatus.ringing,
+      );
+      if (still.isEmpty) {
+        _clearIncoming();
+        notifyListeners();
+        return;
+      }
+      // The invitation is unchanged; refresh its details and make sure the
+      // ringer is actually running. The OS can stop audio while the app sits
+      // in the background, and this is what brings it back.
+      _incoming = still.first;
+      if (!_ringer.isRinging) _startRinging();
+      notifyListeners();
+      return;
+    }
+
     for (final call in calls) {
-      if (call.fromUid == _uid) continue;
+      if (call.fromUid == uid) continue;
+      if (call.status != CallStatus.ringing) continue;
       if (!_isAddressedToMe(call)) continue;
       _incoming = call;
       _startRinging();
@@ -219,39 +246,59 @@ class CallProvider extends ChangeNotifier {
     return call.toRole == _role?.name;
   }
 
+  /// Starts the looping ringtone and vibration, and arms the missed-call
+  /// timeout. The ringer itself is idempotent, so calling this twice for the
+  /// same invitation never produces two loops.
   void _startRinging() {
-    _stopRinging(silent: false);
-    SystemSound.play(SystemSoundType.alert);
-    HapticFeedback.heavyImpact();
-    _ringTimer = Timer.periodic(const Duration(milliseconds: 1100), (_) {
-      SystemSound.play(SystemSoundType.alert);
-      HapticFeedback.heavyImpact();
-    });
+    unawaited(_ringer.start());
     // A ring that nobody answers stops on its own and leaves a missed-call log.
+    _ringTimeout?.cancel();
     _ringTimeout = Timer(const Duration(seconds: 35), _missIncoming);
   }
 
-  void _stopRinging({bool silent = false}) {
-    _ringTimer?.cancel();
-    _ringTimer = null;
+  Future<void> _stopRinging() async {
     _ringTimeout?.cancel();
     _ringTimeout = null;
-    if (!silent) HapticFeedback.lightImpact();
+    await _ringer.stop();
+  }
+
+  /// Drops the pending invitation and silences the phone. Used when the call
+  /// stops ringing for a reason other than the user acting on it.
+  void _clearIncoming() {
+    unawaited(_stopRinging());
+    _incoming = null;
+  }
+
+  /// Called when the app returns to the foreground. A long spell in the
+  /// background can let the OS stop the audio, so a still-valid invitation
+  /// starts ringing again.
+  void resumeRingingIfNeeded() {
+    if (_incoming == null || _ringer.isRinging) return;
+    _startRinging();
   }
 
   Future<void> acceptIncoming() async {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null || uid == null) return;
-    _stopRinging();
+    // The ringtone has to be silent before the voice session opens, otherwise
+    // the two audio routes fight over the speaker.
+    await _stopRinging();
+    _incoming = null;
     try {
       final accepted = await _service.accept(
         incoming.id,
         uid: uid,
         name: _name,
       );
-      if (accepted == null || accepted.status != CallStatus.active) {
+      // Two officers on the same desk can tap Answer at the same time. Only
+      // the one the transaction recorded as the callee may join, otherwise a
+      // second answer would overwrite the first one's audio.
+      if (accepted == null ||
+          accepted.status != CallStatus.active ||
+          accepted.calleeId != uid) {
         _incoming = null;
+        _notice = 'Another officer already answered this call.';
         notifyListeners();
         return;
       }
@@ -272,8 +319,7 @@ class CallProvider extends ChangeNotifier {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null || uid == null) return;
-    _stopRinging();
-    _incoming = null;
+    _clearIncoming();
     notifyListeners();
     try {
       await _service.decline(incoming.id, uid: uid, name: _name);
@@ -287,8 +333,7 @@ class CallProvider extends ChangeNotifier {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null) return;
-    _stopRinging(silent: true);
-    _incoming = null;
+    _clearIncoming();
     notifyListeners();
     try {
       await _service.markMissed(incoming.id, uid: uid, name: _name);
@@ -437,8 +482,7 @@ class CallProvider extends ChangeNotifier {
     if (_incoming != null && _incoming!.id == updated.id) {
       if (updated.status != CallStatus.ringing &&
           updated.calleeId != _uid) {
-        _stopRinging(silent: true);
-        _incoming = null;
+        _clearIncoming();
         notifyListeners();
       }
       return;
@@ -782,7 +826,7 @@ class CallProvider extends ChangeNotifier {
           await pc.setRemoteDescription(
             RTCSessionDescription(sdp, type ?? 'offer'),
           );
-          // Only a description that the browser accepted counts as applied; a
+          // Only a description the browser accepted counts as applied; a
           // failure here must leave the flag down so the next snapshot retries.
           _offerApplied = true;
           final answer = await pc.createAnswer();
@@ -930,7 +974,9 @@ class CallProvider extends ChangeNotifier {
   Future<void> _clearCall({bool notify = true}) async {
     _callSub?.cancel();
     _callSub = null;
-    _stopRinging(silent: true);
+    // Silence the ring before the peer connection is torn down, so no loop
+    // survives the end of the call.
+    await _stopRinging();
     _elapsedTimer?.cancel();
     _elapsedTimer = null;
     _statsTimer?.cancel();
