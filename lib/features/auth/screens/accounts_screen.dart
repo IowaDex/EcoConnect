@@ -394,7 +394,7 @@ class _StatePill extends StatelessWidget {
   }
 }
 
-/// Reset the password, or freeze the login.
+/// Reset the password, freeze the login, or remove the account.
 class _ActionsSheet extends StatefulWidget {
   const _ActionsSheet({required this.account});
 
@@ -428,6 +428,46 @@ class _ActionsSheetState extends State<_ActionsSheet> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Removing is the one action that cannot be undone, so it asks first and
+  /// spells out what stays behind: the Firebase login and the email it holds.
+  Future<void> _remove() async {
+    final account = widget.account;
+    final kind = account.crewRole == TruckCrewRole.guide
+        ? 'truck guide'
+        : 'driver';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove ${account.name}?'),
+        content: Text(
+          'This deletes the $kind profile and clears any live location. '
+          'The login can never sign in again, and the email stays taken — to '
+          're-hire, create a new login with a different address.\n\n'
+          'Past trip tickets and manuals keep the name they worked under. If '
+          'they might come back, suspend them instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            child: const Text('Remove account'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await _run(
+      () => ProvisioningService().removeAccount(account.uid),
+      '${account.name} was removed',
+    );
   }
 
   @override
@@ -496,6 +536,18 @@ class _ActionsSheetState extends State<_ActionsSheet> {
                         ? '${account.name} is now suspended'
                         : '${account.name} is active again',
                   ),
+          ),
+          // The destructive half of the sheet, kept apart from the two actions
+          // a desk uses every day.
+          const SizedBox(height: EcoSpace.md),
+          const Divider(height: 1, color: AppColors.sage),
+          const SizedBox(height: EcoSpace.md),
+          _Action(
+            icon: Icons.person_remove_alt_1_rounded,
+            label: 'Remove account',
+            detail: 'Deletes the profile for good',
+            danger: true,
+            onTap: _busy ? null : _remove,
           ),
         ],
       ),
