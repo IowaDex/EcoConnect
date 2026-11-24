@@ -342,8 +342,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
                   _Header(ticket: ticket),
                   const SizedBox(height: 14),
                   if (ticket.isAssignment) ...[
-                    _ManualRowCard(ticket: ticket),
-                    _AssignmentDetails(ticket: ticket),
+                    _ManualSection(ticket: ticket),
                     const SizedBox(height: 10),
                     SizedBox(
                       height: 44,
@@ -638,22 +637,23 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
   }
 }
 
-/// Which collection manual this row belongs to, and where that manual stands.
+/// The collection manual this trip ticket belongs to.
 ///
-/// A bulk manual generates one trip ticket per driver, so the ticket alone
-/// cannot tell Iswim whether the schedule being looked at is the one City Hall
-/// has already signed. Naming the manual and the row makes a still-pending row
-/// of a different manual obvious instead of looking like a missed approval.
-class _ManualRowCard extends StatefulWidget {
-  const _ManualRowCard({required this.ticket});
+/// A bulk manual generates one trip ticket per driver, but the roster is the
+/// document City Hall signs and the crew actually runs, so this page lists
+/// every driver on it with the areas each one was assigned — not just the row
+/// that was opened. When the roster cannot be read (a resident or a crew
+/// member), the opened row's own details stand in for it.
+class _ManualSection extends StatefulWidget {
+  const _ManualSection({required this.ticket});
 
   final TripTicket ticket;
 
   @override
-  State<_ManualRowCard> createState() => _ManualRowCardState();
+  State<_ManualSection> createState() => _ManualSectionState();
 }
 
-class _ManualRowCardState extends State<_ManualRowCard> {
+class _ManualSectionState extends State<_ManualSection> {
   Stream<AssignmentManual?>? _stream;
 
   @override
@@ -683,77 +683,324 @@ class _ManualRowCardState extends State<_ManualRowCard> {
   @override
   Widget build(BuildContext context) {
     final stream = _stream;
-    if (stream == null) return const SizedBox.shrink();
+    if (stream == null) return _AssignmentDetails(ticket: widget.ticket);
 
     return StreamBuilder<AssignmentManual?>(
       stream: stream,
       builder: (context, snapshot) {
         final manual = snapshot.data;
         // A resident or a crew member may not be allowed to read the roster;
-        // the strip stays out of the way instead of showing an error.
-        if (manual == null) return const SizedBox.shrink();
+        // the row's own details stand in instead of an error.
+        if (manual == null) return _AssignmentDetails(ticket: widget.ticket);
 
         final rows = manual.allAssignments;
         final index = _rowIndex(rows);
-        final approved = manual.isApproved;
-        final position = index >= 0 && rows.length > 1
-            ? 'Row ${index + 1} of ${rows.length} · '
-            : '';
+        // Every driver on the manual belongs on this page, whichever desk is
+        // reading it. City Hall signs the roster as one document, so there the
+        // opened row is not singled out — a green "this ticket" mark reads as
+        // "sign this one driver", which is the one thing the desk must not do.
+        final highlightCurrent =
+            context.watch<AuthProvider>().currentUser?.role != UserRole.cityHall;
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
-            decoration: BoxDecoration(
-              color: approved ? AppColors.mint : AppColors.cream,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: approved
-                    ? AppColors.sage
-                    : AppColors.warning.withValues(alpha: 0.45),
-              ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ManualStatusStrip(
+              manual: manual,
+              index: index,
+              total: rows.length,
             ),
-            child: Row(
+            const SizedBox(height: 10),
+            _ManualRoster(
+              rows: rows,
+              current: index,
+              highlightCurrent: highlightCurrent,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Which manual this row belongs to, and where that manual stands.
+///
+/// A bulk manual generates one trip ticket per driver, so the ticket alone
+/// cannot tell Iswim whether the schedule being looked at is the one City Hall
+/// has already signed. Naming the manual and the row makes a still-pending row
+/// of a different manual obvious instead of looking like a missed approval.
+class _ManualStatusStrip extends StatelessWidget {
+  const _ManualStatusStrip({
+    required this.manual,
+    required this.index,
+    required this.total,
+  });
+
+  final AssignmentManual manual;
+  final int index;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = manual.isApproved;
+    final position = index >= 0 && total > 1
+        ? 'Row ${index + 1} of $total · '
+        : '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+      decoration: BoxDecoration(
+        color: approved ? AppColors.mint : AppColors.cream,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: approved
+              ? AppColors.sage
+              : AppColors.warning.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            approved
+                ? Icons.assignment_turned_in_outlined
+                : Icons.assignment_outlined,
+            size: 15,
+            color: approved ? AppColors.primary : AppColors.warning,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  approved
-                      ? Icons.assignment_turned_in_outlined
-                      : Icons.assignment_outlined,
-                  size: 15,
-                  color: approved ? AppColors.primary : AppColors.warning,
+                Text(
+                  manual.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkGreen,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        manual.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.darkGreen,
-                        ),
-                      ),
-                      const SizedBox(height: 1),
-                      Text(
-                        '$position${manual.status.label}',
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: AppColors.inkMuted,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 1),
+                Text(
+                  '$position${manual.status.label}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.inkMuted,
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+}
+
+/// Every driver on the manual, with the areas each one covers.
+///
+/// On the desks that dispatch, the opened row is numbered in solid green and
+/// carries a "This ticket" badge, so the officer can see which driver's page
+/// they are on without losing the rest of the roster. City Hall sees the same
+/// list without that mark.
+class _ManualRoster extends StatelessWidget {
+  const _ManualRoster({
+    required this.rows,
+    required this.current,
+    this.highlightCurrent = true,
+  });
+
+  final List<ManualAssignment> rows;
+  final int current;
+
+  /// False at City Hall, where the roster is signed as one document and no
+  /// single row should look like the one being approved.
+  final bool highlightCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.groups_rounded,
+                size: 14,
+                color: AppColors.moss,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Drivers on this manual',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.mint,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.sage),
+                ),
+                child: Text(
+                  '${rows.length}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.forest,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (var i = 0; i < rows.length; i++)
+            _RosterRow(
+              row: rows[i],
+              position: i + 1,
+              isCurrent: highlightCurrent && i == current,
+              showDivider: i < rows.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RosterRow extends StatelessWidget {
+  const _RosterRow({
+    required this.row,
+    required this.position,
+    required this.isCurrent,
+    required this.showDivider,
+  });
+
+  final ManualAssignment row;
+  final int position;
+  final bool isCurrent;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = ([...row.days]..sort()).map(manualDayLabel).join(', ');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: showDivider
+          ? const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.sage, width: 0.7),
+              ),
+            )
+          : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isCurrent ? AppColors.forest : AppColors.cream,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$position',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                color: isCurrent ? Colors.white : AppColors.inkMuted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        row.driverName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.darkGreen,
+                        ),
+                      ),
+                    ),
+                    if (isCurrent)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.mint,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'This ticket',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.forest,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${row.plateNumber} · ${row.wheelers}-wheeler',
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  row.routes.isEmpty ? 'No area set' : row.routesLabel,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    height: 1.45,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  '${days.isEmpty ? 'No day set' : days} · ${row.startTime} · '
+                  '${row.recurrence.label}',
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    height: 1.4,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

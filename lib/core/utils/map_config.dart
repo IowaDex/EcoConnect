@@ -30,8 +30,8 @@ class BatasanHills {
 
   /// South-west and north-east corners of the barangay boundary.
   static final LatLngBounds bounds = LatLngBounds(
-    const LatLng(14.6682800, 121.0826462),
-    const LatLng(14.6966323, 121.1121855),
+    const LatLng(14.66894, 121.08337),
+    const LatLng(14.69917, 121.11145),
   );
 
   /// How far past the barangay line the camera may travel. Generous enough
@@ -72,6 +72,7 @@ class BatasanHills {
     EdgeInsets fitPadding = const EdgeInsets.all(32),
     bool interactive = true,
     void Function(TapPosition tapPosition, LatLng point)? onTap,
+    VoidCallback? onMapReady,
   }) {
     return MapOptions(
       initialCenter: center ?? BatasanHills.center,
@@ -88,6 +89,7 @@ class BatasanHills {
             : InteractiveFlag.none,
       ),
       onTap: onTap,
+      onMapReady: onMapReady,
     );
   }
 
@@ -98,30 +100,6 @@ class BatasanHills {
     maxZoom: maxZoom,
     tileProvider: tileProvider,
   );
-
-  /// Where the barangay satellite sheet sits on the globe.
-  ///
-  /// Read off the sheet's own graticule: 121°5.0'E at x=201 and 14°41.8'N at
-  /// y=145, at 30,300 px per degree of longitude and 31,120 px per degree of
-  /// latitude. The manual map draws this instead of street tiles so the whole
-  /// barangay — and nothing invented — is on screen.
-  static final LatLngBounds satelliteBounds = LatLngBounds(
-    const LatLng(14.6664289, 121.0785808),
-    const LatLng(14.7006834, 121.1157425),
-  );
-
-  /// The satellite sheet, which already carries its own barangay outline.
-  static Widget baseLayer({TileProvider? tileProvider}) {
-    if (tileProvider != null) return tiles(tileProvider: tileProvider);
-    return OverlayImageLayer(
-      overlayImages: [
-        OverlayImage(
-          bounds: satelliteBounds,
-          imageProvider: const AssetImage('assets/images/batasan_hills_map.jpg'),
-        ),
-      ],
-    );
-  }
 
   /// Dims everything outside the barangay and outlines its boundary.
   ///

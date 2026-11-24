@@ -997,10 +997,12 @@ class _WeekGlance extends StatelessWidget {
     // instead of being pushed into the 8 AM or 6 PM slot.
     final times = <String>{for (final a in assignments) a.startLabel};
     final rows = times.isEmpty ? const ['08:00', '18:00'] : (times.toList()..sort());
-    final cells = <String, int>{};
+    // A day and a start time can carry several drivers, so each cell keeps
+    // every assignment that lands on it instead of only the first one.
+    final cells = <String, List<int>>{};
     for (var i = 0; i < assignments.length; i++) {
       for (final day in assignments[i].days) {
-        cells.putIfAbsent('$day-${assignments[i].startLabel}', () => i);
+        (cells['$day-${assignments[i].startLabel}'] ??= <int>[]).add(i);
       }
     }
 
@@ -1049,7 +1051,7 @@ class _WeekGlance extends StatelessWidget {
                 for (var day = 1; day <= 7; day++)
                   Expanded(
                     child: Center(
-                      child: _GlanceCell(index: cells['$day-$row']),
+                      child: _GlanceCell(indexes: cells['$day-$row']),
                     ),
                   ),
               ],
@@ -1062,14 +1064,21 @@ class _WeekGlance extends StatelessWidget {
 }
 
 class _GlanceCell extends StatelessWidget {
-  const _GlanceCell({this.index});
+  const _GlanceCell({this.indexes = const []});
 
-  final int? index;
+  /// Every assignment on this day at this start time, in the order they were
+  /// added. Empty draws the hollow ring of an unscheduled slot.
+  final List<int>? indexes;
+
+  static const _size = 20.0;
+
+  /// Overlap between the marks, so three drivers still fit one column.
+  static const _step = 16.0;
 
   @override
   Widget build(BuildContext context) {
-    final value = index;
-    if (value == null) {
+    final values = indexes ?? const <int>[];
+    if (values.isEmpty) {
       return Container(
         height: 24,
         width: 24,
@@ -1083,18 +1092,56 @@ class _GlanceCell extends StatelessWidget {
         ),
       );
     }
-    return Container(
+
+    // Three marks fit a column; beyond that the last one becomes a count so
+    // the cell never grows wider than its grid column.
+    final shown = values.length <= 3 ? values : values.take(2).toList();
+    final hidden = values.length - shown.length;
+    final marks = shown.length + (hidden > 0 ? 1 : 0);
+
+    return SizedBox(
       height: 24,
-      width: 24,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          height: 22,
+          width: _size + (marks - 1) * _step,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < shown.length; i++)
+                Positioned(
+                  left: i * _step,
+                  top: 1,
+                  child: _mark(_letter(shown[i]), _letterColor(shown[i])),
+                ),
+              if (hidden > 0)
+                Positioned(
+                  left: shown.length * _step,
+                  top: 1,
+                  child: _mark('+$hidden', AppColors.moss),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mark(String label, Color color) {
+    return Container(
+      height: _size,
+      width: _size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: _letterColor(value),
+        color: color,
+        border: Border.all(color: Colors.white, width: 1.5),
       ),
       child: Text(
-        _letter(value),
+        label,
         style: const TextStyle(
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: FontWeight.w800,
           color: Colors.white,
         ),

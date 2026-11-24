@@ -242,11 +242,6 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
 
   static List<QuickAction> _operations(int pendingManuals) => [
     const QuickAction(
-      label: 'Assign route',
-      icon: Icons.route_rounded,
-      route: '/routes',
-    ),
-    const QuickAction(
       label: 'New manual',
       icon: Icons.assignment_ind_outlined,
       route: '/assignment-manuals/new',

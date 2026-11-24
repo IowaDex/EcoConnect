@@ -15,6 +15,7 @@ import '../../memos/widgets/memo_widgets.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
 import '../../tickets/widgets/ticket_card.dart';
+import '../models/ticket_queue.dart';
 
 /// Everything waiting for City Hall's signature, in one queue.
 ///
@@ -122,12 +123,15 @@ class _TicketQueue extends StatelessWidget {
                   ticket.approvalPending,
             )
             .toList(growable: false);
+        final entries = groupTicketsByManual(pending);
 
         return _QueueSection(
           icon: Icons.local_shipping_outlined,
           title: 'Trip tickets for final signature',
-          subtitle: 'Tickets ISWIM has verified and the fleet has completed.',
-          count: loading ? null : pending.length,
+          subtitle:
+              'Verified tickets. A collection manual appears once, and one '
+              'signature covers every driver on it.',
+          count: loading ? null : entries.length,
           loading: loading,
           error: snapshot.error,
           emptyTitle: 'No ticket is waiting for a signature',
@@ -135,16 +139,199 @@ class _TicketQueue extends StatelessWidget {
               'Tickets arrive here once ISWIM signs them and the crew closes '
               'the trip.',
           children: [
-            for (final ticket in pending)
-              TicketCard(
-                ticket: ticket,
-                trailingLabel: 'Your signature',
-                onTap: () => context.push('/tickets/${ticket.id}'),
-              ),
+            for (final entry in entries)
+              if (entry.isManual)
+                _ManualSignatureCard(
+                  entry: entry,
+                  onTap: () => context.push('/tickets/${entry.lead.id}'),
+                )
+              else
+                TicketCard(
+                  ticket: entry.lead,
+                  trailingLabel: 'Your signature',
+                  onTap: () => context.push('/tickets/${entry.lead.id}'),
+                ),
           ],
         );
       },
     );
+  }
+}
+
+/// One card for a whole bulk manual.
+///
+/// The officer signs the manual, not each driver's page, so the card names the
+/// roster instead of repeating the first driver's ticket: the plates, the
+/// drivers it covers, and a reminder that one signature closes all of them.
+class _ManualSignatureCard extends StatelessWidget {
+  const _ManualSignatureCard({required this.entry, this.onTap});
+
+  final TicketQueueEntry entry;
+  final VoidCallback? onTap;
+
+  String _join(List<String> values, {int limit = 3}) {
+    final unique = <String>[];
+    for (final value in values) {
+      if (value.isEmpty || unique.contains(value)) continue;
+      unique.add(value);
+    }
+    if (unique.length <= limit) return unique.join(', ');
+    return '${unique.take(limit).join(', ')} +${unique.length - limit} more';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = entry.tickets;
+    final lead = entry.lead;
+    final plates = _join([
+      for (final row in rows) row.plateNumber.trim(),
+    ], limit: 2);
+    final drivers = _join([
+      for (final row in rows) row.driverName.trim(),
+    ]);
+
+    final card = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.sage),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.menu_book_rounded,
+                    size: 13,
+                    color: AppColors.forest,
+                  ),
+                  const SizedBox(width: 4),
+                  const Flexible(
+                    child: Text(
+                      'COLLECTION MANUAL',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.cream,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${rows.length} drivers',
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.warning.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: const Text(
+                      'Your signature',
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.local_shipping_rounded,
+                    size: 13,
+                    color: AppColors.forest,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      plates,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${lead.routesLabel} · ${lead.scheduleLabel}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  height: 1.4,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                drivers,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.moss,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'One signature approves all ${rows.length} trip tickets.',
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.moss,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return HoverLift(child: card);
   }
 }
 

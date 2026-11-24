@@ -35,6 +35,7 @@ import '../services/trip_guard_service.dart';
 import '../../dashboard/widgets/role_hero.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
 import '../widgets/driver_nav_bar.dart';
+import '../widgets/driver_schedule_card.dart';
 import '../widgets/truck_trip_header.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
@@ -85,6 +86,10 @@ class _DriverScreenState extends State<DriverScreen> {
   /// waiting for acceptance.
   TripTicket? _ticket;
 
+  /// Every ticket this crew holds, so the page can tell "no ticket yet" apart
+  /// from "ticket waiting for City Hall" and draw the schedule calendar.
+  List<TripTicket> _tickets = const [];
+
   bool get _isLive =>
       _status == RouteStatus.inTransit || _status == RouteStatus.delayed;
 
@@ -103,6 +108,32 @@ class _DriverScreenState extends State<DriverScreen> {
   bool _checkingHealth = false;
 
   String? get _uid => context.read<AuthProvider>().currentUser?.uid;
+
+  /// The ticket the dashboard speaks about.
+  ///
+  /// A manual that runs today wins over an older valid ticket, because that is
+  /// the one the crew can start. A ticket still with City Hall is kept too:
+  /// the page has to explain why the trip cannot start yet instead of claiming
+  /// there is no ticket at all.
+  static TripTicket? _pickActive(List<TripTicket> tickets) {
+    for (final ticket in tickets) {
+      if (ticket.canStartTrip &&
+          ticket.isAssignment &&
+          ticket.isScheduledToday) {
+        return ticket;
+      }
+    }
+    for (final ticket in tickets) {
+      if (ticket.canStartTrip) return ticket;
+    }
+    for (final ticket in tickets) {
+      if (ticket.needsDriver) return ticket;
+    }
+    for (final ticket in tickets) {
+      if (ticket.approvalPending) return ticket;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -222,34 +253,10 @@ class _DriverScreenState extends State<DriverScreen> {
     // fresh ticket sits here until the crew accepts or declines it.
     _ticketSub = _ticketService.watchForDriver(uid).listen((tickets) {
       if (!mounted) return;
-      TripTicket? active;
-      // A manual that runs today is the one the crew can start, so it wins
-      // over an older valid ticket for another day.
-      for (final ticket in tickets) {
-        if (ticket.canStartTrip &&
-            ticket.isAssignment &&
-            ticket.isScheduledToday) {
-          active = ticket;
-          break;
-        }
-      }
-      if (active == null) {
-        for (final ticket in tickets) {
-          if (ticket.canStartTrip) {
-            active = ticket;
-            break;
-          }
-        }
-      }
-      if (active == null) {
-        for (final ticket in tickets) {
-          if (ticket.needsDriver) {
-            active = ticket;
-            break;
-          }
-        }
-      }
-      setState(() => _ticket = active);
+      setState(() {
+        _tickets = tickets;
+        _ticket = _pickActive(tickets);
+      });
     }, onError: (_) {});
 
     // The assignment is the source of truth for *what* the driver may start.
@@ -481,12 +488,17 @@ class _DriverScreenState extends State<DriverScreen> {
 
     // The ticket gates the trip: no accepted ticket, no moving truck.
     final ticket = _ticket;
-    if (ticket == null || ticket.needsDriver) {
+    if (ticket == null || !ticket.canStartTrip) {
       _toast(
         ticket == null
             ? 'No trip ticket yet. Iswim creates it — wait for the '
                   'notification.'
-            : 'Accept the trip ticket before starting the trip.',
+            : ticket.approvalPending
+            ? 'Waiting for City Hall. The trip unlocks once the manual is '
+                  'signed.'
+            : ticket.needsDriver
+            ? 'Accept the trip ticket before starting the trip.'
+            : 'This ticket is not ready for a trip yet.',
         isError: true,
       );
       if (ticket != null) context.push('/driver-tickets');
@@ -1180,6 +1192,11 @@ class _DriverScreenState extends State<DriverScreen> {
                             : null,
                         onTap: () => context.push('/tickets/${_ticket!.id}'),
                       ),
+                      const SizedBox(height: 8),
+                      // The same page has to read differently depending on
+                      // where the manual is in the chain: with City Hall, on
+                      // the crew's desk, or ready for the road.
+                      _TripReadiness(ticket: _ticket!),
                       // An approved manual is only actionable on a collection
                       // day, so the start control sits right under its card.
                       if (_ticket!.isAssignment &&
@@ -1242,13 +1259,19 @@ class _DriverScreenState extends State<DriverScreen> {
                       const SizedBox(height: 12),
                     ],
                     _NextDutyReminder(plans: _upcomingPlans),
-                    if (truck != null)
+                    if (truck != null) ...[
                       TruckTripHeader(
                         truck: truck,
                         role: user?.crewRole ?? TruckCrewRole.driver,
                         status: _status,
                         startedAt: _startedAt,
                         busy: _busy,
+                        // The badge and the button follow the ticket, not the
+                        // route: a truck whose manual is still with City Hall
+                        // is not ready to drive.
+                        canStart: _ticket != null && _ticket!.canStartTrip,
+                        hasTicket: _ticket != null,
+                        approvalPending: _ticket?.approvalPending ?? false,
                         metresFromCenter: _metresFromCenter,
                         connectionLost: _connectionLost,
                         onStart: _activate,
@@ -1256,6 +1279,9 @@ class _DriverScreenState extends State<DriverScreen> {
                         onResume: _resumeRoute,
                         onEnd: _endRoute,
                       ),
+                      const SizedBox(height: 14),
+                    ],
+                    DriverScheduleCard(tickets: _tickets),
                     const SizedBox(height: 14),
                     if (_serviceUnavailable) ...[
                       const _ServiceWarning(),
@@ -1360,6 +1386,63 @@ class _DriverScreenState extends State<DriverScreen> {
         ),
       ),
       bottomNavigationBar: const DriverNavBar(currentIndex: 0),
+    );
+  }
+}
+
+/// One line that says where the crew's ticket is, and whether they can drive.
+///
+/// The same page has to read differently at each step of the chain: with City
+/// Hall, waiting on the crew's acceptance, or approved and ready for the road.
+class _TripReadiness extends StatelessWidget {
+  const _TripReadiness({required this.ticket});
+
+  final TripTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final (message, icon, color) = _describe();
+    return EcoBanner(message: message, icon: icon, color: color);
+  }
+
+  (String, IconData, Color) _describe() {
+    if (ticket.approvalPending) {
+      return (
+        'Waiting for City Hall · your manual is with the DSQC. The trip '
+            'unlocks when it is signed.',
+        Icons.hourglass_top_rounded,
+        AppColors.warning,
+      );
+    }
+    if (ticket.needsDriver) {
+      return (
+        'Trip ticket ready · accept it to unlock the start of the trip.',
+        Icons.assignment_turned_in_rounded,
+        AppColors.primary,
+      );
+    }
+    if (ticket.isAssignment && ticket.status == TicketStatus.valid) {
+      if (ticket.isScheduledToday) {
+        final open = ticket.isShiftOpen(DateTime.now());
+        return (
+          '${open ? 'Ready to drive' : 'Ready at ${ticket.windowStart}'} · '
+              '${ticket.scheduleLabel} · ${ticket.routesLabel}',
+          open ? Icons.check_circle_rounded : Icons.schedule_rounded,
+          open ? AppColors.primary : AppColors.moss,
+        );
+      }
+      final next = ticket.nextRun;
+      return (
+        'Next trip · ${next == null ? 'no date set' : dateLabel(next)} · '
+            '${ticket.routesLabel}',
+        Icons.event_available_rounded,
+        AppColors.moss,
+      );
+    }
+    return (
+      '${ticket.status.label} · ${ticket.routesLabel}',
+      Icons.info_outline_rounded,
+      AppColors.moss,
     );
   }
 }

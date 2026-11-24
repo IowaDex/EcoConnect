@@ -25,6 +25,8 @@ class TruckTripHeader extends StatelessWidget {
     required this.onResume,
     required this.onEnd,
     this.canStart = true,
+    this.hasTicket = false,
+    this.approvalPending = false,
     this.metresFromCenter,
     this.connectionLost = false,
   });
@@ -42,6 +44,14 @@ class TruckTripHeader extends StatelessWidget {
   /// False until a trip ticket exists: without one there is no trip to start,
   /// so the button stays inert instead of failing on tap.
   final bool canStart;
+
+  /// True while the manual behind the ticket is still with City Hall. The
+  /// truck is not ready to drive, but "no ticket" would be a lie.
+  final bool approvalPending;
+
+  /// True when a ticket exists but is not actionable yet — a fresh one the
+  /// crew has to accept, or one waiting for City Hall.
+  final bool hasTicket;
 
   /// Distance from the zone centre while the trip is running.
   final double? metresFromCenter;
@@ -83,12 +93,26 @@ class TruckTripHeader extends StatelessWidget {
                 : const Color(0xFFE8F3E7),
             icon: Icons.navigation_rounded,
           )
+        : approvalPending
+        ? (
+            label: 'Waiting for City Hall',
+            color: TruckStatus.noTicket.color,
+            background: TruckStatus.noTicket.background,
+            icon: Icons.hourglass_top_rounded,
+          )
         : canStart
         ? (
             label: TruckStatus.ticketReady.label,
             color: TruckStatus.ticketReady.color,
             background: TruckStatus.ticketReady.background,
             icon: null,
+          )
+        : hasTicket
+        ? (
+            label: 'Trip ticket to accept',
+            color: AppColors.warning,
+            background: const Color(0xFFFDF4E4),
+            icon: Icons.assignment_turned_in_rounded,
           )
         : (
             label: TruckStatus.noTicket.label,

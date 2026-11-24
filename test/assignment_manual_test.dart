@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:eco_connect/core/constants/resident_areas.dart';
+import 'package:eco_connect/core/utils/batasan_boundary.dart';
 import 'package:eco_connect/core/utils/simple_pdf.dart';
 import 'package:eco_connect/features/manuals/data/manual_areas.dart';
 import 'package:eco_connect/features/manuals/models/assignment_manual.dart';
@@ -133,7 +134,7 @@ void main() {
   });
 
   group('manual areas', () {
-    test('every listed resident area has a pre-made route', () {
+    test('every listed resident area has a pin', () {
       final expected = [
         for (final name in ResidentAreas.all)
           if (!ResidentAreas.isOther(name)) name,
@@ -144,18 +145,17 @@ void main() {
 
     test('every area pin sits inside Batasan Hills', () {
       for (final area in kManualAreas) {
-        expect(area.center.latitude, inInclusiveRange(14.668, 14.697));
-        expect(area.center.longitude, inInclusiveRange(121.083, 121.112));
+        expect(
+          isInsideBatasanHills(area.center),
+          isTrue,
+          reason: '${area.name} is outside the barangay outline',
+        );
       }
     });
 
-    test('the run joins the pins in the order they were picked', () {
-      final picked = [kManualAreas[2], kManualAreas[0], kManualAreas[1]];
-      expect(manualRouteForAreas(picked), [
-        picked[0].center,
-        picked[1].center,
-        picked[2].center,
-      ]);
+    test('the picked areas keep the order they were picked', () {
+      final names = [kManualAreas[2].name, kManualAreas[0].name];
+      expect([for (final area in manualAreasFor(names)) area.name], names);
     });
   });
 

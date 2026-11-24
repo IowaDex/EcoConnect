@@ -15,6 +15,7 @@ import '../../../core/widgets/eco_pagination.dart';
 import '../../driver/models/truck_crew_role.dart';
 import '../providers/auth_provider.dart';
 import '../services/provisioning_service.dart';
+import '../utils/phone.dart';
 import '../utils/validators.dart';
 import '../widgets/password_strength.dart';
 
@@ -624,11 +625,13 @@ class _AccountFormState extends State<_AccountForm> {
       await ProvisioningService().create(
         ProvisionRequest(
           name: _name.text,
-          email: _email.text,
+          email: _email.text.trim(),
           password: _password.text,
           role: UserRole.driver,
           crewRole: _kind,
-          phone: _phone.text,
+          phone: _phone.text.trim().isEmpty
+              ? null
+              : Phone.toE164(_phone.text),
         ),
       );
       if (!mounted) return;
@@ -704,23 +707,26 @@ class _AccountFormState extends State<_AccountForm> {
                   hintText: 'ramon.ecoconnect@gmail.com',
                   isDense: true,
                 ),
-                validator: (value) {
-                  final email = (value ?? '').trim();
-                  if (email.isEmpty) return 'Enter an email';
-                  if (!email.contains('@') || !email.contains('.')) {
-                    return 'Invalid email';
-                  }
-                  return null;
-                },
+                validator: Validators.validateEmail,
               ),
               const SizedBox(height: EcoSpace.sm),
               TextFormField(
                 controller: _phone,
                 keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(11),
+                ],
                 decoration: const InputDecoration(
                   labelText: 'Mobile number (optional)',
+                  hintText: '09XX XXX XXXX',
                   isDense: true,
                 ),
+                // Optional, but a filled field must be a full PH mobile number.
+                validator: (value) {
+                  if ((value ?? '').trim().isEmpty) return null;
+                  return Phone.validate(value);
+                },
               ),
               const SizedBox(height: EcoSpace.sm),
               TextFormField(
