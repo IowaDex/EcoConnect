@@ -1274,14 +1274,20 @@ class _DriverScreenState extends State<DriverScreen> {
                         approvalPending: _ticket?.approvalPending ?? false,
                         metresFromCenter: _metresFromCenter,
                         connectionLost: _connectionLost,
-                        onStart: _activate,
+                        onStart:
+                            _ticket != null &&
+                                _ticket!.isAssignment &&
+                                _ticket!.status == TicketStatus.valid
+                            ? () => _startManualRun(_ticket!)
+                            : _activate,
                         onPause: _pauseRoute,
                         onResume: _resumeRoute,
                         onEnd: _endRoute,
                       ),
                       const SizedBox(height: 14),
                     ],
-                    DriverScheduleCard(tickets: _tickets),
+                    if (user?.crewRole != TruckCrewRole.guide)
+                      DriverScheduleCard(tickets: _tickets),
                     const SizedBox(height: 14),
                     if (_serviceUnavailable) ...[
                       const _ServiceWarning(),
@@ -1526,7 +1532,10 @@ class _ManualStartCard extends StatelessWidget {
             height: 42,
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: open && !busy ? onStart : null,
+              // Always live: the tap explains the schedule gate instead of the
+              // button hiding it. [_startManualRun] refuses a start that is
+              // not on the roster's day or before its start time.
+              onPressed: busy ? null : onStart,
               icon: busy
                   ? const SizedBox(
                       height: 15,
@@ -1537,15 +1546,7 @@ class _ManualStartCard extends StatelessWidget {
                       ),
                     )
                   : const Icon(Icons.play_arrow_rounded, size: 19),
-              label: Text(
-                open
-                    ? 'Start route'
-                    : scheduled
-                    ? 'Starts at ${ticket.windowStart}'
-                    : next == null
-                    ? 'Schedule ended'
-                    : 'Starts ${manualDayLabel(next.weekday)}',
-              ),
+              label: const Text('Start route'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.forest,
                 disabledBackgroundColor: AppColors.sage,

@@ -26,11 +26,65 @@ Future<bool> exportAssignmentManualPdf({
   DateTime? validFrom,
   List<ManualAssignment> assignments = const [],
 }) async {
+  final lines = assignmentManualPdfLines(
+    title: title,
+    driverName: driverName,
+    plateNumber: plateNumber,
+    wheelers: wheelers,
+    routes: routes,
+    days: days,
+    startTime: startTime,
+    recurrence: recurrence,
+    status: status,
+    requestTitle: requestTitle,
+    validFrom: validFrom,
+    assignments: assignments,
+  );
+  final bytes = buildSimplePdf(manualPdfHeading, lines);
+  return saveDataUrl(
+    pdfDataUrl(bytes),
+    'collection-manual-${plateNumber.replaceAll(' ', '-')}.pdf',
+  );
+}
+
+/// Saves a one-page PDF from [lines] the caller already built.
+///
+/// The creation form uses this so the sheet it previews before submitting is
+/// written by the same code as the file it downloads.
+Future<bool> exportManualPdfLines(
+  List<String> lines, {
+  required String fileName,
+}) {
+  final bytes = buildSimplePdf(manualPdfHeading, lines);
+  return saveDataUrl(pdfDataUrl(bytes), fileName);
+}
+
+/// The heading printed at the top of the manual PDF.
+const manualPdfHeading = 'EcoConnect collection manual';
+
+/// The text on the one-page manual PDF.
+///
+/// Shared by the export and the on-screen preview, so what the officer checks
+/// before submitting is exactly what City Hall receives.
+List<String> assignmentManualPdfLines({
+  required String title,
+  required String driverName,
+  required String plateNumber,
+  required int wheelers,
+  required List<String> routes,
+  required List<int> days,
+  required String startTime,
+  required ManualRecurrence recurrence,
+  required String status,
+  String? requestTitle,
+  DateTime? validFrom,
+  List<ManualAssignment> assignments = const [],
+}) {
   final from = validFrom ?? DateTime.now();
   String valid(ManualRecurrence repeat) =>
       dateLabel(manualValidUntil(recurrence: repeat, from: from));
 
-  final lines = <String>[
+  return [
     'Collection manual',
     if (title.trim().isNotEmpty) 'Title: ${title.trim()}',
     '',
@@ -64,11 +118,6 @@ Future<bool> exportAssignmentManualPdf({
     if (requestTitle != null && requestTitle.trim().isNotEmpty)
       'Request: ${requestTitle.trim()}',
   ];
-  final bytes = buildSimplePdf('EcoConnect collection manual', lines);
-  return saveDataUrl(
-    pdfDataUrl(bytes),
-    'collection-manual-${plateNumber.replaceAll(' ', '-')}.pdf',
-  );
 }
 
 /// The manual a trip ticket was generated from.

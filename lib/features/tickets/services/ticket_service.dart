@@ -167,6 +167,7 @@ class TicketService {
     required String driverName,
     required List<String> routes,
     List<ManualRoutePoint> routePoints = const [],
+    Map<int, List<String>> dayRoutes = const {},
     required List<int> days,
     required String startTime,
     required ManualRecurrence recurrence,
@@ -193,6 +194,7 @@ class TicketService {
       kind: TicketKind.assignment,
       routes: routes,
       routePoints: routePoints,
+      dayRoutes: dayRoutes,
       days: days,
       recurrence: recurrence,
       assignmentId: assignmentId,
@@ -206,15 +208,8 @@ class TicketService {
     data['approvalPending'] = true;
     final ref = await _col.add(data);
 
-    await _notifications.notifyCityHall(
-      title: 'Manual awaiting your approval · ${draft.code}',
-      body:
-          '${draft.plateNumber} · ${draft.driverName} · '
-          '${draft.scheduleLabel}. Sign it to make the schedule valid.',
-      type: AppNotificationType.system,
-      data: {'ticketId': ref.id, 'kind': 'manualApproval'},
-      dedupeKey: 'manual_ticket_${ref.id}_approval',
-    );
+    // City Hall is told once per manual by AssignmentManualService, not once
+    // per driver row, so this method writes no approval alert.
 
     // The crew hears about the schedule as soon as it is written, with the
     // approval still pending, so nobody is surprised when the ticket turns
@@ -729,6 +724,96 @@ class TicketService {
       'status': TicketStatus.cancelled.name,
       'pendingSigner': null,
     });
+  }
+
+  /// City Hall sends a whole manual back instead of approving it.
+  ///
+  /// Every trip ticket the manual generated is closed as rejected, the manual
+  /// keeps the reason, and Iswim is told so the schedule can be corrected and
+  /// submitted again.
+  Future<void> rejectManual({
+    required String ticketId,
+    required String reason,
+    required String byUid,
+    required String byName,
+  }) async {
+    final ticket = await _load(ticketId);
+    final assignmentId = ticket.assignmentId;
+    if (assignmentId == null || assignmentId.isEmpty) {
+      throw const TicketException('This ticket is not part of a manual.');
+    }
+
+    final manualRef = _db.collection('assignment_manuals').doc(assignmentId);
+    final manualSnap = await manualRef.get();
+    if (!manualSnap.exists) {
+      throw const TicketException('The manual behind this ticket is missing.');
+    }
+
+    final ids = <String>{ticketId};
+    ids.addAll(
+      (manualSnap.data()?['ticketIds'] as List?)?.whereType<String>() ??
+          const <String>[],
+    );
+
+    final drivers = <String>{};
+    final batch = _db.batch();
+    for (final id in ids) {
+      final snap = await _col.doc(id).get();
+      if (!snap.exists) continue;
+      final row = TripTicket.fromDoc(snap.id, snap.data()!);
+      if (row == null) continue;
+      if (row.driverId.isNotEmpty) drivers.add(row.driverId);
+      batch.update(snap.reference, {
+        'status': TicketStatus.rejected.name,
+        'pendingSigner': null,
+        'approvalPending': false,
+        'rejectionReason': reason,
+        'history': FieldValue.arrayUnion([
+          TicketHistoryEntry(
+            status: TicketStatus.rejected,
+            previousStatus: row.status,
+            byUid: byUid,
+            byName: byName,
+            note: reason,
+          ).toMap(),
+        ]),
+      });
+    }
+    await batch.commit();
+
+    await manualRef.update({
+      'status': 'rejected',
+      'rejectionReason': reason,
+      'rejectedAt': FieldValue.serverTimestamp(),
+      'rejectedByName': byName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    final title = (manualSnap.data()?['title'] as String?)?.trim();
+    await _notifications.notifyIswim(
+      title: 'Manual rejected · ${title == null || title.isEmpty ? ticket.code : title}',
+      body: '$byName rejected the manual: $reason',
+      type: AppNotificationType.system,
+      data: {
+        'assignmentManualId': assignmentId,
+        'ticketId': ticketId,
+        'kind': 'manualRejected',
+      },
+      dedupeKey: 'assignment_manual_${assignmentId}_rejected_'
+          '${ticket.history.length}',
+    );
+
+    for (final driverId in drivers) {
+      await _notifications.push(
+        userId: driverId,
+        title: 'Collection schedule rejected',
+        body: '$reason. Iswim will correct the manual and send it again.',
+        type: AppNotificationType.route,
+        data: {'ticketId': ticketId, 'kind': 'manualRejectedDriver'},
+        dedupeKey: 'assignment_${ticketId}_rejected_driver_'
+            '${ticket.history.length}',
+      );
+    }
   }
 
   Future<TripTicket> _load(String id) async {

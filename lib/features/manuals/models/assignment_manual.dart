@@ -6,13 +6,16 @@ import 'manual_assignment.dart';
 /// Where an assignment manual is in the City Hall approval loop.
 ///
 /// [pendingApproval] is set the moment Iswim submits it; [approved] is written
-/// when the City Hall signature lands on every ticket it generated.
-enum AssignmentManualStatus { pendingApproval, approved, cancelled }
+/// when the City Hall signature lands on every ticket it generated. City Hall
+/// may instead send it back with [rejected] and a reason, and Iswim edits the
+/// manual and submits it again.
+enum AssignmentManualStatus { pendingApproval, approved, rejected, cancelled }
 
 extension AssignmentManualStatusX on AssignmentManualStatus {
   String get label => switch (this) {
     AssignmentManualStatus.pendingApproval => 'Waiting for City Hall',
     AssignmentManualStatus.approved => 'Approved by City Hall',
+    AssignmentManualStatus.rejected => 'Rejected by City Hall',
     AssignmentManualStatus.cancelled => 'Cancelled',
   };
 
@@ -59,6 +62,10 @@ class AssignmentManual {
     this.updatedAt,
     this.approvedAt,
     this.approvedByName,
+    this.rejectedAt,
+    this.rejectedByName,
+    this.rejectionReason,
+    this.revision = 1,
   });
 
   final String id;
@@ -107,11 +114,26 @@ class AssignmentManual {
   final DateTime? approvedAt;
   final String? approvedByName;
 
+  /// Set when City Hall sent the manual back instead of approving it.
+  final DateTime? rejectedAt;
+  final String? rejectedByName;
+  final String? rejectionReason;
+
+  /// Bumped on every submission, so a resubmitted manual notifies City Hall
+  /// again without the dedupe key swallowing the alert.
+  final int revision;
+
   int get maxRoutes => maxRoutesForWheelers(wheelers);
 
   int get assignmentCount => assignments.isEmpty ? 1 : assignments.length;
 
   bool get isApproved => status == AssignmentManualStatus.approved;
+
+  bool get isRejected => status == AssignmentManualStatus.rejected;
+
+  bool get isCancelled => status == AssignmentManualStatus.cancelled;
+
+  bool get awaitsApproval => status == AssignmentManualStatus.pendingApproval;
 
   /// The last day this schedule covers.
   ///
@@ -158,7 +180,10 @@ class AssignmentManual {
   /// is cancelled, monthly for one month from creation and yearly for one
   /// year. See [manualRunsOn] for the shared rule.
   bool runsOn(DateTime date) {
-    if (status == AssignmentManualStatus.cancelled) return false;
+    if (status == AssignmentManualStatus.cancelled ||
+        status == AssignmentManualStatus.rejected) {
+      return false;
+    }
     for (final assignment in allAssignments) {
       if (manualRunsOn(
         days: assignment.days,
@@ -197,8 +222,10 @@ class AssignmentManual {
     'status': status.name,
     'createdBy': createdBy,
     'createdByName': createdByName,
+    'revision': revision,
     if (requestId != null) 'requestId': requestId,
     if (ticketId != null) 'ticketId': ticketId,
+    if (rejectionReason != null) 'rejectionReason': rejectionReason,
     'createdAt': FieldValue.serverTimestamp(),
     'updatedAt': FieldValue.serverTimestamp(),
   };
@@ -278,6 +305,10 @@ class AssignmentManual {
       updatedAt: _date(data['updatedAt']),
       approvedAt: _date(data['approvedAt']),
       approvedByName: data['approvedByName'] as String?,
+      rejectedAt: _date(data['rejectedAt']),
+      rejectedByName: data['rejectedByName'] as String?,
+      rejectionReason: data['rejectionReason'] as String?,
+      revision: (data['revision'] as num?)?.toInt() ?? 1,
     );
   }
 }

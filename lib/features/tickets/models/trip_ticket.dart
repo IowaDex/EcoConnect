@@ -239,6 +239,21 @@ bool manualRunsOn({
 
 DateTime? _date(dynamic raw) => raw is Timestamp ? raw.toDate() : null;
 
+/// `{1: [Filinvest 1]}` from Firestore's string-keyed map.
+Map<int, List<String>> _parseDayRoutes(dynamic raw) {
+  if (raw is! Map) return const {};
+  final out = <int, List<String>>{};
+  raw.forEach((key, value) {
+    final day = int.tryParse('$key');
+    if (day == null || day < 1 || day > 7) return;
+    final names =
+        (value as List?)?.whereType<String>().toList(growable: false) ??
+        const <String>[];
+    if (names.isNotEmpty) out[day] = names;
+  });
+  return out;
+}
+
 /// A digital signature on a trip ticket.
 ///
 /// The image is a base64 PNG drawn on the device or an uploaded picture, so
@@ -386,6 +401,7 @@ class TripTicket {
     this.kind = TicketKind.run,
     this.routes = const [],
     this.routePoints = const [],
+    this.dayRoutes = const {},
     this.days = const [],
     this.recurrence = ManualRecurrence.weekly,
     this.assignmentId,
@@ -436,6 +452,10 @@ class TripTicket {
 
   /// The map points behind [routes], in the order they were tapped.
   final List<ManualRoutePoint> routePoints;
+
+  /// Different areas per weekday (1 = Mon … 7 = Sun). Empty means [routes] is
+  /// the run every day.
+  final Map<int, List<String>> dayRoutes;
 
   /// Days of the week (1 = Mon … 7 = Sun) an assignment runs on.
   final List<int> days;
@@ -560,7 +580,31 @@ class TripTicket {
   }
 
   /// One line for the routes, used on cards and PDF exports.
-  String get routesLabel => routes.isEmpty ? route : routes.join(' · ');
+  ///
+  /// A roster that changes areas by weekday is spelled out per day, so the
+  /// label never implies one set of areas covers the whole week.
+  String get routesLabel => hasDayRoutes
+      ? dayRoutesLabel
+      : (routes.isEmpty ? route : routes.join(' · '));
+
+  /// The areas the crew covers on [day] (1 = Monday … 7 = Sunday).
+  List<String> routesForDay(int day) {
+    final specific = dayRoutes[day];
+    if (specific != null && specific.isNotEmpty) return specific;
+    return routes;
+  }
+
+  bool get hasDayRoutes => dayRoutes.values.any((names) => names.isNotEmpty);
+
+  /// `Mon: Filinvest 1 · Tue: Northview 1`, or the plain route list.
+  String get dayRoutesLabel {
+    if (!hasDayRoutes) return routesLabel;
+    final sorted = [...days]..sort();
+    return [
+      for (final day in sorted)
+        '${manualDayLabel(day)}: ${routesForDay(day).join(', ')}',
+    ].join(' · ');
+  }
 
   Map<String, dynamic> toMap() => {
     'code': code,
@@ -583,6 +627,10 @@ class TripTicket {
     'kind': kind.wireName,
     'routes': routes,
     'routePoints': [for (final point in routePoints) point.toMap()],
+    if (dayRoutes.isNotEmpty)
+      'dayRoutes': {
+        for (final entry in dayRoutes.entries) '${entry.key}': entry.value,
+      },
     'days': days,
     'recurrence': recurrence.name,
     'approvalPending': approvalPending,
@@ -650,6 +698,7 @@ class TripTicket {
               .whereType<ManualRoutePoint>()
               .toList(growable: false) ??
           const [],
+      dayRoutes: _parseDayRoutes(data['dayRoutes']),
       days:
           (data['days'] as List?)
               ?.whereType<num>()

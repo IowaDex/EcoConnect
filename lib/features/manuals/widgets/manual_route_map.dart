@@ -69,6 +69,13 @@ class _ManualRouteMapState extends State<ManualRouteMap> {
     _schedule();
   }
 
+  @override
+  void dispose() {
+    // The controller is ours, not the map's, so it has to be released here.
+    _controller.dispose();
+    super.dispose();
+  }
+
   String get _signature => [
     for (final group in widget.groups)
       [for (final area in group.areas) area.name].join('>'),

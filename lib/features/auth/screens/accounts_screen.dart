@@ -240,6 +240,16 @@ class _AccountsScreenState extends State<AccountsScreen> {
     );
     if (handover == null || !context.mounted) return;
     await _showHandover(context, handover);
+    if (!mounted) return;
+    // A new login sorts into the middle of the roster and can land past the
+    // first page, which reads as "it did not save". Filter the list down to
+    // the account that was just created so the desk sees it straight away.
+    _search.text = handover.email;
+    setState(() {
+      _query = handover.email;
+      _filter = _StatusFilter.all;
+      _page = 0;
+    });
   }
 
   /// The password is shown once: Firebase keeps only a hash, so this dialog is

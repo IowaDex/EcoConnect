@@ -122,7 +122,7 @@ class _SosAlertHostState extends State<SosAlertHost> {
 
     final action = await showDialog<_SosAlertAction>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => _SosAlert(incident: incident),
     );
     // Closing the alert always silences the siren. "Later" leaves the record
@@ -217,6 +217,22 @@ class _SosAlert extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     color: AppColors.forest,
                   ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop(_SosAlertAction.later),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: AppColors.inkMuted,
+                  ),
+                  tooltip: 'Close',
                 ),
               ],
             ),

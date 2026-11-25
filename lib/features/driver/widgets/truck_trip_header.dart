@@ -350,16 +350,12 @@ class TruckTripHeader extends StatelessWidget {
             SizedBox(
               height: 48,
               child: FilledButton(
-                // Tappable even without a ticket: the tap is what explains the
-                // gate. It just paints itself as inert.
+                // Always live. Whether the trip may actually begin is decided
+                // by the handler, which knows the crew's schedule and time.
                 onPressed: busy ? null : onStart,
                 style: FilledButton.styleFrom(
-                  backgroundColor: canStart
-                      ? AppColors.forest
-                      : const Color(0xFFE8EEE8),
-                  foregroundColor: canStart
-                      ? Colors.white
-                      : const Color(0xFF9AA79D),
+                  backgroundColor: AppColors.forest,
+                  foregroundColor: Colors.white,
                   disabledBackgroundColor: const Color(0xFFE8EEE8),
                   disabledForegroundColor: const Color(0xFF9AA79D),
                   textStyle: const TextStyle(
@@ -380,12 +376,7 @@ class TruckTripHeader extends StatelessWidget {
                         ),
                       )
                     else
-                      Icon(
-                        canStart
-                            ? Icons.play_arrow_rounded
-                            : Icons.lock_rounded,
-                        size: 18,
-                      ),
+                      const Icon(Icons.play_arrow_rounded, size: 18),
                     const SizedBox(width: 7),
                     Text(busy ? 'Starting…' : 'Start trip'),
                   ],

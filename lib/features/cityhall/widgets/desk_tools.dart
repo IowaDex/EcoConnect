@@ -19,11 +19,6 @@ class DeskTools extends StatelessWidget {
   /// The destinations, in the order the desk has always shown them.
   List<QuickAction> get tools => [
     const QuickAction(
-      label: 'SOS incidents',
-      icon: Icons.notifications_active_outlined,
-      route: '/sos',
-    ),
-    const QuickAction(
       label: 'Complaints',
       icon: Icons.report_outlined,
       route: '/complaints',
@@ -85,7 +80,7 @@ class DeskTools extends StatelessWidget {
       badge: pendingSignatures,
     ),
     const QuickAction(
-      label: 'District Officers',
+      label: 'District Officers/SOS',
       icon: Icons.support_agent_rounded,
       route: '/district-officers',
     ),

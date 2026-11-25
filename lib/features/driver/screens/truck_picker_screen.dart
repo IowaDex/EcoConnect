@@ -158,6 +158,9 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
                         stream: _tickets,
                         builder: (context, ticketSnap) {
                           final ready = _trucksWithTickets(ticketSnap.data);
+                          final scheduled = _trucksScheduledToday(
+                            ticketSnap.data,
+                          );
                           return ListView(
                             padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
                             children: [
@@ -176,8 +179,8 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
                               const SizedBox(height: 8),
                               Text(
                                 '${fleet.length} trucks assigned by Barangay '
-                                'Batasan Hills. Tap your plate to open the trip '
-                                'dashboard.',
+                                'Batasan Hills. Only plates whose driver is '
+                                'scheduled today can be opened.',
                                 style: const TextStyle(
                                   fontSize: 11.5,
                                   height: 1.5,
@@ -190,6 +193,7 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
                                   truck: truck,
                                   selected:
                                       trucks.selectedTruck?.id == truck.id,
+                                  enabled: scheduled.contains(truck.id),
                                   status: TruckStatusX.resolve(
                                     truck: truck,
                                     inTransit: moving.contains(
@@ -237,6 +241,27 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
         if (ticket.status == TicketStatus.issued ||
             ticket.status == TicketStatus.accepted ||
             ticket.status == TicketStatus.running)
+          ticket.truckId,
+    };
+  }
+
+  /// Truck ids whose driver has a collection on today's roster.
+  ///
+  /// Only these plates may be opened: a guide is meant to ride with a crew
+  /// that is actually on duty, not with a parked truck whose driver has no
+  /// schedule today. A manual still with City Hall still counts — the day is
+  /// booked even though the trip is not signed yet.
+  static Set<String> _trucksScheduledToday(List<TripTicket>? tickets) {
+    if (tickets == null) return const {};
+    final now = DateTime.now();
+    return {
+      for (final ticket in tickets)
+        if (ticket.isAssignment &&
+            ticket.runsOn(now) &&
+            ticket.status != TicketStatus.cancelled &&
+            ticket.status != TicketStatus.declined &&
+            ticket.status != TicketStatus.missed &&
+            ticket.status != TicketStatus.rejected)
           ticket.truckId,
     };
   }

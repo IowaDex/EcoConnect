@@ -13,6 +13,7 @@ erDiagram
     USERS ||--o{ ASSIGNMENT_MANUALS : rostered
     USERS ||--o{ MANUALS : authors
     USERS ||--o{ MEMOS : sends
+
     USERS ||--o{ DELAY_REPORTS : files
     USERS ||--o{ COLLECTION_REQUESTS : requests
     USERS ||--o{ WASTE_SUBMISSIONS : submits
@@ -20,18 +21,20 @@ erDiagram
     USERS ||--o{ INCIDENTS : reports
     USERS ||--o{ COMMUNITY_POSTS : writes
     USERS ||--o{ NOTIFICATIONS : receives
-    USERS ||--o{ EVENT_PARTICIPANTS : joins
-    USERS ||--o{ COLLECTION_POINTS : serves
-    USERS ||--o{ ADMIN_AUDIT : acts_in
+    USERS ||--o{ EVENT_PARTICIPANTS : joins 
+    USERS ||--o{ SOS_INCIDENTS : raises
+    USERS ||--o{ CALLS : places
+    USERS ||--o{ CALL_LOGS : joins
     TRUCKS ||--o{ TRIP_TICKETS : used_on
     TRUCKS ||--o{ ASSIGNMENT_MANUALS : rostered_to
     ROUTE_PLANS ||--o| ROUTES : activated_as
     MANUAL_REQUESTS ||--o| MANUALS : answered_by
     MANUAL_REQUESTS ||--o| ASSIGNMENT_MANUALS : answered_by
     MANUALS ||--o{ MANUAL_VERSIONS : has
-    ASSIGNMENT_MANUALS ||--o| TRIP_TICKETS : generates
+    ASSIGNMENT_MANUALS ||--o{ TRIP_TICKETS : generates
     TRIP_TICKETS ||--o{ DELAY_REPORTS : delayed_by
     DELAY_REPORTS ||--o| ANNOUNCEMENTS : published_as
+    SOS_INCIDENTS ||--o{ CALL_LOGS : answered_with
     EVENTS ||--o{ EVENT_PARTICIPANTS : has
     EVENTS ||--o{ EVENT_STREETS : tallies
 
@@ -186,7 +189,7 @@ erDiagram
         string id PK
         string code
         number wave
-        string kind
+        string kind "run | assignment"
         string truckId FK
         string plateNumber
         number wheelers
@@ -196,11 +199,13 @@ erDiagram
         string zone
         array routes
         array routePoints
+        map dayRoutes "weekday 1-7 -> area names, when the days differ"
         array days
         string recurrence
         string date
         string windowStart
         string windowEnd
+        string notes
         string status
         string pendingSigner
         bool approvalPending
@@ -208,7 +213,14 @@ erDiagram
         string createdBy FK
         map signatures
         array history
+        string declineReason
+        string revisionReason
+        string rejectionReason
         timestamp createdAt
+        timestamp updatedAt
+        timestamp acceptedAt
+        timestamp startedAt
+        timestamp submittedAt
         timestamp completedAt
     }
 
@@ -247,21 +259,31 @@ erDiagram
     ASSIGNMENT_MANUALS {
         string id PK
         string title
-        string driverId FK
+        string driverId FK "first roster row, kept for legacy reads"
+        string driverName
         string truckId FK
         string plateNumber
         number wheelers
         array routes
         array routePoints
+        array assignments "roster rows: driver, plate, routes, dayRoutes, days, startTime, recurrence"
+        array ticketIds "one ticket per roster row"
         array days
         string startTime
         string recurrence
-        string status
+        string status "pendingApproval | approved | rejected | cancelled"
+        number revision "bumped on every submission"
         string requestId FK
-        string ticketId FK
+        string ticketId FK "first generated ticket"
         string createdBy FK
+        string createdByName
         timestamp createdAt
+        timestamp updatedAt
         timestamp approvedAt
+        string approvedByName
+        timestamp rejectedAt
+        string rejectedByName
+        string rejectionReason
     }
 
     MANUAL_REQUESTS {
@@ -270,14 +292,18 @@ erDiagram
         string title
         string details
         string requestedByUid FK
+        string requestedByName
         string status
         timestamp neededBy
         string manualId FK
         string assignmentManualId FK
         string ticketId FK
+        array ticketIds "one per roster row of the answering manual"
         timestamp createdAt
         timestamp fulfilledAt
+        string fulfilledByName
         timestamp approvedAt
+        string approvedByName
     }
 
     MANUALS {
@@ -387,6 +413,88 @@ erDiagram
         double lat
         double lng
         timestamp createdAt
+    }
+
+    SOS_INCIDENTS {
+        string id PK
+        string code
+        string description
+        string reason
+        string district
+        string barangay
+        timestamp incidentAt
+        string truckPlate
+        string route
+        string status "newAlert | acknowledged | coordinating | resolved"
+        string createdBy FK
+        string createdByName
+        array officerUids FK
+        timestamp createdAt
+        timestamp notifiedAt
+        timestamp receivedAt
+        timestamp acknowledgedAt
+        timestamp coordinatingAt
+        timestamp statusUpdatedAt
+        string statusUpdatedBy FK
+        string statusUpdatedByName
+        timestamp resolvedAt
+        string resolvedBy FK
+        string resolvedByName
+        string resolutionNote
+    }
+
+    CALLS {
+        string id PK
+        string fromUid FK
+        string fromName
+        string fromRole
+        string toRole
+        string toUid FK
+        string calleeId FK
+        string calleeName
+        string status "ringing | accepted | ended | missed | declined"
+        string context
+        string reference
+        string delayId FK
+        string incidentId FK
+        string barangay
+        string district
+        string note
+        map offer
+        map answer
+        array callerCandidates
+        array calleeCandidates
+        timestamp createdAt
+        timestamp acceptedAt
+        timestamp endedAt
+        number durationSeconds
+    }
+
+    CALL_LOGS {
+        string id PK
+        string callId FK
+        string fromUid FK
+        string fromName
+        string fromRole
+        string toRole
+        string toUid FK
+        string toName
+        string outcome
+        string status
+        string context
+        string reference
+        string delayId FK
+        string incidentId FK
+        string barangay
+        string district
+        array participantIds FK
+        timestamp startedAt
+        timestamp acceptedAt
+        timestamp endedAt
+        number durationSeconds
+        string failureReason
+        bool hasRecording
+        string recordingUrl
     }
 
     EVENTS {

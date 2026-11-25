@@ -15,10 +15,13 @@ import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../data/manual_areas.dart';
+import '../models/assignment_manual.dart';
 import '../models/manual_assignment.dart';
 import '../services/assignment_manual_service.dart';
 import '../services/manual_draft_store.dart';
 import '../services/manual_pdf.dart';
+import '../widgets/manual_pdf_preview.dart';
+import '../widgets/manual_preview_sheet.dart';
 import '../widgets/manual_route_map.dart';
 
 /// A driver account Iswim can put on a manual.
@@ -42,12 +45,20 @@ class _DraftAssignment {
     required this.days,
     required this.startTime,
     required this.recurrence,
+    this.dayRoutes = const {},
   });
 
   final String driverId;
   final String driverName;
   final GarbageTruck truck;
+
+  /// Every area this row covers, across all its days.
   final List<ManualArea> routes;
+
+  /// Different areas per weekday (1 = Mon … 7 = Sun). Empty means [routes] is
+  /// the run every day.
+  final Map<int, List<ManualArea>> dayRoutes;
+
   final Set<int> days;
   final TimeOfDay startTime;
   final ManualRecurrence recurrence;
@@ -60,6 +71,16 @@ class _DraftAssignment {
 
   String get daysLabel => ([...days]..sort()).map(manualDayLabel).join(' · ');
 
+  bool get hasDayRoutes =>
+      dayRoutes.values.any((areas) => areas.isNotEmpty);
+
+  /// The areas for [day], falling back to the shared list.
+  List<ManualArea> areasOn(int day) {
+    final specific = dayRoutes[day];
+    if (specific != null && specific.isNotEmpty) return specific;
+    return routes;
+  }
+
   /// The last day this row's schedule covers, counted from today.
   DateTime get validUntil =>
       manualValidUntil(recurrence: recurrence, from: DateTime.now());
@@ -67,6 +88,18 @@ class _DraftAssignment {
   String get validityLabel => 'Valid until ${dateLabel(validUntil)}';
 
   List<String> get routeNames => [for (final area in routes) area.name];
+
+  /// `Mon: Filinvest 1 · Tue: Northview 1`, or the plain list.
+  String get routesLabel {
+    if (!hasDayRoutes) return routeNames.join(' · ');
+    return ([...days]..sort())
+        .map(
+          (day) =>
+              '${manualDayLabel(day)}: '
+              '${[for (final area in areasOn(day)) area.name].join(', ')}',
+        )
+        .join(' · ');
+  }
 
   ManualAssignment toManualAssignment() => ManualAssignment(
     driverId: driverId,
@@ -83,6 +116,11 @@ class _DraftAssignment {
           longitude: area.center.longitude,
         ),
     ],
+    dayRoutes: {
+      for (final entry in dayRoutes.entries)
+        if (entry.value.isNotEmpty)
+          entry.key: [for (final area in entry.value) area.name],
+    },
     days: [...days]..sort(),
     startTime: startLabel,
     recurrence: recurrence,
@@ -131,10 +169,15 @@ class CreateAssignmentManualScreen extends StatefulWidget {
     super.key,
     this.requestId,
     this.requestTitle = '',
+    this.editId,
   });
 
   final String? requestId;
   final String requestTitle;
+
+  /// A manual City Hall rejected. Opening it here loads the roster so Iswim
+  /// can correct it and submit it again.
+  final String? editId;
 
   @override
   State<CreateAssignmentManualScreen> createState() =>
@@ -149,17 +192,26 @@ class _CreateAssignmentManualScreenState
   List<_DriverOption> _accounts = const [];
   List<GarbageTruck> _trucks = const [];
   StreamSubscription<List<GarbageTruck>>? _truckSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _driverSub;
   bool _busy = false;
   bool _loadingDrivers = true;
+
+  /// The manual being corrected, when this page was opened from "Edit &
+  /// resubmit". Null for a new manual.
+  AssignmentManual? _existing;
+  bool _loadingExisting = false;
+
+  /// Rows other manuals already booked, so their areas cannot be picked twice.
+  List<ManualAssignment> _booked = const [];
 
   /// 0 = drivers & routes, 1 = review.
   int _step = 0;
 
   /// The draft key: one unfinished manual per City Hall request.
-  String get _draftScope => widget.requestId ?? 'new';
+  String get _draftScope => widget.editId ?? widget.requestId ?? 'new';
 
   /// What the title started as, so leaving an untouched page is silent.
-  late final String _initialTitle = widget.requestTitle.trim().isEmpty
+  late String _initialTitle = widget.requestTitle.trim().isEmpty
       ? 'Collection manual'
       : widget.requestTitle.trim();
 
@@ -175,44 +227,103 @@ class _CreateAssignmentManualScreenState
       // the fleet is empty instead of throwing into the zone.
       onError: (_) {},
     );
-    _loadDrivers();
-    _restoreDraft();
+    _watchDrivers();
+    if (widget.editId == null) {
+      _restoreDraft();
+    } else {
+      _loadExisting();
+    }
+    _loadBookings();
   }
 
   @override
   void dispose() {
     _truckSub?.cancel();
+    _driverSub?.cancel();
     _title.dispose();
     super.dispose();
   }
 
-  Future<void> _loadDrivers() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'driver')
-          .limit(100)
-          .get();
-      if (!mounted) return;
-      setState(() {
-        _accounts = snap.docs
-            .map((doc) {
-              final data = doc.data();
-              final name = (data['name'] as String?)?.trim();
-              return _DriverOption(
-                uid: doc.id,
-                name: name == null || name.isEmpty
-                    ? (data['email'] as String? ?? 'Driver')
-                    : name,
-                truckId: data['assignedTruckId'] as String?,
-              );
-            })
-            .toList(growable: false);
-        _loadingDrivers = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loadingDrivers = false);
+  /// Drivers are listened to, not read once: an account Iswim creates on the
+  /// accounts desk has to appear here without reopening the page.
+  void _watchDrivers() {
+    _driverSub = FirebaseFirestore.instance
+        .collection('users')
+        .where('role', isEqualTo: 'driver')
+        .limit(200)
+        .snapshots()
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            setState(() {
+              _accounts = snap.docs
+                  .map((doc) {
+                    final data = doc.data();
+                    final name = (data['name'] as String?)?.trim();
+                    return _DriverOption(
+                      uid: doc.id,
+                      name: name == null || name.isEmpty
+                          ? (data['email'] as String? ?? 'Driver')
+                          : name,
+                      truckId: data['assignedTruckId'] as String?,
+                    );
+                  })
+                  .toList(growable: false);
+              _loadingDrivers = false;
+            });
+          },
+          onError: (_) {
+            if (mounted) setState(() => _loadingDrivers = false);
+          },
+        );
+  }
+
+  /// Rows already covered by another manual, for the picker's taken areas.
+  Future<void> _loadBookings() async {
+    final rows = await AssignmentManualService().loadBookings(
+      excludeManualId: widget.editId,
+    );
+    if (!mounted) return;
+    setState(() => _booked = rows);
+  }
+
+  /// Loads the rejected manual's roster back into the editor.
+  Future<void> _loadExisting() async {
+    setState(() => _loadingExisting = true);
+    final manual = await AssignmentManualService().findOne(widget.editId!);
+    if (!mounted) return;
+    if (manual == null) {
+      setState(() => _loadingExisting = false);
+      AppFeedback.error(context, 'That manual could not be loaded.');
+      return;
     }
+    final rows = <_DraftAssignment>[];
+    for (final row in manual.allAssignments) {
+      rows.add(
+        _DraftAssignment(
+          driverId: row.driverId,
+          driverName: row.driverName,
+          truck: _truckFor(row),
+          routes: manualAreasFor(row.routes),
+          dayRoutes: {
+            for (final entry in row.dayRoutes.entries)
+              entry.key: manualAreasFor(entry.value),
+          },
+          days: row.days.toSet(),
+          startTime: _timeOfDay(row.startTime),
+          recurrence: row.recurrence,
+        ),
+      );
+    }
+    setState(() {
+      _existing = manual;
+      _title.text = manual.title;
+      _initialTitle = manual.title;
+      _assignments
+        ..clear()
+        ..addAll(rows);
+      _loadingExisting = false;
+    });
   }
 
   /// Account drivers first, then the roster names on trucks that have no
@@ -253,6 +364,10 @@ class _CreateAssignmentManualScreenState
           driverName: row.driverName,
           truck: _truckFor(row),
           routes: areas,
+          dayRoutes: {
+            for (final entry in row.dayRoutes.entries)
+              entry.key: manualAreasFor(entry.value),
+          },
           days: row.days.toSet(),
           startTime: _timeOfDay(row.startTime),
           recurrence: row.recurrence,
@@ -396,6 +511,7 @@ class _CreateAssignmentManualScreenState
           for (var i = 0; i < _assignments.length; i++)
             if (i != index) _assignments[i],
         ],
+        booked: _booked,
       ),
     );
     if (result == null || !mounted) return;
@@ -415,24 +531,62 @@ class _CreateAssignmentManualScreenState
     }
   }
 
-  void _remove(int index) => setState(() => _assignments.removeAt(index));
+  /// Removing a row throws the driver's whole schedule away, so it asks first.
+  Future<void> _remove(int index) async {
+    final row = _assignments[index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove ${row.driverName}?'),
+        content: Text(
+          'Their ${row.daysLabel} schedule and '
+          '${row.routeNames.isEmpty ? 'its areas' : row.routeNames.join(', ')} '
+          'are taken off this manual. You can add the driver again if this '
+          'was a mistake.',
+          style: const TextStyle(fontSize: 11.5, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Remove driver'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _assignments.removeAt(index));
+  }
 
-  Future<void> _exportPdf() async {
-    final first = _assignments.first;
-    final saved = await exportAssignmentManualPdf(
+  /// Opens the same preview the manuals list uses, before anything is sent.
+  Future<void> _preview() {
+    return ManualPreviewSheet.show(
+      context,
       title: _title.text,
-      driverName: first.driverName,
-      plateNumber: first.truck.plateNumber,
-      wheelers: first.truck.wheelers,
-      routes: first.routeNames,
-      days: [...first.days]..sort(),
-      startTime: first.startLabel,
-      recurrence: first.recurrence,
-      status: 'Waiting for City Hall approval',
-      requestTitle: widget.requestTitle,
       assignments: [
         for (final assignment in _assignments) assignment.toManualAssignment(),
       ],
+      statusLabel: _existing?.isRejected == true
+          ? 'Rejected · editing'
+          : 'Not submitted yet',
+      statusColor: _existing?.isRejected == true
+          ? AppColors.error
+          : AppColors.warning,
+      reason: _existing?.rejectionReason,
+    );
+  }
+
+  Future<void> _exportPdf() async {
+    final plate = _assignments.first.truck.plateNumber;
+    // Same lines the confirmation dialog previews, so the download matches
+    // the sheet the officer just approved.
+    final saved = await exportManualPdfLines(
+      _pdfLines(),
+      fileName: 'collection-manual-${plate.replaceAll(' ', '-')}.pdf',
     );
     if (!mounted) return;
     if (saved) {
@@ -462,6 +616,9 @@ class _CreateAssignmentManualScreenState
     if (user == null) return;
 
     setState(() => _busy = true);
+    // Set when the page is on its way out: the spinner stays on so a second
+    // tap cannot send the manual twice while the swap is pending.
+    var leaving = false;
     try {
       final manual = await AssignmentManualService().submitBatch(
         title: _title.text,
@@ -471,10 +628,18 @@ class _CreateAssignmentManualScreenState
         ],
         byId: user.uid,
         byName: user.displayName ?? 'Iswim',
-        requestId: widget.requestId,
+        requestId: widget.requestId ?? _existing?.requestId,
+        existing: _existing,
       );
       await ManualDraftStore().clear(_draftScope);
       if (!mounted) return;
+      if (_existing != null) {
+        leaving = true;
+        // The corrected manual goes back to City Hall from the manuals list,
+        // where its new status is visible.
+        _leaveForManuals();
+        return;
+      }
       final firstTicket = manual.ticketIds.isNotEmpty
           ? manual.ticketIds.first
           : manual.ticketId;
@@ -498,8 +663,22 @@ class _CreateAssignmentManualScreenState
     } catch (e) {
       if (mounted) AppFeedback.error(context, AppFeedback.describe(e));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && !leaving) setState(() => _busy = false);
     }
+  }
+
+  /// Returns to the manuals list once the current frame has been drawn.
+  ///
+  /// The confirmation dialog closes, the snackbar mounts and the page is
+  /// replaced; doing all three in one frame tears the editor down while the
+  /// overlay is still settling. One frame of slack keeps the transition clean.
+  void _leaveForManuals() {
+    final router = GoRouter.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppFeedback.success(context, 'Manual resubmitted for approval');
+      router.go('/manuals');
+    });
   }
 
   Future<bool> _confirm() async {
@@ -518,32 +697,52 @@ class _CreateAssignmentManualScreenState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _confirmRow('Manual', _title.text.trim()),
-                for (var i = 0; i < _assignments.length; i++) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    '${_letter(i)} · ${_assignments[i].driverName}',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.forest,
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.picture_as_pdf_outlined,
+                      size: 14,
+                      color: AppColors.moss,
                     ),
-                  ),
-                  _confirmRow('Plate', _assignments[i].truck.plateNumber),
-                  _confirmRow('Areas', _assignments[i].routeNames.join(' · ')),
-                  _confirmRow(
-                    'Schedule',
-                    '${_assignments[i].daysLabel} · '
-                        '${_assignments[i].startLabel} · '
-                        '${_assignments[i].recurrence.label}',
-                  ),
-                ],
-                const SizedBox(height: 10),
+                    SizedBox(width: 6),
+                    Text(
+                      'PDF preview',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.inkMuted,
+                      ),
+                    ),
+                    Spacer(),
+                    Text(
+                      '1 page',
+                      style: TextStyle(fontSize: 9, color: AppColors.inkMuted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ManualPdfPreview(lines: _pdfLines()),
+                const SizedBox(height: 12),
                 const Text(
-                  'Submitting generates one trip ticket per driver. They stay '
-                  'covered by a "waiting for City Hall approval" screen until '
-                  'the DSQC signs them.',
-                  style: TextStyle(fontSize: 10.5, height: 1.45),
+                  "Are you sure you want to submit this manual for DSQC's "
+                  'approval?',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.darkGreen,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'One trip ticket is generated per driver. They stay on a '
+                  '"waiting for City Hall approval" screen until the DSQC '
+                  'signs.',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    height: 1.45,
+                    color: AppColors.inkMuted,
+                  ),
                 ),
               ],
             ),
@@ -565,26 +764,23 @@ class _CreateAssignmentManualScreenState
     return result ?? false;
   }
 
-  Widget _confirmRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 70,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: AppColors.inkMuted,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 10))),
-        ],
-      ),
+  /// The exact text the downloaded manual PDF will print.
+  List<String> _pdfLines() {
+    final first = _assignments.first;
+    return assignmentManualPdfLines(
+      title: _title.text,
+      driverName: first.driverName,
+      plateNumber: first.truck.plateNumber,
+      wheelers: first.truck.wheelers,
+      routes: first.routeNames,
+      days: [...first.days]..sort(),
+      startTime: first.startLabel,
+      recurrence: first.recurrence,
+      status: 'Waiting for City Hall approval',
+      requestTitle: widget.requestTitle,
+      assignments: [
+        for (final assignment in _assignments) assignment.toManualAssignment(),
+      ],
     );
   }
 
@@ -652,7 +848,11 @@ class _CreateAssignmentManualScreenState
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      _step == 0 ? 'Assign drivers' : 'Review manual',
+                      _step == 0
+                          ? (_existing != null
+                                ? 'Edit manual'
+                                : 'Assign drivers')
+                          : 'Review manual',
                       style: EcoType.cardTitleLarge(
                         context,
                         color: AppColors.forest,
@@ -661,6 +861,27 @@ class _CreateAssignmentManualScreenState
                   ],
                 ),
               ),
+              if (_assignments.isNotEmpty)
+                SizedBox(
+                  height: 32,
+                  child: OutlinedButton.icon(
+                    onPressed: _preview,
+                    icon: const Icon(Icons.visibility_outlined, size: 14),
+                    label: const Text(
+                      'Preview',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.forest,
+                      side: const BorderSide(color: AppColors.sage),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -671,9 +892,72 @@ class _CreateAssignmentManualScreenState
   }
 
   Widget _buildAssignStep() {
+    final reason = (_existing?.rejectionReason ?? '').trim();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
+        if (_loadingExisting) ...[
+          const LinearProgressIndicator(minHeight: 2),
+          const SizedBox(height: 12),
+        ],
+        if (_existing?.isRejected == true) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.error.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.report_gmailerrorred_rounded,
+                      size: 15,
+                      color: AppColors.error,
+                    ),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'City Hall rejected this manual',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reason: $reason',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      height: 1.45,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 3),
+                const Text(
+                  'Correct the roster below, then submit it again.',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    height: 1.4,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         const _SectionLabel('MANUAL TITLE'),
         const SizedBox(height: 8),
         TextField(
@@ -1218,8 +1502,8 @@ class _AssignmentCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       '${assignment.routes.length}/${assignment.maxRoutes} '
-                      'areas · ${assignment.routeNames.join(', ')}',
-                      maxLines: 1,
+                      'areas · ${assignment.routesLabel}',
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 9.5,
@@ -1296,32 +1580,45 @@ class _ReviewAssignmentCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: [
-              for (final area in assignment.routes)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.mint,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.sage),
-                  ),
-                  child: Text(
-                    area.name,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.forest,
+          if (!assignment.hasDayRoutes)
+            Wrap(
+              spacing: 5,
+              runSpacing: 5,
+              children: [
+                for (final area in assignment.routes) _areaChip(area.name),
+              ],
+            )
+          else
+            for (final day in ([...assignment.days]..sort()))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        manualDayLabel(day),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.inkMuted,
+                        ),
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 5,
+                        runSpacing: 5,
+                        children: [
+                          for (final area in assignment.areasOn(day))
+                            _areaChip(area.name),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
+              ),
           const SizedBox(height: 8),
           Text(
             '${assignment.daysLabel} · ${assignment.startLabel} · '
@@ -1343,6 +1640,23 @@ class _ReviewAssignmentCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _areaChip(String name) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: AppColors.mint,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.sage),
+    ),
+    child: Text(
+      name,
+      style: const TextStyle(
+        fontSize: 9,
+        fontWeight: FontWeight.w600,
+        color: AppColors.forest,
+      ),
+    ),
+  );
 }
 
 class _LetterBadge extends StatelessWidget {
@@ -1492,12 +1806,16 @@ class _AssignmentSheet extends StatefulWidget {
     required this.trucks,
     required this.others,
     this.existing,
+    this.booked = const [],
   });
 
   final List<_DriverOption> accounts;
   final List<GarbageTruck> trucks;
   final List<_DraftAssignment> others;
   final _DraftAssignment? existing;
+
+  /// Rows other manuals already booked, so their areas are shown as taken.
+  final List<ManualAssignment> booked;
 
   @override
   State<_AssignmentSheet> createState() => _AssignmentSheetState();
@@ -1512,11 +1830,20 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
   ManualRecurrence _recurrence = ManualRecurrence.weekly;
   bool _routesOpen = false;
 
+  /// Different areas per weekday, e.g. Mon/Wed on Filinvest 1 and Tue/Thu on
+  /// Northview. Off by default: one set of areas covers every chosen day.
+  bool _perDay = false;
+  final Map<int, Set<String>> _dayRoutes = {};
+  int _activeDay = 1;
+
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
-    if (existing == null) return;
+    if (existing == null) {
+      _activeDay = _days.first;
+      return;
+    }
     _driverKey = existing.driverId.isNotEmpty
         ? 'uid:${existing.driverId}'
         : 'name:${existing.driverName}';
@@ -1527,6 +1854,15 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
     _start = existing.startTime;
     _recurrence = existing.recurrence;
     _truckId = existing.truck.id;
+    if (existing.hasDayRoutes) {
+      _perDay = true;
+      for (final entry in existing.dayRoutes.entries) {
+        _dayRoutes[entry.key] = {
+          for (final area in entry.value) area.name,
+        };
+      }
+    }
+    _activeDay = _days.isEmpty ? 1 : (_days.toList()..sort()).first;
   }
 
   /// The sheet's own option list, with the edited row kept even when its
@@ -1569,11 +1905,30 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
     return null;
   }
 
-  /// Every plate ISWIM can put this driver on. A newly added truck is listed
-  /// here with a NEW tag, so the manual is where the pairing happens.
+  /// Only plates a new driver can actually take.
+  ///
+  /// A truck that already carries a driver is left out — picking it would put
+  /// two people on one plate. Three plates stay visible even when they are
+  /// taken: the one this row was saved with, the one already linked to the
+  /// chosen driver, and the one currently selected. Plates used by another
+  /// row of this same manual are hidden too.
   List<GarbageTruck> get _truckOptions {
-    final options = [...widget.trucks];
     final existing = widget.existing;
+    final selected = _selected;
+    final linked = selected == null ? null : _linkedTruck(selected);
+    final keep = <String>{
+      if (existing != null) existing.truck.id,
+      if (linked != null) linked.id,
+      if (_truckId != null) _truckId!,
+    };
+    final usedHere = <String>{for (final row in widget.others) row.truck.id};
+
+    final options = [
+      for (final truck in widget.trucks)
+        if (keep.contains(truck.id) ||
+            (!usedHere.contains(truck.id) && !truck.hasDriver))
+          truck,
+    ];
     if (existing != null && !options.any((t) => t.id == existing.truck.id)) {
       options.add(existing.truck);
     }
@@ -1607,23 +1962,102 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
   /// Areas another row already covers at a start time this one would clash
   /// with, mapped to who holds them. An area can only be covered once per
   /// slot, so these cannot be picked.
-  Map<String, String> get _takenAreas {
+  ///
+  /// Rows from other manuals are included: an area a different manual already
+  /// booked is not free just because this manual is new.
+  Map<String, String> get _takenAreas => _takenAreasOn(
+    _perDay ? {_activeDay} : _days,
+  );
+
+  Map<String, String> _takenAreasOn(Set<int> days) {
     final taken = <String, String>{};
-    final start = _startLabel(_start);
-    for (final other in widget.others) {
-      if (!other.days.any(_days.contains)) continue;
-      if (!manualSlotsClash(other.startLabel, start)) continue;
-      final by = '${other.driverName} · ${other.startLabel}';
-      for (final name in other.routeNames) {
-        taken.putIfAbsent(name, () => by);
+
+    void scan({
+      required List<int> rowDays,
+      required String rowStart,
+      required String rowLabel,
+      required List<String> Function(int day) routesFor,
+    }) {
+      final shared = rowDays.where(days.contains).toList();
+      if (shared.isEmpty) return;
+      // Not time-gated: an area another manual runs is taken for that day, so
+      // it cannot be ticked again for a different driver or a later shift.
+      for (final day in shared) {
+        final by = '$rowLabel · ${manualDayLabel(day)} $rowStart';
+        for (final name in routesFor(day)) {
+          taken.putIfAbsent(name, () => by);
+        }
       }
+    }
+
+    for (final other in widget.others) {
+      scan(
+        rowDays: other.days.toList(),
+        rowStart: other.startLabel,
+        rowLabel: other.driverName,
+        routesFor: (day) => [for (final area in other.areasOn(day)) area.name],
+      );
+    }
+    for (final row in widget.booked) {
+      scan(
+        rowDays: row.days,
+        rowStart: row.startTime,
+        rowLabel: '${row.driverName} (another manual)',
+        routesFor: row.routesForDay,
+      );
     }
     return taken;
   }
 
+  /// The set the route checklist is editing right now.
+  Set<String> get _editingRoutes =>
+      _perDay ? (_dayRoutes[_activeDay] ?? const <String>{}) : _routes;
+
+  void _togglePerDay(bool value) {
+    setState(() {
+      _perDay = value;
+      if (value) {
+        // Start every chosen day from the areas already picked.
+        for (final day in _days) {
+          _dayRoutes[day] = {..._routes};
+        }
+        _activeDay = (_days.toList()..sort()).first;
+      } else {
+        final merged = <String>{};
+        for (final names in _dayRoutes.values) {
+          merged.addAll(names);
+        }
+        _routes
+          ..clear()
+          ..addAll(merged);
+      }
+    });
+  }
+
+  void _toggleDay(int day) {
+    setState(() {
+      if (_days.remove(day)) {
+        _dayRoutes.remove(day);
+        if (_activeDay == day) {
+          _activeDay = _days.isEmpty ? 1 : (_days.toList()..sort()).first;
+        }
+      } else {
+        _days.add(day);
+        if (_perDay) _dayRoutes[day] = <String>{};
+      }
+    });
+  }
+
   void _toggleRoute(String name) {
-    if (_routes.contains(name)) {
-      setState(() => _routes.remove(name));
+    final routes = _editingRoutes;
+    if (routes.contains(name)) {
+      setState(() {
+        if (_perDay) {
+          (_dayRoutes[_activeDay] ??= <String>{}).remove(name);
+        } else {
+          _routes.remove(name);
+        }
+      });
       return;
     }
     final takenBy = _takenAreas[name];
@@ -1635,12 +2069,18 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
       _toast('Pick a truck first.');
       return;
     }
-    if (_routes.length >= _maxRoutes) {
+    if (routes.length >= _maxRoutes) {
       setState(() => _routesOpen = true);
       _toast('Limit reached. Remove one route to pick another.');
       return;
     }
-    setState(() => _routes.add(name));
+    setState(() {
+      if (_perDay) {
+        (_dayRoutes[_activeDay] ??= <String>{}).add(name);
+      } else {
+        _routes.add(name);
+      }
+    });
   }
 
   void _selectDriver(String? value) {
@@ -1649,9 +2089,15 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
       _driverKey = value;
       final option = _selected;
       final linked = option == null ? null : _linkedTruck(option);
-      // A driver who already holds a plate keeps it; a new driver starts on
-      // the plate ISWIM picks next.
-      if (linked != null) _truckId = linked.id;
+      if (linked != null) {
+        // A driver who already holds a plate keeps it.
+        _truckId = linked.id;
+      } else if (_truck?.hasDriver ?? false) {
+        // The plate on screen belongs to the driver that was just replaced;
+        // a driver with no plate of their own starts from an empty field. A
+        // free plate the officer picked by hand is kept.
+        _truckId = null;
+      }
       _trimRoutes();
     });
   }
@@ -1670,41 +2116,80 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
     while (_routes.length > max) {
       _routes.remove(_routes.last);
     }
+    for (final names in _dayRoutes.values) {
+      while (names.length > max) {
+        names.remove(names.last);
+      }
+    }
   }
 
   bool _sameDays(Set<int> days) =>
       _days.length == days.length && _days.containsAll(days);
 
+  /// A driver or plate booked on the same day and time, inside this manual or
+  /// by another one. Returns the first clash as a sentence, or null.
   String? get _conflict {
     final option = _selected;
     final truck = _truck;
     if (option == null || truck == null || _days.isEmpty) return null;
     final start = _startLabel(_start);
-    for (final other in widget.others) {
-      if (!other.days.any(_days.contains)) continue;
+
+    String? check({
+      required String driverId,
+      required String driverName,
+      required String truckId,
+      required String plate,
+      required List<int> rowDays,
+      required String rowStart,
+      required String who,
+    }) {
+      final sharedDays = rowDays.where(_days.contains).toList();
+      if (sharedDays.isEmpty) return null;
       final sameDriver = manualSameDriver(
         driverId: option.uid,
         driverName: option.name,
-        otherDriverId: other.driverId,
-        otherDriverName: other.driverName,
+        otherDriverId: driverId,
+        otherDriverName: driverName,
       );
-      final sameTruck = other.truck.id == truck.id;
-      if (!sameDriver && !sameTruck) continue;
+      final sameTruck = truckId.isNotEmpty && truckId == truck.id;
+      if (!sameDriver && !sameTruck) return null;
       // A driver needs six hours between shifts; a plate cannot be on two
       // routes at the same moment.
       final clash = sameDriver
-          ? manualSlotsClash(other.startLabel, start)
-          : other.startLabel == start;
-      if (!clash) continue;
-      final shared = ([
-        ..._days,
-      ]..sort()).where(other.days.contains).map(manualDayLabel).join(', ');
+          ? manualSlotsClash(rowStart, start)
+          : rowStart == start;
+      if (!clash) return null;
+      final shared = sharedDays.map(manualDayLabel).join(', ');
       if (sameDriver) {
-        return '${other.driverName} already starts on $shared at '
-            '${other.startLabel}. Leave 6 hours between shifts.';
+        return '$who already starts on $shared at $rowStart. Leave 6 hours '
+            'between shifts.';
       }
-      return 'Plate ${other.truck.plateNumber} is already out on $shared at '
-          '${other.startLabel}.';
+      return 'Plate $plate is already out on $shared at $rowStart.';
+    }
+
+    for (final other in widget.others) {
+      final clash = check(
+        driverId: other.driverId,
+        driverName: other.driverName,
+        truckId: other.truck.id,
+        plate: other.truck.plateNumber,
+        rowDays: other.days.toList(),
+        rowStart: other.startLabel,
+        who: other.driverName,
+      );
+      if (clash != null) return clash;
+    }
+    for (final row in widget.booked) {
+      final clash = check(
+        driverId: row.driverId,
+        driverName: row.driverName,
+        truckId: row.truckId,
+        plate: row.plateNumber,
+        rowDays: row.days,
+        rowStart: row.startTime,
+        who: '${row.driverName} (another manual)',
+      );
+      if (clash != null) return clash;
     }
     return null;
   }
@@ -1735,33 +2220,69 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
       _toast('Pick a truck for this driver.');
       return;
     }
-    if (_routes.isEmpty) {
-      _toast('Pick at least one area.');
-      return;
-    }
     if (_days.isEmpty) {
       _toast('Pick at least one collection day.');
       return;
     }
+    if (_perDay) {
+      for (final day in (_days.toList()..sort())) {
+        final names = _dayRoutes[day] ?? const <String>{};
+        if (names.isEmpty) {
+          _toast('Pick at least one area for ${manualDayLabel(day)}.');
+          return;
+        }
+      }
+    } else if (_routes.isEmpty) {
+      _toast('Pick at least one area.');
+      return;
+    }
+
     final conflict = _conflict;
     if (conflict != null) {
       _toast(conflict);
       return;
     }
+
     // The day or start time may have moved after the areas were picked.
-    final taken = _takenAreas;
-    for (final name in _routes) {
-      final takenBy = taken[name];
-      if (takenBy == null) continue;
-      _toast('$name is already covered by $takenBy. Remove it first.');
-      return;
+    if (_perDay) {
+      for (final day in _days) {
+        final taken = _takenAreasOn({day});
+        for (final name in _dayRoutes[day] ?? const <String>{}) {
+          final takenBy = taken[name];
+          if (takenBy == null) continue;
+          _toast('$name is already covered by $takenBy. Remove it first.');
+          return;
+        }
+      }
+    } else {
+      final taken = _takenAreasOn(_days);
+      for (final name in _routes) {
+        final takenBy = taken[name];
+        if (takenBy == null) continue;
+        _toast('$name is already covered by $takenBy. Remove it first.');
+        return;
+      }
+    }
+
+    final dayRoutes = <int, List<ManualArea>>{};
+    final allNames = <String>{};
+    if (_perDay) {
+      for (final day in _days) {
+        final areas = manualAreasFor(_dayRoutes[day] ?? const <String>{});
+        if (areas.isEmpty) continue;
+        dayRoutes[day] = areas;
+        allNames.addAll(areas.map((area) => area.name));
+      }
+    } else {
+      allNames.addAll(_routes);
     }
 
     final draft = _DraftAssignment(
       driverId: option.uid,
       driverName: option.name,
       truck: truck,
-      routes: manualAreasFor(_routes),
+      routes: manualAreasFor(allNames),
+      dayRoutes: dayRoutes,
       days: {..._days},
       startTime: _start,
       recurrence: _recurrence,
@@ -1967,21 +2488,34 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Submitting the manual pairs this driver with the plate.',
-                      style: TextStyle(
-                        fontSize: 9,
-                        height: 1.4,
-                        color: AppColors.inkMuted,
+                    if (_truckOptions.isEmpty)
+                      const Text(
+                        'Every truck already has a driver. Free a plate on the '
+                        'Fleet screen before adding this driver.',
+                        style: TextStyle(
+                          fontSize: 9,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.error,
+                        ),
+                      )
+                    else
+                      const Text(
+                        'Only trucks without a driver are listed. Submitting '
+                        'the manual pairs this driver with the plate.',
+                        style: TextStyle(
+                          fontSize: 9,
+                          height: 1.4,
+                          color: AppColors.inkMuted,
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 10),
-                    if (_routes.isNotEmpty) ...[
+                    if (_editingRoutes.isNotEmpty) ...[
                       ManualRouteMap(
                         height: 160,
                         groups: [
                           ManualRouteGroup(
-                            areas: manualAreasFor(_routes),
+                            areas: manualAreasFor(_editingRoutes),
                             color: AppColors.forest,
                           ),
                         ],
@@ -2000,6 +2534,66 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                       ),
                       child: Column(
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 6, 6, 0),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.calendar_view_week_rounded,
+                                  size: 14,
+                                  color: AppColors.inkMuted,
+                                ),
+                                const SizedBox(width: 7),
+                                const Expanded(
+                                  child: Text(
+                                    'Different routes per day',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                ),
+                                Transform.scale(
+                                  scale: 0.78,
+                                  child: Switch(
+                                    value: _perDay,
+                                    onChanged: _togglePerDay,
+                                    activeThumbColor: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_perDay && _days.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Wrap(
+                                  spacing: 5,
+                                  runSpacing: 5,
+                                  children: [
+                                    for (final day
+                                        in (_days.toList()..sort()))
+                                      ChoiceChip(
+                                        label: Text(
+                                          manualDayLabel(day),
+                                          style: const TextStyle(fontSize: 9.5),
+                                        ),
+                                        selected: day == _activeDay,
+                                        onSelected: (_) => setState(
+                                          () => _activeDay = day,
+                                        ),
+                                        visualDensity:
+                                            VisualDensity.compact,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           InkWell(
                             onTap: () =>
                                 setState(() => _routesOpen = !_routesOpen),
@@ -2021,9 +2615,21 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                       color: AppColors.inkMuted,
                                     ),
                                   ),
+                                  if (_perDay) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '· ${manualDayLabel(_activeDay)}',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
                                   const Spacer(),
                                   Text(
-                                    '${_routes.length} of $_maxRoutes selected',
+                                    '${_editingRoutes.length} of '
+                                    '$_maxRoutes selected',
                                     style: const TextStyle(
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.w700,
@@ -2041,7 +2647,7 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                               ),
                             ),
                           ),
-                          if (_routes.isNotEmpty)
+                          if (_editingRoutes.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                               child: Align(
@@ -2050,12 +2656,10 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                   spacing: 6,
                                   runSpacing: 6,
                                   children: [
-                                    for (final name in _routes)
+                                    for (final name in _editingRoutes)
                                       _SelectedAreaChip(
                                         name: name,
-                                        onRemove: () => setState(
-                                          () => _routes.remove(name),
-                                        ),
+                                        onRemove: () => _toggleRoute(name),
                                       ),
                                   ],
                                 ),
@@ -2074,7 +2678,8 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                   Expanded(
                                     child: Text(
                                       'Choose up to $_maxRoutes areas for a '
-                                      '${truck?.wheelerLabel ?? 'truck'}',
+                                      '${truck?.wheelerLabel ?? 'truck'}'
+                                      '${_perDay ? ' on ${manualDayLabel(_activeDay)}' : ''}',
                                       style: const TextStyle(
                                         fontSize: 9.5,
                                         color: AppColors.inkMuted,
@@ -2082,7 +2687,7 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                     ),
                                   ),
                                   Text(
-                                    '${_routes.length}/$_maxRoutes',
+                                    '${_editingRoutes.length}/$_maxRoutes',
                                     style: const TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w800,
@@ -2098,12 +2703,14 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                 itemCount: kManualAreas.length,
                                 itemBuilder: (context, index) {
                                   final area = kManualAreas[index];
-                                  final selected = _routes.contains(area.name);
+                                  final selected = _editingRoutes.contains(
+                                    area.name,
+                                  );
                                   final takenBy = taken[area.name];
                                   final disabled =
                                       takenBy != null ||
                                       (!selected &&
-                                          _routes.length >= _maxRoutes);
+                                          _editingRoutes.length >= _maxRoutes);
                                   return _AreaCheckRow(
                                     name: area.name,
                                     selected: selected,
@@ -2114,7 +2721,7 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                                 },
                               ),
                             ),
-                            if (_routes.length >= _maxRoutes)
+                            if (_editingRoutes.length >= _maxRoutes)
                               Container(
                                 width: double.infinity,
                                 color: AppColors.cream,
@@ -2167,9 +2774,7 @@ class _AssignmentSheetState extends State<_AssignmentSheet> {
                           _DayToggle(
                             day: day,
                             selected: _days.contains(day),
-                            onTap: () => setState(() {
-                              if (!_days.remove(day)) _days.add(day);
-                            }),
+                            onTap: () => _toggleDay(day),
                           ),
                           if (day < 7) const SizedBox(width: 4),
                         ],
