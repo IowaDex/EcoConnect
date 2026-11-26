@@ -145,8 +145,8 @@ class MemoAttachmentCard extends StatelessWidget {
     );
   }
 
-  /// Saves the file through the browser, or opens it when the platform has no
-  /// download (mobile), so the action always does something real.
+  /// Saves the file through the browser or the share sheet, and falls back to
+  /// the in-app viewer when the device cannot hand the file to an app.
   Future<void> _download(BuildContext context) async {
     final saved = await saveDataUrl(attachment.dataUrl, attachment.fileName);
     if (!saved && context.mounted) _showViewer(context);

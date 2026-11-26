@@ -594,7 +594,7 @@ class _CreateAssignmentManualScreenState
     } else {
       AppFeedback.error(
         context,
-        'PDF download is only available in the browser build.',
+        'Could not export the PDF. Please try again.',
       );
     }
   }

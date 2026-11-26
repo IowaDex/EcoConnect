@@ -107,7 +107,10 @@ class _MemoDetailScreenState extends State<MemoDetailScreen> {
       if (saved) {
         AppFeedback.success(context, 'Signed copy downloaded');
       } else {
-        AppFeedback.error(context, 'Download is not available on this device.');
+        AppFeedback.error(
+          context,
+          'Could not save this memo. Please try again.',
+        );
       }
     } catch (_) {
       if (mounted) AppFeedback.error(context, 'Could not download this memo.');
