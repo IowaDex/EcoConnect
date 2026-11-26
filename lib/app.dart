@@ -620,6 +620,7 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           builder: (_, state) => CreateAssignmentManualScreen(
             requestId: state.uri.queryParameters['requestId'],
             requestTitle: state.uri.queryParameters['title'] ?? '',
+            editId: state.uri.queryParameters['editId'],
           ),
         ),
         GoRoute(

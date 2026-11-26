@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -9,13 +8,18 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/sos_incident.dart';
+import '../services/sos_alarm.dart';
 import '../services/sos_service.dart';
 
 /// Rings the District Officer's device when a new SOS lands while the app is
-/// open. Background and closed-app delivery is the push notification's job;
+/// running. Background and closed-app delivery is the push notification's job;
 /// this is the in-app alert with the full incident on screen.
 ///
-/// Only real native sound and haptics are used. Nothing here simulates a push.
+/// The siren and the vibration come from [SosAlarm], which keeps the loop
+/// running in the platform audio player and vibrator — not in a widget timer —
+/// so it survives the app being backgrounded or the screen being locked. It
+/// stops the moment the alert is opened or the incident stops being a new
+/// alert, and it can never run twice for the same incident.
 class SosAlertHost extends StatefulWidget {
   const SosAlertHost({super.key, required this.child});
 
@@ -32,7 +36,13 @@ class _SosAlertHostState extends State<SosAlertHost> {
   bool _primed = false;
   bool _showing = false;
   String? _streamKey;
-  Timer? _buzz;
+
+  /// The incident the siren is currently ringing for, if any.
+  String? _alarmId;
+
+  /// An incident this young is still live when the app opens, so an officer
+  /// whose app was closed is still alerted instead of silently missing it.
+  static const Duration _freshWindow = Duration(minutes: 2);
 
   @override
   void didChangeDependencies() {
@@ -46,6 +56,8 @@ class _SosAlertHostState extends State<SosAlertHost> {
     _seen.clear();
     _queue.clear();
     _primed = false;
+    _alarmId = null;
+    unawaited(SosAlarm.instance.stop());
 
     if (user == null || user.role != UserRole.districtOfficer) return;
     _sub = SosService()
@@ -54,11 +66,34 @@ class _SosAlertHostState extends State<SosAlertHost> {
   }
 
   void _onIncidents(List<SosIncident> incidents) {
+    // Somebody else acknowledged or resolved the alert on screen. The dialog
+    // may stay until the officer dismisses it, but the siren must stop.
+    final alarmId = _alarmId;
+    if (alarmId != null) {
+      final current = incidents.where((incident) => incident.id == alarmId);
+      final stillNew =
+          current.isNotEmpty && current.first.status == SosStatus.newAlert;
+      if (!stillNew) {
+        _alarmId = null;
+        unawaited(SosAlarm.instance.stop());
+      }
+    }
+
     if (!_primed) {
       _primed = true;
+      final now = DateTime.now();
+      final live = incidents.where((incident) {
+        if (incident.status != SosStatus.newAlert) return false;
+        final created = incident.createdAt;
+        return created != null && now.difference(created) < _freshWindow;
+      }).toList();
       _seen.addAll(incidents.map((incident) => incident.id));
+      if (live.isEmpty || !mounted) return;
+      _queue.addAll(live);
+      _showNext();
       return;
     }
+
     final fresh = incidents
         .where(
           (incident) =>
@@ -81,20 +116,24 @@ class _SosAlertHostState extends State<SosAlertHost> {
 
   Future<void> _show(SosIncident incident) async {
     _showing = true;
-    _ring();
+    _alarmId = incident.id;
+    unawaited(SosAlarm.instance.start());
     final user = context.read<AuthProvider>().currentUser;
 
     final action = await showDialog<_SosAlertAction>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => _SosAlert(incident: incident),
     );
-    _stopRinging();
+    // Closing the alert always silences the siren. "Later" leaves the record
+    // as a new alert; it is not an acknowledgement and it is not resolved.
+    await SosAlarm.instance.stop();
+    _alarmId = null;
     _showing = false;
     if (!mounted) return;
 
     // Opening the alert is the acknowledgement, so there is no second button
-    // to press. "Later" leaves it as a new alert.
+    // to press.
     if (action == _SosAlertAction.open && user != null) {
       try {
         await SosService().markAcknowledged(
@@ -110,31 +149,10 @@ class _SosAlertHostState extends State<SosAlertHost> {
     }
   }
 
-  void _ring() {
-    SystemSound.play(SystemSoundType.alert);
-    HapticFeedback.heavyImpact();
-    var pulses = 0;
-    _buzz = Timer.periodic(const Duration(milliseconds: 900), (timer) {
-      pulses++;
-      if (pulses >= 5) {
-        timer.cancel();
-        return;
-      }
-      HapticFeedback.heavyImpact();
-      SystemSound.play(SystemSoundType.alert);
-    });
-  }
-
-  void _stopRinging() {
-    _buzz?.cancel();
-    _buzz = null;
-    HapticFeedback.lightImpact();
-  }
-
   @override
   void dispose() {
-    _buzz?.cancel();
     _sub?.cancel();
+    unawaited(SosAlarm.instance.stop());
     super.dispose();
   }
 
@@ -199,6 +217,22 @@ class _SosAlert extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                     color: AppColors.forest,
                   ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop(_SosAlertAction.later),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: AppColors.inkMuted,
+                  ),
+                  tooltip: 'Close',
                 ),
               ],
             ),

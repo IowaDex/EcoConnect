@@ -199,6 +199,27 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     );
   }
 
+  Future<void> _rejectManual() async {
+    final user = context.read<AuthProvider>().currentUser;
+    final reason = await _reasonDialog(
+      title: 'Reject this manual?',
+      label: 'Reason for rejection',
+      hint: 'Iswim sees this reason and can correct the manual.',
+      action: 'Reject manual',
+      danger: true,
+    );
+    if (reason == null || !mounted) return;
+    await _run(
+      () => _service.rejectManual(
+        ticketId: widget.ticketId,
+        reason: reason,
+        byUid: user?.uid ?? '',
+        byName: user?.displayName ?? 'City Hall',
+      ),
+      'Manual rejected — Iswim was told why',
+    );
+  }
+
   Future<void> _resubmit() async {
     final user = context.read<AuthProvider>().currentUser;
     final note = await _reasonDialog(
@@ -365,6 +386,34 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
                         ),
                       ),
                     ),
+                    // A rejected manual is Iswim's to fix: City Hall sent it
+                    // back with a reason, so the roster reopens in the editor
+                    // and goes out again from there.
+                    if (ticket.status == TicketStatus.rejected &&
+                        (ticket.assignmentId ?? '').isNotEmpty &&
+                        user?.role == UserRole.iswim) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 46,
+                        child: FilledButton.icon(
+                          onPressed: () => context.push(
+                            '/assignment-manuals/new'
+                            '?editId=${ticket.assignmentId}',
+                          ),
+                          icon: const Icon(Icons.edit_note_rounded, size: 18),
+                          label: const Text(
+                            'Edit & resubmit manual',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.forest,
+                          ),
+                        ),
+                      ),
+                    ],
                   ] else
                     _Details(ticket: ticket),
                   const SizedBox(height: 14),
@@ -549,6 +598,29 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
                         ),
                       ),
                     ),
+                  ],
+                  if (user?.role == UserRole.cityHall &&
+                      ticket.approvalPending &&
+                      !_busy) ...[
+                    SizedBox(
+                      height: 46,
+                      child: OutlinedButton.icon(
+                        onPressed: _rejectManual,
+                        icon: const Icon(Icons.close_rounded, size: 17),
+                        label: const Text(
+                          'Reject manual',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.error,
+                          side: const BorderSide(color: AppColors.error),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                   ],
                   if (canSign) ...[
                     SizedBox(
@@ -743,9 +815,16 @@ class _ManualStatusStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final approved = manual.isApproved;
+    final rejected = manual.isRejected;
     final position = index >= 0 && total > 1
         ? 'Row ${index + 1} of $total · '
         : '';
+    final accent = rejected
+        ? AppColors.error
+        : approved
+        ? AppColors.primary
+        : AppColors.warning;
+    final reason = (manual.rejectionReason ?? '').trim();
 
     return Container(
       width: double.infinity,
@@ -753,20 +832,19 @@ class _ManualStatusStrip extends StatelessWidget {
       decoration: BoxDecoration(
         color: approved ? AppColors.mint : AppColors.cream,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: approved
-              ? AppColors.sage
-              : AppColors.warning.withValues(alpha: 0.45),
-        ),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            approved
+            rejected
+                ? Icons.report_gmailerrorred_rounded
+                : approved
                 ? Icons.assignment_turned_in_outlined
                 : Icons.assignment_outlined,
             size: 15,
-            color: approved ? AppColors.primary : AppColors.warning,
+            color: accent,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -791,6 +869,18 @@ class _ManualStatusStrip extends StatelessWidget {
                     color: AppColors.inkMuted,
                   ),
                 ),
+                if (rejected && reason.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reason: $reason',
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.error,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

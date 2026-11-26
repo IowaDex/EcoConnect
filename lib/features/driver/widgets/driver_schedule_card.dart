@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
@@ -91,6 +92,17 @@ class _DriverScheduleCardState extends State<DriverScheduleCard> {
   void _goToday() {
     final now = DateTime.now();
     setState(() => _month = DateTime(now.year, now.month));
+  }
+
+  /// Opens the day's roster: the routes this crew drives on [day].
+  void _openDay(DateTime day, List<TripTicket> shifts) {
+    if (shifts.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _DaySheet(day: day, shifts: shifts),
+    );
   }
 
   @override
@@ -217,6 +229,7 @@ class _DriverScheduleCardState extends State<DriverScheduleCard> {
                           shifts.isNotEmpty &&
                           shifts.every((ticket) => !_isConfirmed(ticket)),
                       today: _sameDay(day, today),
+                      onTap: shifts.isEmpty ? null : () => _openDay(day, shifts),
                     );
                   },
                 ),
@@ -317,6 +330,7 @@ class _DayCell extends StatelessWidget {
     required this.shifts,
     required this.pending,
     required this.today,
+    this.onTap,
   });
 
   final DateTime day;
@@ -325,47 +339,217 @@ class _DayCell extends StatelessWidget {
   /// True when every shift on this day still waits for City Hall.
   final bool pending;
   final bool today;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final dotColor = pending ? AppColors.warning : AppColors.primary;
 
-    return Container(
-      height: 34,
-      margin: const EdgeInsets.all(1),
-      decoration: BoxDecoration(
-        color: today ? AppColors.mint : Colors.transparent,
-        borderRadius: BorderRadius.circular(9),
-        border: today
-            ? Border.all(color: AppColors.primary.withValues(alpha: 0.55))
-            : null,
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '${day.day}',
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: today || shifts > 0
-                  ? FontWeight.w800
-                  : FontWeight.w600,
-              color: today ? AppColors.forest : AppColors.textDark,
-            ),
-          ),
-          if (shifts > 0) ...[
-            const SizedBox(height: 2),
-            Container(
-              height: 3.5,
-              width: 3.5 + (shifts.clamp(1, 3) - 1) * 4,
-              decoration: BoxDecoration(
-                color: dotColor,
-                borderRadius: BorderRadius.circular(2),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 34,
+        margin: const EdgeInsets.all(1),
+        decoration: BoxDecoration(
+          color: today ? AppColors.mint : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          border: today
+              ? Border.all(color: AppColors.primary.withValues(alpha: 0.55))
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: today || shifts > 0
+                    ? FontWeight.w800
+                    : FontWeight.w600,
+                color: today ? AppColors.forest : AppColors.textDark,
               ),
             ),
-          ] else
-            const SizedBox(height: 5.5),
-        ],
+            if (shifts > 0) ...[
+              const SizedBox(height: 2),
+              Container(
+                height: 3.5,
+                width: 3.5 + (shifts.clamp(1, 3) - 1) * 4,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ] else
+              const SizedBox(height: 5.5),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The roster behind one calendar cell: every shift on [day] and the areas it
+/// covers. Tapping a shift opens the ticket, where the full manual lives.
+class _DaySheet extends StatelessWidget {
+  const _DaySheet({required this.day, required this.shifts});
+
+  final DateTime day;
+  final List<TripTicket> shifts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                height: 4,
+                width: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.sage,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(
+                  Icons.event_note_rounded,
+                  size: 17,
+                  color: AppColors.forest,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    dateLabel(day),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                ),
+                Text(
+                  shifts.length == 1 ? '1 shift' : '${shifts.length} shifts',
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: shifts.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 9),
+                itemBuilder: (context, index) =>
+                    _ShiftTile(day: day, ticket: shifts[index]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShiftTile extends StatelessWidget {
+  const _ShiftTile({required this.day, required this.ticket});
+
+  final DateTime day;
+  final TripTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final routes = ticket.routesForDay(day.weekday);
+    final pending = ticket.approvalPending;
+
+    return Material(
+      color: AppColors.mint,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          Navigator.of(context).pop();
+          context.push('/tickets/${ticket.id}');
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    ticket.plateNumber,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    ticket.windowStart,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: pending
+                          ? AppColors.warning.withValues(alpha: 0.16)
+                          : AppColors.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      pending ? 'With City Hall' : 'Confirmed',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        color: pending
+                            ? AppColors.warning
+                            : AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                routes.isEmpty ? ticket.routesLabel : routes.join(' · '),
+                style: const TextStyle(
+                  fontSize: 10,
+                  height: 1.4,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

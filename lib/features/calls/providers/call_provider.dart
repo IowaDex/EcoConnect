@@ -1,14 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/utils/app_logger.dart';
 import '../../auth/models/user.dart';
 import '../models/call_log.dart';
 import '../models/call_session.dart';
+import '../services/call_ringer.dart';
 import '../services/call_service.dart';
 
 /// The app-wide voice-call state.
@@ -22,6 +23,10 @@ class CallProvider extends ChangeNotifier {
 
   final CallService _service;
 
+  /// Owns the looping ringtone and vibration. One instance for the whole app,
+  /// so a repeated snapshot cannot start a second ring.
+  final CallRinger _ringer = CallRinger.instance;
+
   String? _uid;
   String _name = '';
   UserRole? _role;
@@ -32,7 +37,11 @@ class CallProvider extends ChangeNotifier {
   bool _isCaller = false;
   bool _peerReady = false;
   bool _muted = false;
-  bool _speaker = false;
+
+  /// The loudspeaker is the default. An earpiece at low volume is the most
+  /// common reason a working call is reported as "no audio"; the in-call
+  /// button still switches to the earpiece.
+  bool _speaker = true;
   bool _offerApplied = false;
   bool _answerApplied = false;
   String? _error;
@@ -58,7 +67,6 @@ class CallProvider extends ChangeNotifier {
   /// Signalling writes run one at a time; see [_applySignals].
   Future<void> _signalQueue = Future<void>.value();
 
-  Timer? _ringTimer;
   Timer? _ringTimeout;
   Timer? _elapsedTimer;
   Timer? _statsTimer;
@@ -66,6 +74,7 @@ class CallProvider extends ChangeNotifier {
   int _ringRetries = 0;
   Timer? _disconnectGrace;
   Timer? _answerTimeout;
+  Timer? _connectTimeout;
 
   CallSession? get incoming => _incoming;
   CallSession? get call => _call;
@@ -195,9 +204,33 @@ class CallProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _onRinging(List<CallSession> calls) {
-    if (_uid == null || _call != null || _incoming != null) return;
+    final uid = _uid;
+    if (uid == null || _call != null) return;
+
+    final incoming = _incoming;
+    if (incoming != null) {
+      // The watch only returns calls that are still ringing, so a missing
+      // entry means it was accepted, declined, cancelled, ended or expired.
+      final still = calls.where(
+        (call) => call.id == incoming.id && call.status == CallStatus.ringing,
+      );
+      if (still.isEmpty) {
+        _clearIncoming();
+        notifyListeners();
+        return;
+      }
+      // The invitation is unchanged; refresh its details and make sure the
+      // ringer is actually running. The OS can stop audio while the app sits
+      // in the background, and this is what brings it back.
+      _incoming = still.first;
+      if (!_ringer.isRinging) _startRinging();
+      notifyListeners();
+      return;
+    }
+
     for (final call in calls) {
-      if (call.fromUid == _uid) continue;
+      if (call.fromUid == uid) continue;
+      if (call.status != CallStatus.ringing) continue;
       if (!_isAddressedToMe(call)) continue;
       _incoming = call;
       _startRinging();
@@ -218,39 +251,59 @@ class CallProvider extends ChangeNotifier {
     return call.toRole == _role?.name;
   }
 
+  /// Starts the looping ringtone and vibration, and arms the missed-call
+  /// timeout. The ringer itself is idempotent, so calling this twice for the
+  /// same invitation never produces two loops.
   void _startRinging() {
-    _stopRinging(silent: false);
-    SystemSound.play(SystemSoundType.alert);
-    HapticFeedback.heavyImpact();
-    _ringTimer = Timer.periodic(const Duration(milliseconds: 1100), (_) {
-      SystemSound.play(SystemSoundType.alert);
-      HapticFeedback.heavyImpact();
-    });
+    unawaited(_ringer.start());
     // A ring that nobody answers stops on its own and leaves a missed-call log.
+    _ringTimeout?.cancel();
     _ringTimeout = Timer(const Duration(seconds: 35), _missIncoming);
   }
 
-  void _stopRinging({bool silent = false}) {
-    _ringTimer?.cancel();
-    _ringTimer = null;
+  Future<void> _stopRinging() async {
     _ringTimeout?.cancel();
     _ringTimeout = null;
-    if (!silent) HapticFeedback.lightImpact();
+    await _ringer.stop();
+  }
+
+  /// Drops the pending invitation and silences the phone. Used when the call
+  /// stops ringing for a reason other than the user acting on it.
+  void _clearIncoming() {
+    unawaited(_stopRinging());
+    _incoming = null;
+  }
+
+  /// Called when the app returns to the foreground. A long spell in the
+  /// background can let the OS stop the audio, so a still-valid invitation
+  /// starts ringing again.
+  void resumeRingingIfNeeded() {
+    if (_incoming == null || _ringer.isRinging) return;
+    _startRinging();
   }
 
   Future<void> acceptIncoming() async {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null || uid == null) return;
-    _stopRinging();
+    // The ringtone has to be silent before the voice session opens, otherwise
+    // the two audio routes fight over the speaker.
+    await _stopRinging();
+    _incoming = null;
     try {
       final accepted = await _service.accept(
         incoming.id,
         uid: uid,
         name: _name,
       );
-      if (accepted == null || accepted.status != CallStatus.active) {
+      // Two officers on the same desk can tap Answer at the same time. Only
+      // the one the transaction recorded as the callee may join, otherwise a
+      // second answer would overwrite the first one's audio.
+      if (accepted == null ||
+          accepted.status != CallStatus.active ||
+          accepted.calleeId != uid) {
         _incoming = null;
+        _notice = 'Another officer already answered this call.';
         notifyListeners();
         return;
       }
@@ -271,8 +324,7 @@ class CallProvider extends ChangeNotifier {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null || uid == null) return;
-    _stopRinging();
-    _incoming = null;
+    _clearIncoming();
     notifyListeners();
     try {
       await _service.decline(incoming.id, uid: uid, name: _name);
@@ -286,8 +338,7 @@ class CallProvider extends ChangeNotifier {
     final incoming = _incoming;
     final uid = _uid;
     if (incoming == null) return;
-    _stopRinging(silent: true);
-    _incoming = null;
+    _clearIncoming();
     notifyListeners();
     try {
       await _service.markMissed(incoming.id, uid: uid, name: _name);
@@ -399,6 +450,14 @@ class CallProvider extends ChangeNotifier {
     for (final track in tracks) {
       track.enabled = !_muted;
     }
+    // Disabling the track silences the sender, but on some Android devices
+    // the audio device module keeps capturing. Muting it as well makes the
+    // button behave the way the user expects.
+    try {
+      await Helper.setMicrophoneMuted(_muted);
+    } catch (_) {
+      // Not exposed on every platform; the track flag still applies.
+    }
     notifyListeners();
   }
 
@@ -436,8 +495,7 @@ class CallProvider extends ChangeNotifier {
     if (_incoming != null && _incoming!.id == updated.id) {
       if (updated.status != CallStatus.ringing &&
           updated.calleeId != _uid) {
-        _stopRinging(silent: true);
-        _incoming = null;
+        _clearIncoming();
         notifyListeners();
       }
       return;
@@ -453,6 +511,7 @@ class CallProvider extends ChangeNotifier {
       if (_elapsedTimer == null) {
         _startElapsedTimer(updated.acceptedAt);
       }
+      _armConnectTimeout(updated.id);
       await _applySignals(updated);
       notifyListeners();
       return;
@@ -482,6 +541,27 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Asks for the microphone before WebRTC opens it.
+  ///
+  /// flutter_webrtc requests RECORD_AUDIO itself, but on Android that request
+  /// runs through a headless fragment which can come back with empty results
+  /// and re-ask forever. `getUserMedia` then stays pending, the call never
+  /// sends an answer, and the other desk waits on a call that looks live.
+  /// Asking here first turns the plugin's request into a plain check.
+  Future<void> _ensureMicrophone() async {
+    if (kIsWeb) return;
+    final current = await Permission.microphone.status;
+    if (current.isGranted) return;
+    final asked = await Permission.microphone.request();
+    if (asked.isGranted) return;
+    throw _CallSetupException(
+      asked.isPermanentlyDenied
+          ? 'Microphone access is blocked. Allow the microphone for '
+                'EcoConnect in the phone settings, then call again.'
+          : 'Microphone access is needed to make a call.',
+    );
+  }
+
   Future<void> _preparePeer(CallSession call, {required bool caller}) async {
     if (_peerReady) {
       await _applySignals(call);
@@ -492,23 +572,40 @@ class CallProvider extends ChangeNotifier {
       // opens. Without it Android stays in media mode and iOS never activates
       // the record route, which is a call that "connects" in silence.
       await _configureAudioSession();
-      final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-        },
-        'video': false,
-      });
+      await _ensureMicrophone();
+      // A permission prompt that is never answered must not leave the call
+      // half open: the other desk would wait for an answer that never comes.
+      final stream = await navigator.mediaDevices
+          .getUserMedia({
+            'audio': {
+              'echoCancellation': true,
+              'noiseSuppression': true,
+              'autoGainControl': true,
+            },
+            'video': false,
+          })
+          .timeout(const Duration(seconds: 20));
+      final audioTracks = stream.getAudioTracks();
+      if (audioTracks.isEmpty) {
+        await stream.dispose();
+        throw const _CallSetupException(
+          'The microphone returned no audio. Check that no other app is using '
+          'it and try again.',
+        );
+      }
       _localStream = stream;
       final pc = await createPeerConnection({
         'iceServers': _iceServers(),
         'sdpSemantics': 'unified-plan',
       });
       _pc = pc;
-      for (final track in stream.getAudioTracks()) {
+      for (final track in audioTracks) {
         await pc.addTrack(track, stream);
       }
+      AppLogger.info(
+        'Call ${call.id}: ${audioTracks.length} local audio track(s), '
+        '${_iceServers().length} ICE server group(s)',
+      );
       // The remote audio only becomes audible once its track is attached to a
       // media element. Mobile plays it natively too, but the web build stays
       // silent without this.
@@ -539,9 +636,16 @@ class CallProvider extends ChangeNotifier {
       // that audio is really arriving over it.
       pc.onConnectionState = (state) {
         _connection = state;
+        AppLogger.info('Call ${call.id}: peer state ${state.name}');
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _disconnectGrace?.cancel();
           _disconnectGrace = null;
+          _connectTimeout?.cancel();
+          _connectTimeout = null;
+          // Android re-routes audio when the session starts, so the chosen
+          // output and the voice session are applied again here rather than
+          // only before the call.
+          unawaited(_ensureCallAudioRoute());
           _startAudioProbe();
         }
         if (state ==
@@ -589,12 +693,18 @@ class CallProvider extends ChangeNotifier {
         }
         notifyListeners();
       };
+      // Android can report the ICE state before the aggregate one, and some
+      // builds only report the ICE state. The probe is started from either so
+      // a working call is never stuck on "Connecting audio".
+      pc.onIceConnectionState = (state) {
+        if (state == RTCIceConnectionState.RTCIceConnectionStateConnected &&
+            _connection !=
+                RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _startAudioProbe();
+        }
+      };
       _peerReady = true;
-      try {
-        await Helper.setSpeakerphoneOn(false);
-      } catch (_) {
-        // Not available on every platform; the default route is fine.
-      }
+      await _ensureCallAudioRoute();
       if (caller) {
         final offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -606,6 +716,25 @@ class CallProvider extends ChangeNotifier {
       await _applySignals(call);
     } catch (error) {
       await _cancelAfterMediaFailure(call, error);
+    }
+  }
+
+  /// Re-asserts the voice-call session and the chosen output route.
+  ///
+  /// Android only routes a communication session once it exists, and some
+  /// devices ignore the speaker/earpiece request made before the peer
+  /// connection was up. Calling this again on `connected` is what makes the
+  /// remote voice audible through the loudspeaker.
+  Future<void> _ensureCallAudioRoute() async {
+    try {
+      await Helper.ensureAudioSession();
+    } catch (_) {
+      // Not exposed on every platform.
+    }
+    try {
+      await Helper.setSpeakerphoneOn(_speaker);
+    } catch (_) {
+      // Desktop and web route audio through the system default.
     }
   }
 
@@ -706,6 +835,24 @@ class CallProvider extends ChangeNotifier {
     return _signalQueue;
   }
 
+  /// Reads the real signalling state from the platform.
+  ///
+  /// `pc.signalingState` is only a cache the plugin fills from change events.
+  /// A fresh peer connection has never changed state, so on Android and iOS
+  /// that getter returns `null` — and `null == stable` is false, which silently
+  /// skipped the answer: the callee accepted, gathered no candidates and never
+  /// wrote one, so both phones sat on "Connecting audio" forever. Asking the
+  /// channel returns the true state on every platform.
+  Future<RTCSignalingState> _readSignalingState(RTCPeerConnection pc) async {
+    try {
+      final state = await pc.getSignalingState();
+      if (state != null) return state;
+    } catch (_) {
+      // A platform that does not answer the call falls back to the cache.
+    }
+    return pc.signalingState ?? RTCSignalingState.RTCSignalingStateStable;
+  }
+
   Future<void> _applySignalsNow(CallSession call) async {
     final pc = _pc;
     // `_pc` is assigned before the microphone track is added, so a snapshot
@@ -713,6 +860,7 @@ class CallProvider extends ChangeNotifier {
     // connection that has no description yet. `_preparePeer` replays the latest
     // snapshot once it is finished, so nothing is lost by waiting.
     if (pc == null || !_peerReady) return;
+    final signaling = await _readSignalingState(pc);
     // The caller of this method may be holding a snapshot from before the
     // peer connection existed, so the live session is the better source: an
     // answer that arrived while the microphone was still opening would
@@ -726,8 +874,7 @@ class CallProvider extends ChangeNotifier {
       if (!_isCaller &&
           !_offerApplied &&
           session.offer != null &&
-          pc.signalingState ==
-              RTCSignalingState.RTCSignalingStateStable) {
+          signaling == RTCSignalingState.RTCSignalingStateStable) {
         final offer = session.offer!;
         final sdp = offer['sdp'] as String?;
         final type = offer['type'] as String?;
@@ -735,7 +882,7 @@ class CallProvider extends ChangeNotifier {
           await pc.setRemoteDescription(
             RTCSessionDescription(sdp, type ?? 'offer'),
           );
-          // Only a description that the browser accepted counts as applied; a
+          // Only a description the browser accepted counts as applied; a
           // failure here must leave the flag down so the next snapshot retries.
           _offerApplied = true;
           final answer = await pc.createAnswer();
@@ -750,7 +897,7 @@ class CallProvider extends ChangeNotifier {
       if (_isCaller &&
           !_answerApplied &&
           session.answer != null &&
-          pc.signalingState ==
+          signaling ==
               RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
         final answer = session.answer!;
         final sdp = answer['sdp'] as String?;
@@ -796,6 +943,10 @@ class CallProvider extends ChangeNotifier {
           }
         }
       }
+      AppLogger.info(
+        'Call ${session.id}: ${_remoteCandidates.length} remote candidate(s), '
+        'signalling ${pc.signalingState?.name}',
+      );
     } catch (error) {
       final current = _call;
       final uid = _uid;
@@ -820,9 +971,10 @@ class CallProvider extends ChangeNotifier {
     Object error,
   ) async {
     AppLogger.error('Call media failed', error);
-    _error =
-        'Microphone unavailable. Allow microphone access for EcoConnect and '
-        'try the call again.';
+    _error = error is _CallSetupException
+        ? error.message
+        : 'Microphone unavailable. Allow microphone access for EcoConnect and '
+              'try the call again.';
     try {
       await _service.markFailed(
         call.id,
@@ -840,8 +992,14 @@ class CallProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   /// STUN finds the public address; TURN relays the audio when both phones sit
-  /// behind a strict NAT. TURN is optional and read from `.env`, so the app
-  /// still works with STUN alone during development.
+  /// behind a strict NAT.
+  ///
+  /// Two phones on different networks — one on Wi-Fi, one on mobile data — are
+  /// almost always behind carrier-grade NAT, where STUN alone cannot open a
+  /// path. That is why a call can reach `active` in Firestore and still carry
+  /// no voice. A free public TURN relay is used as the fallback so the app
+  /// works out of the box without a paid service; set `TURN_URL`,
+  /// `TURN_USERNAME` and `TURN_CREDENTIAL` in `.env` to use your own.
   static List<Map<String, dynamic>> _iceServers() {
     final servers = <Map<String, dynamic>>[
       {
@@ -852,19 +1010,65 @@ class CallProvider extends ChangeNotifier {
       },
     ];
     final url = dotenv.env['TURN_URL']?.trim() ?? '';
-    if (url.isEmpty) return servers;
-    final username = dotenv.env['TURN_USERNAME']?.trim() ?? '';
-    final credential = dotenv.env['TURN_CREDENTIAL']?.trim() ?? '';
+    if (url.isNotEmpty) {
+      final username = dotenv.env['TURN_USERNAME']?.trim() ?? '';
+      final credential = dotenv.env['TURN_CREDENTIAL']?.trim() ?? '';
+      servers.add({
+        'urls': url
+            .split(',')
+            .map((entry) => entry.trim())
+            .where((entry) => entry.isNotEmpty)
+            .toList(growable: false),
+        if (username.isNotEmpty) 'username': username,
+        if (credential.isNotEmpty) 'credential': credential,
+      });
+      return servers;
+    }
     servers.add({
-      'urls': url
-          .split(',')
-          .map((entry) => entry.trim())
-          .where((entry) => entry.isNotEmpty)
-          .toList(growable: false),
-      if (username.isNotEmpty) 'username': username,
-      if (credential.isNotEmpty) 'credential': credential,
+      'urls': [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      'username': 'openrelayproject',
+      'credential': 'openrelayproject',
     });
     return servers;
+  }
+
+  /// Closes a call that never finds a media path.
+  ///
+  /// Without this, a call whose ICE never succeeds sits on "Connecting
+  /// audio…" with both phones silent and no explanation. The message names
+  /// the likely cause so the officer can act instead of waiting.
+  void _armConnectTimeout(String id) {
+    if (_connection == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+      return;
+    }
+    _connectTimeout?.cancel();
+    _connectTimeout = Timer(const Duration(seconds: 25), () {
+      final current = _call;
+      if (current == null || current.id != id) return;
+      if (_connection ==
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        return;
+      }
+      final uid = _uid;
+      if (uid != null) {
+        _service
+            .markFailed(
+              current.id,
+              viewerUid: uid,
+              reason: 'No voice path between the two phones.',
+            )
+            .catchError((Object _) {});
+      }
+      _fail(
+        'The two phones could not find a voice path. One of them is probably '
+        'on mobile data behind a strict network — try again on Wi-Fi, or set '
+        'TURN_URL in .env.',
+      );
+    });
   }
 
   void _startElapsedTimer(DateTime? acceptedAt) {
@@ -882,7 +1086,9 @@ class CallProvider extends ChangeNotifier {
   Future<void> _clearCall({bool notify = true}) async {
     _callSub?.cancel();
     _callSub = null;
-    _stopRinging(silent: true);
+    // Silence the ring before the peer connection is torn down, so no loop
+    // survives the end of the call.
+    await _stopRinging();
     _elapsedTimer?.cancel();
     _elapsedTimer = null;
     _statsTimer?.cancel();
@@ -891,6 +1097,8 @@ class CallProvider extends ChangeNotifier {
     _answerTimeout = null;
     _disconnectGrace?.cancel();
     _disconnectGrace = null;
+    _connectTimeout?.cancel();
+    _connectTimeout = null;
     _elapsedSeconds = 0;
     _call = null;
     _isCaller = false;
@@ -898,7 +1106,7 @@ class CallProvider extends ChangeNotifier {
     _offerApplied = false;
     _answerApplied = false;
     _muted = false;
-    _speaker = false;
+    _speaker = true;
     _audioFlowing = false;
     _statsUnavailable = false;
     _connection = RTCPeerConnectionState.RTCPeerConnectionStateNew;
@@ -924,6 +1132,13 @@ class CallProvider extends ChangeNotifier {
       renderer?.srcObject = null;
       await renderer?.dispose();
     } catch (_) {}
+    // Hands the voice session back to the phone so the next app (or the next
+    // call) starts from a clean audio route.
+    try {
+      await Helper.clearAndroidCommunicationDevice();
+    } catch (_) {
+      // Android only; other platforms ignore it.
+    }
     if (notify) notifyListeners();
   }
 
@@ -949,7 +1164,18 @@ class CallProvider extends ChangeNotifier {
     _statsTimer?.cancel();
     _answerTimeout?.cancel();
     _disconnectGrace?.cancel();
+    _connectTimeout?.cancel();
     _clearCall(notify: false);
     super.dispose();
   }
+}
+
+/// A media problem the user can act on, with the words to act on it.
+class _CallSetupException implements Exception {
+  const _CallSetupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

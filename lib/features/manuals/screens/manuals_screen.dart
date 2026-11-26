@@ -21,6 +21,7 @@ import '../models/manual.dart';
 import '../services/assignment_manual_service.dart';
 import '../services/manual_pdf.dart';
 import '../services/manual_service.dart';
+import '../widgets/manual_preview_sheet.dart';
 
 /// Manual library. Iswim publishes revisions here; City Hall reads and
 /// acknowledges them. No other role has access.
@@ -39,20 +40,22 @@ class ManualsScreen extends StatefulWidget {
 /// Which of the two libraries is open.
 enum _ManualTab { library, collection }
 
-/// The three states a collection manual can be in on this desk.
-enum _CollectionFilter { all, waiting, approved }
+/// The states a collection manual can be in on this desk.
+enum _CollectionFilter { all, waiting, approved, rejected }
 
 extension on _CollectionFilter {
   String get label => switch (this) {
     _CollectionFilter.all => 'All',
     _CollectionFilter.waiting => 'Waiting',
     _CollectionFilter.approved => 'Approved',
+    _CollectionFilter.rejected => 'Rejected',
   };
 
   bool matches(AssignmentManual manual) => switch (this) {
     _CollectionFilter.all => true,
-    _CollectionFilter.waiting => !manual.isApproved,
+    _CollectionFilter.waiting => manual.awaitsApproval,
     _CollectionFilter.approved => manual.isApproved,
+    _CollectionFilter.rejected => manual.isRejected,
   };
 }
 
@@ -322,6 +325,11 @@ class _ManualsScreenState extends State<ManualsScreen> {
       return const EcoLoadingView(label: 'Loading collection manuals');
     }
 
+    // Only Iswim rewrites a manual City Hall sent back; the desk that approved
+    // it opens the same card read-only.
+    final canEdit =
+        context.read<AuthProvider>().currentUser?.role == UserRole.iswim;
+
     // Pending first: that is the row the desk has to act on. Within each group
     // the newest change leads.
     final ordered = [...all]
@@ -397,7 +405,8 @@ class _ManualsScreenState extends State<ManualsScreen> {
               onAction: _clear,
             ),
       itemCount: visible.length,
-      itemBuilder: (context, i) => _CollectionManualCard(manual: visible[i]),
+      itemBuilder: (context, i) =>
+          _CollectionManualCard(manual: visible[i], canEdit: canEdit),
       pagination: items.isEmpty
           ? null
           : EcoPaginationBar(
@@ -568,19 +577,31 @@ class _ManualCard extends StatelessWidget {
 
 /// One collection manual: the schedule a crew runs, not the PDF above it.
 class _CollectionManualCard extends StatelessWidget {
-  const _CollectionManualCard({required this.manual});
+  const _CollectionManualCard({required this.manual, this.canEdit = false});
 
   final AssignmentManual manual;
 
+  /// Only Iswim rewrites a manual City Hall sent back.
+  final bool canEdit;
+
   @override
   Widget build(BuildContext context) {
-    final pending = !manual.isApproved;
+    final rejected = manual.isRejected;
+    final pending = manual.awaitsApproval;
+    final railColor = rejected
+        ? AppColors.error
+        : pending
+        ? AppColors.warning
+        : AppColors.primary;
     final ticketId = manual.ticketId;
+    final reason = (manual.rejectionReason ?? '').trim();
 
     return DeskRailCard(
-      railColor: pending ? AppColors.warning : AppColors.primary,
+      railColor: railColor,
       padding: const EdgeInsets.fromLTRB(16, 12, 13, 12),
-      onTap: ticketId == null || ticketId.isEmpty
+      onTap: rejected
+          ? () => _preview(context)
+          : ticketId == null || ticketId.isEmpty
           ? null
           : () => context.push('/tickets/$ticketId'),
       child: Column(
@@ -616,11 +637,34 @@ class _CollectionManualCard extends StatelessWidget {
               const SizedBox(width: 6),
               StatusBadge(
                 label: manual.status.label,
-                color: pending ? AppColors.warning : AppColors.primary,
+                color: railColor,
                 compact: true,
               ),
             ],
           ),
+          if (rejected && reason.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.error.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Text(
+                'Reason: $reason',
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: EcoSpace.xs + 1),
           // Every driver on the roster, not just the first one.
           for (final row in manual.allAssignments)
@@ -687,6 +731,23 @@ class _CollectionManualCard extends StatelessWidget {
               SizedBox(
                 height: 30,
                 child: TextButton.icon(
+                  onPressed: () => _preview(context),
+                  icon: const Icon(Icons.visibility_outlined, size: 14),
+                  label: const Text(
+                    'Preview',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.forest,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 30,
+                child: TextButton.icon(
                   onPressed: () => _export(context),
                   icon: const Icon(Icons.picture_as_pdf_outlined, size: 14),
                   label: const Text(
@@ -703,8 +764,46 @@ class _CollectionManualCard extends StatelessWidget {
               ),
             ],
           ),
+          if (rejected && canEdit) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 38,
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => context.push(
+                  '/assignment-manuals/new?editId=${manual.id}',
+                ),
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text(
+                  'Edit & resubmit',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.forest,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Future<void> _preview(BuildContext context) {
+    return ManualPreviewSheet.show(
+      context,
+      title: manual.title,
+      assignments: manual.allAssignments,
+      statusLabel: manual.status.label,
+      statusColor: manual.isRejected
+          ? AppColors.error
+          : manual.isApproved
+          ? AppColors.primary
+          : AppColors.warning,
+      reason: manual.rejectionReason,
+      note: manual.isRejected
+          ? 'Edit the roster below and submit it again for approval.'
+          : null,
     );
   }
 

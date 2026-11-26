@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/design/eco_tokens.dart';
@@ -87,6 +88,8 @@ class _DistrictOfficersScreenState extends State<DistrictOfficersScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
             children: [
+              _SosShortcut(onTap: () => context.push('/sos')),
+              const SizedBox(height: 10),
               if (officers.any((officer) => officer.isActive))
                 _ContactButton(
                   onTap: () => _contactOfficer(context, officers),
@@ -1033,6 +1036,32 @@ class _Action extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SosShortcut extends StatelessWidget {
+  const _SosShortcut({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.danger,
+          side: const BorderSide(color: AppColors.danger),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        icon: const Icon(Icons.notifications_active_outlined, size: 18),
+        label: const Text('SOS incidents'),
       ),
     );
   }
