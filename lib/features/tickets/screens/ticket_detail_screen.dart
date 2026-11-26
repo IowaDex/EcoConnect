@@ -91,11 +91,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     final saved = await exportManualPdfFromTicket(ticket);
     if (!mounted) return;
     if (saved) {
-      AppFeedback.success(context, 'Manual PDF generated');
+      AppFeedback.success(context, 'Manual PDF saved');
     } else {
       AppFeedback.error(
         context,
-        'PDF download is only available in the browser build.',
+        'PDF was not saved. Pick a folder and try again.',
       );
     }
   }

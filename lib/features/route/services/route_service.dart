@@ -483,6 +483,10 @@ class RouteService {
   ///  * the plan must exist, belong to the driver, be scheduled and be today;
   ///  * the driver must not already have a live route;
   ///  * the shift window is enforced unless [overrideWindow] is passed.
+  ///
+  /// [zone] labels the live route for residents. It defaults to the plan's
+  /// zone; the crew passes the ticket's areas so the start alert reaches the
+  /// right subdivision even when the plan carries a generic zone.
   Future<void> activateRoute({
     required String driverId,
     required String driverName,
@@ -496,6 +500,7 @@ class RouteService {
     String? crewRole,
     double? geofenceLat,
     double? geofenceLng,
+    String? zone,
   }) async {
     final routeRef = _routes.doc(driverId);
     final planRef = _plans.doc(planId);
@@ -566,11 +571,12 @@ class RouteService {
         }
       }
 
+      final routeZone = (zone ?? '').trim();
       final sessionId = '${driverId}_${now.millisecondsSinceEpoch}';
       tx.set(routeRef, {
         'driverName': driverName,
         'phone': phone,
-        'zone': plan.zone,
+        'zone': routeZone.isEmpty ? plan.zone : routeZone,
         'status': RouteStatus.inTransit.name,
         'lat': latitude,
         'lng': longitude,
@@ -604,6 +610,87 @@ class RouteService {
         'activatedAt': FieldValue.serverTimestamp(),
       });
     });
+  }
+
+  /// Starts a duty for [driverId] from the guide's own account.
+  ///
+  /// A guide holds the device for a driver who has no phone. There is no plan
+  /// to activate — the approved schedule already describes the run — so this
+  /// writes the live route directly, stamped with the duty ticket and the
+  /// guide who acted. The ticket, and with it the three signatures, still
+  /// belongs to the driver.
+  Future<void> startCrewRun({
+    required String driverId,
+    required String driverName,
+    required String ticketId,
+    required String assignmentId,
+    required String actedByUid,
+    required String actedByName,
+    String? phone,
+    double? latitude,
+    double? longitude,
+    String? truckPlate,
+    int? truckWheelers,
+    String? zone,
+    double? geofenceLat,
+    double? geofenceLng,
+  }) async {
+    final routeRef = _routes.doc(driverId);
+    final snap = await routeRef.get();
+    final current = snap.data();
+    if (current != null) {
+      final status = RouteStatusX.fromName(current['status'] as String?);
+      final running =
+          status == RouteStatus.inTransit ||
+          status == RouteStatus.delayed ||
+          status == RouteStatus.paused;
+      if (running && !CollectionRoute.isStaleData(current)) {
+        throw const RouteActivationException(
+          'already-running',
+          'This truck already has a route running. End it before starting another.',
+        );
+      }
+    }
+
+    final now = DateTime.now();
+    final sessionId = '${driverId}_${now.millisecondsSinceEpoch}';
+    final routeZone = (zone ?? '').trim();
+    await routeRef.set({
+      'driverName': driverName,
+      'phone': phone,
+      'zone': routeZone.isEmpty ? null : routeZone,
+      'status': RouteStatus.inTransit.name,
+      'lat': latitude,
+      'lng': longitude,
+      'etaMinutes': 12,
+      // No plan: the guide runs the schedule, not a staff assignment.
+      'planId': null,
+      'sessionId': sessionId,
+      'startedAt': FieldValue.serverTimestamp(),
+      'pausedAt': null,
+      'resumedAt': null,
+      'completedAt': null,
+      'pauseReason': null,
+      'locationState': 'ok',
+      'lastKnownLat': latitude,
+      'lastKnownLng': longitude,
+      'locationUpdatedAt': FieldValue.serverTimestamp(),
+      if (truckPlate != null) 'truckPlate': truckPlate,
+      if (truckWheelers != null) 'truckWheelers': truckWheelers,
+      'crewRole': 'guide',
+      'geofenceLat': geofenceLat ?? latitude,
+      'geofenceLng': geofenceLng ?? longitude,
+      'geofenceRadius': 100,
+      'geofenceState': 'ok',
+      'connectionState': 'ok',
+      // The paperwork this run fills in, and who actually held the device.
+      'ticketId': ticketId,
+      'assignmentId': assignmentId,
+      'actedByUid': actedByUid,
+      'actedByName': actedByName,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastSeenAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// Heartbeat: called every 15s while the route is live. It must not write

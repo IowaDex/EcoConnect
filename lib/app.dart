@@ -22,7 +22,6 @@ import 'features/ai/screens/ask_ai_screen.dart';
 import 'features/community/screens/community_screen.dart';
 import 'features/community/screens/post_detail_screen.dart';
 import 'features/staff/screens/incident_desk_screen.dart';
-import 'features/staff/screens/route_plans_screen.dart';
 import 'features/staff/screens/verification_screen.dart';
 import 'features/staff/screens/collection_requests_screen.dart';
 import 'features/staff/screens/waste_validation_screen.dart';
@@ -129,8 +128,6 @@ const _iswimRoutes = {
   '/tickets',
   '/trucks',
   '/fleet',
-  // Iswim dispatches: the run assignment is theirs, not the barangay's.
-  '/routes',
   '/delays',
   '/delays/new',
   '/memos',
@@ -472,7 +469,9 @@ class _EcoConnectAppState extends State<EcoConnectApp> {
           path: '/incidents',
           builder: (_, __) => const IncidentDeskScreen(),
         ),
-        GoRoute(path: '/routes', builder: (_, __) => const RoutePlansScreen()),
+        // Assignments are made from the collection manual now; an old link to
+        // the retired assign-route desk lands on the manual schedules.
+        GoRoute(path: '/routes', redirect: (_, __) => '/assignments'),
         // The recycling station and its points wallet are gone; an old
         // bookmark lands on the dashboard.
         GoRoute(path: '/dropoff', redirect: (_, __) => '/admin-dashboard'),

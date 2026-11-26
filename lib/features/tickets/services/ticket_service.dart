@@ -236,6 +236,123 @@ class TicketService {
     return TripTicket.fromDoc(ref.id, snap.data()!)!;
   }
 
+  /// Opens the ticket for one duty on an approved schedule.
+  ///
+  /// A manual is the schedule, not the paperwork for a single run: the same
+  /// ticket would have to be signed once and then reused forever. Every duty
+  /// therefore gets its own run ticket, copied from the schedule Iswim issued
+  /// and City Hall approved, so the three signatures are recorded per run.
+  ///
+  /// The crew writes this ticket, which is why the code is derived from the
+  /// schedule instead of the Iswim counter (the counter is Iswim's to move).
+  ///
+  /// The ticket always belongs to the schedule's driver, even when a guide
+  /// pressed Start on the driver's behalf: the paper trail follows the driver,
+  /// and [byUid]/[byName] are recorded as the crew who actually acted.
+  ///
+  /// A duty that was already opened today is returned as-is, so a retried
+  /// start (or a guide taking over mid-shift) never mints a second ticket for
+  /// the same duty.
+  Future<TripTicket> createDutyRun({
+    required TripTicket assignment,
+    required String byUid,
+    required String byName,
+  }) async {
+    final now = DateTime.now();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final day = '${now.year}-${two(now.month)}-${two(now.day)}';
+    final stamp =
+        '${now.year}${two(now.month)}${two(now.day)}'
+        '${two(now.hour)}${two(now.minute)}${two(now.second)}';
+
+    final driverId = assignment.driverId.isEmpty ? byUid : assignment.driverId;
+    final driverName = assignment.driverName.isEmpty
+        ? byName
+        : assignment.driverName;
+
+    final existing = await _openDutyRun(assignment.id, driverId, day);
+    if (existing != null) return existing;
+
+    final draft = TripTicket(
+      id: '',
+      code: '${assignment.code}-$stamp',
+      wave: 1,
+      truckId: assignment.truckId,
+      plateNumber: assignment.plateNumber,
+      wheelers: assignment.wheelers,
+      driverId: driverId,
+      driverName: driverName,
+      route: assignment.routesLabel,
+      zone: assignment.routesLabel,
+      date: day,
+      windowStart: assignment.windowStart,
+      windowEnd: '',
+      notes: 'Duty run from approved schedule ${assignment.code}',
+      status: TicketStatus.issued,
+      createdBy: byUid,
+      kind: TicketKind.run,
+      assignmentId: assignment.id,
+    );
+
+    final data = draft.toMap();
+    // Who pressed Start. A driver acting for himself is the same person; a
+    // guide is recorded here so the desks can see who held the device.
+    data['actedByUid'] = byUid;
+    data['actedByName'] = byName;
+    // The schedule was issued by Iswim; this ticket is its copy for today, so
+    // the first step keeps Iswim as the issuer.
+    data['history'] = [
+      TicketHistoryEntry(
+        status: TicketStatus.issued,
+        byUid: byUid,
+        byName: 'Iswim',
+        note: byUid == driverId
+            ? 'Duty ticket opened from schedule ${assignment.code}'
+            : 'Duty ticket opened from schedule ${assignment.code} by '
+                  '$byName (truck guide)',
+      ).toMap(),
+    ];
+
+    final ref = await _col.add(data);
+    final snap = await ref.get();
+    return TripTicket.fromDoc(ref.id, snap.data()!)!;
+  }
+
+  /// Today's duty ticket for [assignmentId], if the crew already opened one.
+  ///
+  /// Only the states a start can still use count: a submitted or signed duty
+  /// is yesterday's paperwork, not the one to reuse.
+  Future<TripTicket?> _openDutyRun(
+    String assignmentId,
+    String driverId,
+    String day,
+  ) async {
+    try {
+      final snap = await _col
+          .where('driverId', isEqualTo: driverId)
+          .limit(50)
+          .get();
+      for (final doc in snap.docs) {
+        final ticket = TripTicket.fromDoc(doc.id, doc.data());
+        if (ticket == null ||
+            ticket.isAssignment ||
+            ticket.assignmentId != assignmentId ||
+            ticket.date != day) {
+          continue;
+        }
+        if (ticket.status == TicketStatus.issued ||
+            ticket.status == TicketStatus.accepted ||
+            ticket.status == TicketStatus.running) {
+          return ticket;
+        }
+      }
+    } catch (_) {
+      // A failed lookup must not block the start: a fresh ticket is created
+      // and the rules still allow only one open duty per schedule.
+    }
+    return null;
+  }
+
   /// The driver marks a City Hall-approved manual run as done. There is no end
   /// time on a manual, so this is the only completion signal.
   Future<void> completeAssignment(
@@ -560,6 +677,9 @@ class TicketService {
         type: AppNotificationType.route,
         data: {'ticketId': id, 'kind': 'manualApprovedSchedule'},
         dedupeKey: 'manual_ticket_${id}_approved_residents',
+        // Only the residents living on this schedule's areas hear about it.
+        // Every other village keeps its own schedule.
+        onlyAreas: ticket.areaNames,
       );
       // The driver only hears about the run once City Hall has signed it.
       if (ticket.driverId.isNotEmpty) {

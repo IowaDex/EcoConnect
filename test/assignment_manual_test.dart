@@ -421,4 +421,94 @@ void main() {
       expect(pdfDataUrl(bytes), startsWith('data:application/pdf;base64,'));
     });
   });
+
+  group('next duty on the dashboard', () {
+    TripTicket manual({
+      ManualRecurrence recurrence = ManualRecurrence.weekly,
+      DateTime? createdAt,
+    }) => TripTicket(
+      id: 'tt1',
+      code: 'TT-2026-0001',
+      wave: 1,
+      truckId: 'truck-01',
+      plateNumber: 'SK 4821',
+      wheelers: 6,
+      driverId: 'd1',
+      driverName: 'Arwin Decena',
+      route: '',
+      zone: '',
+      date: '',
+      windowStart: '06:00',
+      windowEnd: '',
+      notes: '',
+      status: TicketStatus.valid,
+      createdBy: 'i1',
+      kind: TicketKind.assignment,
+      routes: const ['Filinvest 1'],
+      days: const [1, 3],
+      recurrence: recurrence,
+      createdAt: createdAt,
+    );
+
+    test('the next duty is the next listed day, not today', () {
+      final ticket = manual();
+      // Monday 2026-11-30 is a duty day; the day after looks to Wednesday.
+      expect(
+        ticket.nextDutyOnOrAfter(DateTime(2026, 11, 30)),
+        DateTime(2026, 11, 30),
+      );
+      expect(
+        ticket.nextDutyOnOrAfter(DateTime(2026, 12, 1)),
+        DateTime(2026, 12, 2),
+      );
+    });
+
+    test('a monthly manual stops offering duties once its month is over', () {
+      final ticket = manual(
+        recurrence: ManualRecurrence.monthly,
+        createdAt: DateTime(2026, 11, 2),
+      );
+      expect(
+        ticket.nextDutyOnOrAfter(DateTime(2026, 11, 30)),
+        DateTime(2026, 11, 30),
+      );
+      expect(ticket.nextDutyOnOrAfter(DateTime(2026, 12, 3)), isNull);
+    });
+
+    test('only a manual still in force keeps its paperwork on screen', () {
+      final current = manual(
+        recurrence: ManualRecurrence.monthly,
+        createdAt: DateTime.now().subtract(const Duration(days: 2)),
+      );
+      expect(current.isStillInForce, isTrue);
+
+      final expired = manual(
+        recurrence: ManualRecurrence.monthly,
+        createdAt: DateTime(2025, 1, 5),
+      );
+      expect(expired.isStillInForce, isFalse);
+      expect(expired.nextRun, isNull);
+
+      // A plain run ticket has no roster, so it is never "in force".
+      const run = TripTicket(
+        id: 'tt2',
+        code: 'TT-2026-0002',
+        wave: 1,
+        truckId: 'truck-01',
+        plateNumber: 'SK 4821',
+        wheelers: 6,
+        driverId: 'd1',
+        driverName: 'Arwin Decena',
+        route: 'Filinvest 1',
+        zone: '',
+        date: '',
+        windowStart: '06:00',
+        windowEnd: '',
+        notes: '',
+        status: TicketStatus.completed,
+        createdBy: 'i1',
+      );
+      expect(run.isStillInForce, isFalse);
+    });
+  });
 }

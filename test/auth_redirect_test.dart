@@ -136,13 +136,15 @@ void main() {
       ),
       isNull,
     );
+    // The assign-route desk is retired: Iswim assigns runs from the manual,
+    // so an old /routes link falls back to the Iswim dashboard.
     expect(
       authRedirect(
         initialized: true,
         role: UserRole.iswim,
         location: '/routes',
       ),
-      isNull,
+      '/iswim',
     );
   });
 
@@ -180,8 +182,9 @@ void main() {
     );
   });
 
-  test('dispatch moved from the barangay to Iswim', () {
-    // Iswim assigns the runs; the barangay has no dispatch screen at all.
+  test('nobody has a dispatch screen', () {
+    // Runs are assigned from the collection manual now, so /routes is a dead
+    // link for every desk and falls back to that role's home.
     expect(
       authRedirect(
         initialized: true,

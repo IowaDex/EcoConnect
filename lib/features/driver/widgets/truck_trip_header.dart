@@ -8,10 +8,12 @@ import '../models/truck_status.dart';
 import '../services/trip_guard_service.dart';
 
 /// The card the crew sees first: which truck they are on, who is riding with
-/// them, whether the trip is running, and the trip controls.
+/// them, and whether the route is running.
 ///
 /// It also carries the trip guard read-out, so the 100 m radius and the
-/// connection state are visible without scrolling.
+/// connection state are visible without scrolling. Starting a route is a
+/// separate control on the dashboard — there is one way to start, and it is
+/// always called "Start route".
 class TruckTripHeader extends StatelessWidget {
   const TruckTripHeader({
     super.key,
@@ -20,7 +22,6 @@ class TruckTripHeader extends StatelessWidget {
     required this.status,
     required this.startedAt,
     required this.busy,
-    required this.onStart,
     required this.onPause,
     required this.onResume,
     required this.onEnd,
@@ -34,13 +35,12 @@ class TruckTripHeader extends StatelessWidget {
   final RouteStatus status;
   final DateTime? startedAt;
   final bool busy;
-  final VoidCallback onStart;
   final VoidCallback onPause;
   final VoidCallback onResume;
   final VoidCallback onEnd;
 
-  /// False until a trip ticket exists: without one there is no trip to start,
-  /// so the button stays inert instead of failing on tap.
+  /// True when a trip ticket is ready for this crew. Drives the badge only;
+  /// the start control lives on the route card.
   final bool canStart;
 
   /// Distance from the zone centre while the trip is running.
@@ -265,8 +265,8 @@ class TruckTripHeader extends StatelessWidget {
               metres: metresFromCenter,
             ),
           ],
-          const SizedBox(height: 16),
-          if (_isRunning)
+          if (_isRunning) ...[
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -296,7 +296,7 @@ class TruckTripHeader extends StatelessWidget {
                             size: 17,
                           ),
                           const SizedBox(width: 5),
-                          Text(_isPaused ? 'Resume trip' : 'Pause trip'),
+                          Text(_isPaused ? 'Resume route' : 'Pause route'),
                         ],
                       ),
                     ),
@@ -316,58 +316,13 @@ class TruckTripHeader extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      child: const Text('End trip'),
+                      child: const Text('End route'),
                     ),
                   ),
                 ),
               ],
-            )
-          else
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                // Tappable even without a ticket: the tap is what explains the
-                // gate. It just paints itself as inert.
-                onPressed: busy ? null : onStart,
-                style: FilledButton.styleFrom(
-                  backgroundColor: canStart
-                      ? AppColors.forest
-                      : const Color(0xFFE8EEE8),
-                  foregroundColor: canStart
-                      ? Colors.white
-                      : const Color(0xFF9AA79D),
-                  disabledBackgroundColor: const Color(0xFFE8EEE8),
-                  disabledForegroundColor: const Color(0xFF9AA79D),
-                  textStyle: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (busy)
-                      const SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.forest,
-                        ),
-                      )
-                    else
-                      Icon(
-                        canStart
-                            ? Icons.play_arrow_rounded
-                            : Icons.lock_rounded,
-                        size: 18,
-                      ),
-                    const SizedBox(width: 7),
-                    Text(busy ? 'Starting…' : 'Start trip'),
-                  ],
-                ),
-              ),
             ),
+          ],
         ],
       ),
     );

@@ -27,6 +27,7 @@ import '../../../core/models/waste_category.dart';
 import '../../collection_points/models/collection_point.dart';
 import '../../collection_points/services/collection_point_service.dart';
 import '../data/mock_trucks.dart';
+import '../models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
 import '../models/truck_crew_role.dart';
 import '../providers/truck_provider.dart';
@@ -35,6 +36,7 @@ import '../services/trip_guard_service.dart';
 import '../../dashboard/widgets/role_hero.dart';
 import '../../dashboard/widgets/role_top_bar.dart';
 import '../widgets/driver_nav_bar.dart';
+import '../widgets/incident_report_card.dart';
 import '../widgets/truck_trip_header.dart';
 import '../../tickets/models/trip_ticket.dart';
 import '../../tickets/services/ticket_service.dart';
@@ -85,6 +87,31 @@ class _DriverScreenState extends State<DriverScreen> {
   /// waiting for acceptance.
   TripTicket? _ticket;
 
+  /// The run ticket opened for today's duty when the crew runs an approved
+  /// schedule. It carries the three signatures; the schedule itself stays
+  /// valid for the next collection day.
+  String? _dutyTicketId;
+
+  /// The crew's tickets, newest first, as last read from the server. Kept so
+  /// a reload mid-run can still find the running ticket to submit at the end.
+  List<TripTicket> _tickets = const [];
+
+  /// The manual schedule still in force: the next duty and the paperwork it
+  /// already produced. Kept apart from [_ticket] so the dashboard can list the
+  /// next trip (Wednesday) while Monday's ticket is still on screen.
+  TripTicket? _nextDuty;
+  TripTicket? _lastDuty;
+  DateTime? _nextDutyDate;
+
+  /// Whose route and paperwork this phone is operating.
+  ///
+  /// The driver's own uid, or — when a guide holds the device for a driver
+  /// without a phone — the driver account paired with the selected truck. The
+  /// ticket and the three signatures stay with that driver either way.
+  String? _dutyDriverId;
+
+  bool _isGuide = false;
+
   bool get _isLive =>
       _status == RouteStatus.inTransit || _status == RouteStatus.delayed;
 
@@ -108,6 +135,11 @@ class _DriverScreenState extends State<DriverScreen> {
   void initState() {
     super.initState();
     final uid = _uid;
+    // Set before the first frame so a guide never sees the driver's ticket
+    // layout flash while the truck is still being restored.
+    _isGuide =
+        context.read<AuthProvider>().currentUser?.crewRole ==
+        TruckCrewRole.guide;
     if (uid != null) {
       _upcomingPlans = _routeService.watchUpcomingPlans(uid);
       _pickups = CollectionRequestService().watchForDriver(uid);
@@ -125,11 +157,6 @@ class _DriverScreenState extends State<DriverScreen> {
 
     final account = context.read<AuthProvider>().currentUser;
     final role = account?.crewRole ?? TruckCrewRole.driver;
-
-    // Wire the page first. Everything it draws arrives through these
-    // listeners, and nothing below — a fleet lookup or the browser's location
-    // prompt — may hold them back.
-    _connectStreams();
 
     if (role == TruckCrewRole.driver) {
       // The registry first: Iswim may have added or re-plated the truck since
@@ -158,6 +185,18 @@ class _DriverScreenState extends State<DriverScreen> {
       return;
     }
 
+    // A guide operates the truck's duty from his own login: everything the
+    // page watches and writes belongs to the driver paired with the plate.
+    _isGuide = role == TruckCrewRole.guide;
+    _dutyDriverId = _isGuide
+        ? trucks.selectedTruck?.driverAccountId
+        : account?.uid;
+
+    // Wire the page once the truck is known. Everything it draws arrives
+    // through these listeners, and nothing below — a location prompt — may
+    // hold them back.
+    _connectStreams();
+
     // The fix is only needed for the guard and the map marker, so it is
     // fetched in the background while the page is already usable.
     unawaited(_warmUpLocation());
@@ -166,7 +205,7 @@ class _DriverScreenState extends State<DriverScreen> {
   /// Subscribes the page to the server state: the live route, the trip ticket,
   /// today's assignment, the stops pinned for this crew and the link state.
   void _connectStreams() {
-    final uid = _uid;
+    final uid = _dutyDriverId;
     if (uid == null) return;
 
     // Offline during a run is an alert, not a blocked screen: the guard needs
@@ -218,19 +257,34 @@ class _DriverScreenState extends State<DriverScreen> {
           },
         );
 
-    // The trip ticket is the gate: accepted tickets unlock Start trip, and a
-    // fresh ticket sits here until the crew accepts or declines it.
+    // The trip ticket is the gate: an accepted ticket unlocks Start route, and
+    // a fresh ticket sits here until the crew accepts or declines it.
     _ticketSub = _ticketService.watchForDriver(uid).listen((tickets) {
       if (!mounted) return;
+      _tickets = tickets;
       TripTicket? active;
-      // A manual that runs today is the one the crew can start, so it wins
-      // over an older valid ticket for another day.
+
+      // Today's duty ticket, if the crew opened one from a schedule: it is
+      // the paperwork being filled in right now, so it outranks the schedule
+      // that generated it.
+      final today = routeDateKey(DateTime.now());
       for (final ticket in tickets) {
-        if (ticket.canStartTrip &&
-            ticket.isAssignment &&
-            ticket.isScheduledToday) {
-          active = ticket;
-          break;
+        if (ticket.isAssignment || ticket.assignmentId == null) continue;
+        if (ticket.date != today) continue;
+        active = ticket;
+        break;
+      }
+
+      // A schedule that runs today is the one the crew can start, so it wins
+      // over an older valid ticket for another day.
+      if (active == null) {
+        for (final ticket in tickets) {
+          if (ticket.canStartTrip &&
+              ticket.isAssignment &&
+              ticket.isScheduledToday) {
+            active = ticket;
+            break;
+          }
         }
       }
       if (active == null) {
@@ -249,20 +303,84 @@ class _DriverScreenState extends State<DriverScreen> {
           }
         }
       }
-      setState(() => _ticket = active);
+
+      // The manual still in force. A guide or driver sees the next duty even
+      // after today's route is done, so Monday never hides Wednesday.
+      final schedules = <String, TripTicket>{
+        for (final ticket in tickets)
+          if (ticket.isAssignment) ticket.id: ticket,
+      };
+      TripTicket? nextDuty;
+      DateTime? nextDate;
+      for (final schedule in schedules.values) {
+        if (schedule.status != TicketStatus.valid || !schedule.isStillInForce) {
+          continue;
+        }
+        // A duty that is already running or done today is not the next trip:
+        // Monday's shift ends with Wednesday on the dashboard.
+        final doneToday = tickets.any(
+          (ticket) =>
+              !ticket.isAssignment &&
+              ticket.assignmentId == schedule.id &&
+              ticket.date == today &&
+              (ticket.status == TicketStatus.running ||
+                  ticket.status == TicketStatus.submitted ||
+                  ticket.status == TicketStatus.barangaySigned ||
+                  ticket.status == TicketStatus.iswimSigned ||
+                  ticket.status == TicketStatus.completed),
+        );
+        final date = schedule.nextDutyOnOrAfter(
+          doneToday
+              ? DateTime.now().add(const Duration(days: 1))
+              : DateTime.now(),
+        );
+        if (date == null) continue;
+        if (nextDate == null || date.isBefore(nextDate)) {
+          nextDate = date;
+          nextDuty = schedule;
+        }
+      }
+
+      // The newest duty ticket whose schedule is still in force. It stays on
+      // the dashboard after the route ends — the paperwork is not deleted
+      // when the shift is over, only when the manual runs out.
+      TripTicket? lastDuty;
+      for (final ticket in tickets) {
+        if (ticket.isAssignment || ticket.assignmentId == null) continue;
+        final schedule = schedules[ticket.assignmentId];
+        if (schedule == null ||
+            schedule.status != TicketStatus.valid ||
+            !schedule.isStillInForce) {
+          continue;
+        }
+        if (lastDuty == null || ticket.date.compareTo(lastDuty.date) > 0) {
+          lastDuty = ticket;
+        }
+      }
+
+      setState(() {
+        _ticket = active;
+        _nextDuty = nextDuty;
+        _nextDutyDate = nextDate;
+        _lastDuty = lastDuty;
+      });
     }, onError: (_) {});
 
     // The assignment is the source of truth for *what* the driver may start.
-    _planSub = _routeService
-        .watchTodayPlan(uid)
-        .listen(
-          (plan) {
-            if (mounted) setState(() => _plan = plan);
-          },
-          onError: (_) {
-            if (mounted) setState(() => _serviceUnavailable = true);
-          },
-        );
+    // A guide runs the schedule itself, so he has no plan to watch — and the
+    // plan rules would refuse a query for another driver's scheduled plan.
+    if (!_isGuide) {
+      _planSub = _routeService
+          .watchTodayPlan(uid)
+          .listen(
+            (plan) {
+              if (mounted) setState(() => _plan = plan);
+            },
+            onError: (_) {
+              if (mounted) setState(() => _serviceUnavailable = true);
+            },
+          );
+    }
 
     // Stops staff pin for this driver, shown even before a run starts.
     _pointsSub = _pointService.watchForDriver(uid).listen((points) {
@@ -321,7 +439,7 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _reportConnection(bool offline) async {
-    final uid = _uid;
+    final uid = _dutyDriverId;
     if (uid == null) return;
     final user = context.read<AuthProvider>().currentUser;
     try {
@@ -365,7 +483,7 @@ class _DriverScreenState extends State<DriverScreen> {
     if (outside == _outsideRadius) return;
 
     setState(() => _outsideRadius = outside);
-    final uid = _uid;
+    final uid = _dutyDriverId;
     if (uid == null) return;
     final user = context.read<AuthProvider>().currentUser;
     try {
@@ -419,7 +537,7 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _runLocationHealthCheck() async {
-    final uid = _uid;
+    final uid = _dutyDriverId;
     if (uid == null) return;
     final location = context.read<LocationProvider>();
     final issue = await location.refreshLocationHealth();
@@ -477,7 +595,8 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _activate() async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
 
     // The ticket gates the trip: no accepted ticket, no moving truck.
     final ticket = _ticket;
@@ -486,7 +605,7 @@ class _DriverScreenState extends State<DriverScreen> {
         ticket == null
             ? 'No trip ticket yet. Iswim creates it — wait for the '
                   'notification.'
-            : 'Accept the trip ticket before starting the trip.',
+            : 'Accept the trip ticket before starting the route.',
         isError: true,
       );
       if (ticket != null) context.push('/driver-tickets');
@@ -542,6 +661,9 @@ class _DriverScreenState extends State<DriverScreen> {
 
     if (!mounted) return;
     setState(() => _busy = true);
+    // A plain run ticket carries the duty itself; any schedule ticket from an
+    // earlier run is no longer the one to submit at the end.
+    _dutyTicketId = null;
     try {
       final trucks = context.read<TruckProvider>();
       final truck = trucks.selectedTruck;
@@ -564,7 +686,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
       // Step 3 — atomic activation: plan -> active, route -> inTransit.
       await _routeService.activateRoute(
-        driverId: user.uid,
+        driverId: dutyId,
         driverName: user.displayName ?? 'Collector',
         phone: user.phone,
         planId: activePlan.id,
@@ -601,7 +723,7 @@ class _DriverScreenState extends State<DriverScreen> {
           // The trip itself must not fail because the ticket write did.
         }
       }
-      _toast('Trip started — residents can see you now');
+      _toast('Route started — residents can see you now');
     } on RouteActivationException catch (e) {
       _toast(e.message, isError: true);
     } catch (e) {
@@ -671,19 +793,42 @@ class _DriverScreenState extends State<DriverScreen> {
     final now = DateTime.now();
     try {
       return await _routeService.createPlan(
-        driverId: user.uid,
+        driverId: _dutyDriverId ?? user.uid,
         driverName: user.displayName ?? 'Collector',
         zone: zone,
         date: now,
         windowStart: routeTimeKey(now),
         windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
         // Collection points staff assigned to this driver become the stops.
-        stops: await _routeService.stopsForDriver(user.uid),
+        stops: await _routeService.stopsForDriver(_dutyDriverId ?? user.uid),
         adHoc: true,
         createdBy: user.uid,
       );
     } catch (e) {
       _fail('open an ad-hoc route', e);
+      return null;
+    }
+  }
+
+  /// Opens (or reuses) today's duty ticket from [schedule] and accepts it.
+  ///
+  /// The ticket names the schedule's driver even when a guide acts; the
+  /// acceptance is recorded under whoever is holding the device. Returns null
+  /// when the paperwork could not be written, so the caller can say so instead
+  /// of running an unsigned trip.
+  Future<TripTicket?> _openDutyRun(TripTicket schedule, AppUser user) async {
+    final name = user.displayName ?? 'Crew';
+    try {
+      final duty = await _ticketService.createDutyRun(
+        assignment: schedule,
+        byUid: user.uid,
+        byName: name,
+      );
+      if (duty.status == TicketStatus.issued) {
+        await _ticketService.accept(duty.id, byUid: user.uid, byName: name);
+      }
+      return duty;
+    } catch (_) {
       return null;
     }
   }
@@ -696,7 +841,8 @@ class _DriverScreenState extends State<DriverScreen> {
   /// a Friday.
   Future<void> _startManualRun(TripTicket ticket) async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
 
     final now = DateTime.now();
     if (!ticket.isShiftOpen(now)) {
@@ -731,27 +877,7 @@ class _DriverScreenState extends State<DriverScreen> {
     try {
       final trucks = context.read<TruckProvider>();
       final truck = trucks.selectedTruck;
-
-      // Staff may already have planned today. Use their plan and its pinned
-      // stops rather than opening a second run on the same shift.
-      final activePlan =
-          _plan ??
-          await _routeService.createPlan(
-            driverId: user.uid,
-            driverName: user.displayName ?? 'Collector',
-            zone: ticket.routesLabel.isEmpty
-                ? (user.barangay ?? 'Batasan Hills')
-                : ticket.routesLabel,
-            date: now,
-            windowStart: ticket.windowStart.isEmpty
-                ? routeTimeKey(now)
-                : ticket.windowStart,
-            windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
-            stops: await _manualStops(ticket),
-            adHoc: true,
-            createdBy: user.uid,
-          );
-      if (!mounted) return;
+      final crewName = user.displayName ?? 'Collector';
 
       ({double lat, double lng})? center;
       if (truck != null &&
@@ -765,43 +891,127 @@ class _DriverScreenState extends State<DriverScreen> {
         );
       }
 
-      await _routeService.activateRoute(
-        driverId: user.uid,
-        driverName: user.displayName ?? 'Collector',
-        phone: user.phone,
-        planId: activePlan.id,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        // The manual gates on the collection day, not on the minute, so a crew
-        // that leaves early is not blocked by the shift window.
-        overrideWindow: true,
-        truckPlate: truck?.plateNumber,
-        truckWheelers: truck?.wheelers,
-        crewRole: user.crewRole.wireName,
-        geofenceLat: center?.lat,
-        geofenceLng: center?.lng,
-      );
+      RoutePlan? activePlan;
+      TripTicket? duty;
+
+      if (_isGuide) {
+        // A guide runs the approved schedule itself — there is no staff plan
+        // to activate. The duty ticket is opened first because the route
+        // write is authorised by it, and it still belongs to the driver.
+        duty = await _openDutyRun(ticket, user);
+        if (duty == null) {
+          _toast(
+            'Today\'s duty ticket could not be opened. Check the connection '
+            'and try again.',
+            isError: true,
+          );
+          return;
+        }
+        await _routeService.startCrewRun(
+          driverId: dutyId,
+          driverName: ticket.driverName.isEmpty ? crewName : ticket.driverName,
+          ticketId: duty.id,
+          assignmentId: ticket.id,
+          actedByUid: user.uid,
+          actedByName: crewName,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          truckPlate: truck?.plateNumber,
+          truckWheelers: truck?.wheelers,
+          zone: ticket.routesLabel.isEmpty ? null : ticket.routesLabel,
+          geofenceLat: center?.lat,
+          geofenceLng: center?.lng,
+        );
+      } else {
+        // Staff may already have planned today. Use their plan and its pinned
+        // stops rather than opening a second run on the same shift.
+        activePlan =
+            _plan ??
+            await _routeService.createPlan(
+              driverId: dutyId,
+              driverName: crewName,
+              zone: ticket.routesLabel.isEmpty
+                  ? (user.barangay ?? 'Batasan Hills')
+                  : ticket.routesLabel,
+              date: now,
+              windowStart: ticket.windowStart.isEmpty
+                  ? routeTimeKey(now)
+                  : ticket.windowStart,
+              windowEnd: routeTimeKey(now.add(const Duration(hours: 4))),
+              stops: await _manualStops(ticket),
+              adHoc: true,
+              createdBy: user.uid,
+            );
+        if (!mounted) return;
+
+        await _routeService.activateRoute(
+          driverId: dutyId,
+          driverName: crewName,
+          phone: user.phone,
+          planId: activePlan.id,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          // The manual gates on the collection day, not on the minute, so a
+          // crew that leaves early is not blocked by the shift window.
+          overrideWindow: true,
+          truckPlate: truck?.plateNumber,
+          truckWheelers: truck?.wheelers,
+          crewRole: user.crewRole.wireName,
+          geofenceLat: center?.lat,
+          geofenceLng: center?.lng,
+          // Label the live run with the schedule's own areas, so residents of
+          // those subdivisions — and only those — get the start alert.
+          zone: ticket.routesLabel.isEmpty ? null : ticket.routesLabel,
+        );
+      }
+
       _ensureHealthTimer();
       await _checkLocationHealth();
       if (!mounted) return;
       setState(() {
         _status = RouteStatus.inTransit;
         _startedAt = DateTime.now();
-        _activePlanId = activePlan.id;
+        _activePlanId = activePlan?.id;
         _guardCenter = center;
         _outsideRadius = false;
         _metresFromCenter = null;
       });
       await _evaluateGeofence();
-      _toast('Route started — residents can see you now');
+
+      // Every duty carries its own ticket. Opening it from the approved
+      // schedule is what lets the run end with three signatures instead of
+      // consuming a schedule that can only be signed once.
+      if (!_isGuide) {
+        duty = await _openDutyRun(ticket, user);
+      }
+      if (duty != null) {
+        try {
+          await _ticketService.markRunning(
+            duty.id,
+            byUid: user.uid,
+            byName: crewName,
+          );
+          _dutyTicketId = duty.id;
+        } catch (_) {
+          _dutyTicketId = null;
+        }
+      }
+      _toast(
+        _dutyTicketId != null
+            ? 'Route started — residents can see you now'
+            : 'Route started, but today\'s ticket could not be opened. '
+                  'Tell Iswim so the run still gets its three signatures.',
+        isError: _dutyTicketId == null,
+      );
       if (!mounted) return;
 
       // Straight to the map: the crew asked to see the streets they cover.
       final fix = location.hasLocation
           ? LatLng(location.latitude!, location.longitude!)
           : null;
-      final mapStops = activePlan.stops.isNotEmpty
-          ? activePlan.stops
+      final planStops = activePlan?.stops ?? const <RouteStop>[];
+      final mapStops = planStops.isNotEmpty
+          ? planStops
           : await _manualStops(ticket);
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -861,11 +1071,12 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _changeStatus(RouteStatus status) async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
     final previous = _status;
     setState(() => _status = status);
     try {
-      await _routeService.setStatus(user.uid, status);
+      await _routeService.setStatus(dutyId, status);
     } catch (e) {
       if (mounted) setState(() => _status = previous);
       _fail('update your status', e);
@@ -874,7 +1085,8 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _pauseRoute() async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -906,9 +1118,9 @@ class _DriverScreenState extends State<DriverScreen> {
     setState(() => _busy = true);
     try {
       await _routeService.pauseRoute(
-        driverId: user.uid,
+        driverId: dutyId,
         driverName: user.displayName ?? 'Collector',
-        zone: _plan?.zone,
+        zone: _plan?.zone ?? _ticket?.routesLabel,
       );
       if (!mounted) return;
       setState(() => _status = RouteStatus.paused);
@@ -922,14 +1134,15 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _resumeRoute() async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
 
     setState(() => _busy = true);
     try {
       await _routeService.resumeRoute(
-        driverId: user.uid,
+        driverId: dutyId,
         driverName: user.displayName ?? 'Collector',
-        zone: _plan?.zone,
+        zone: _plan?.zone ?? _ticket?.routesLabel,
       );
       _ensureHealthTimer();
       await _checkLocationHealth();
@@ -946,15 +1159,17 @@ class _DriverScreenState extends State<DriverScreen> {
 
   Future<void> _endRoute() async {
     final user = context.read<AuthProvider>().currentUser;
-    if (user == null) return;
+    final dutyId = _dutyDriverId;
+    if (user == null || dutyId == null) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('End collection route?'),
-        content: const Text(
-          'Residents will stop seeing your live location immediately and '
-          'barangay staff will be notified that the route is complete.',
+        content: Text(
+          'Residents will stop seeing the live location immediately. '
+          '${_isGuide ? "The driver's" : "Today's"} trip ticket goes to the '
+          'barangay for the first of three signatures.',
         ),
         actions: [
           TextButton(
@@ -973,10 +1188,10 @@ class _DriverScreenState extends State<DriverScreen> {
     final startedAt = _startedAt;
     try {
       await _routeService.endRoute(
-        user.uid,
+        dutyId,
         planId: _activePlanId,
         driverName: user.displayName ?? 'Collector',
-        zone: _plan?.zone,
+        zone: _plan?.zone ?? _ticket?.routesLabel,
       );
       _healthTimer?.cancel();
       _healthTimer = null;
@@ -988,41 +1203,86 @@ class _DriverScreenState extends State<DriverScreen> {
         _outsideRadius = false;
         _metresFromCenter = null;
       });
-      // End of trip: the ticket walks to the barangay for signature 1.
-      final ticket = _ticket;
-      if (ticket != null && ticket.status == TicketStatus.running) {
+
+      // End of route: the ticket walks to the barangay for signature 1.
+      //
+      // A scheduled duty runs on its own ticket, opened when the route
+      // started. A plain run ticket is the one the crew accepted. If the app
+      // was reloaded mid-run, the running ticket is recovered from the list
+      // the dashboard already holds.
+      var targetId = _dutyTicketId;
+      if (targetId == null) {
+        for (final candidate in _tickets) {
+          if (candidate.status == TicketStatus.running) {
+            targetId = candidate.id;
+            break;
+          }
+        }
+      }
+      String? submittedId;
+      if (targetId != null) {
         try {
           await _ticketService.submit(
-            ticket.id,
+            targetId,
             driverName: user.displayName ?? 'Driver',
             byUid: user.uid,
           );
-          _toast('Ticket submitted — the barangay signs next');
+          submittedId = targetId;
+          _dutyTicketId = null;
         } catch (_) {
           _toast(
-            'The trip ended but the ticket was not submitted. Try again.',
+            'The route ended but the ticket was not submitted. Try again from '
+            'the ticket.',
             isError: true,
           );
         }
       }
-      if (startedAt != null) _showSummary(startedAt);
+      if (submittedId != null) {
+        _toast('Ticket submitted — the barangay signs next');
+      }
+      if (startedAt != null) {
+        _showSummary(
+          startedAt,
+          ticketId: _isGuide ? null : submittedId,
+          guideRan: _isGuide,
+        );
+      }
     } catch (e) {
       _fail('end your route', e);
     }
   }
 
-  Future<void> _showSummary(DateTime startedAt) async {
+  Future<void> _showSummary(
+    DateTime startedAt, {
+    String? ticketId,
+    bool guideRan = false,
+  }) async {
     final duration = DateTime.now().difference(startedAt);
+    final ticketLine = ticketId == null
+        ? ''
+        : '\n\nToday\'s trip ticket is now waiting for the barangay signature.';
+    final guideLine = guideRan
+        ? '\n\nThe driver\'s trip ticket is on his dashboard, waiting for the '
+              'barangay signature.'
+        : '';
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Route complete'),
         content: Text(
           'You were on the road for ${_formatDuration(duration)}. '
-          'Your assignment is marked completed and residents no longer see '
-          'your location.',
+          'The assignment is marked completed and residents no longer see '
+          'the truck\'s location.$ticketLine$guideLine',
         ),
         actions: [
+          if (ticketId != null)
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.push('/tickets/$ticketId');
+              },
+              child: const Text('View trip ticket'),
+            ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Done'),
@@ -1085,7 +1345,7 @@ class _DriverScreenState extends State<DriverScreen> {
     );
     if (!confirmed) return;
 
-    final uid = _uid;
+    final uid = _dutyDriverId;
     if (uid != null && _isLive) {
       try {
         await _routeService.endRoute(uid, planId: _activePlanId);
@@ -1172,24 +1432,54 @@ class _DriverScreenState extends State<DriverScreen> {
                             ),
                     ),
                     const SizedBox(height: 16),
-                    if (_ticket != null) ...[
-                      TicketCard(
-                        ticket: _ticket!,
-                        trailingLabel: _ticket!.needsDriver
-                            ? 'Accept muna'
-                            : null,
-                        onTap: () => context.push('/tickets/${_ticket!.id}'),
+                    if (_isGuide) ...[
+                      // The guide operates the truck, not the paperwork: the
+                      // trip ticket stays on the driver's dashboard.
+                      _GuideDutyCard(
+                        truck: truck,
+                        schedule: _ticket,
+                        hasDriverAccount: (_dutyDriverId ?? '').isNotEmpty,
                       ),
-                      // An approved manual is only actionable on a collection
-                      // day, so the start control sits right under its card.
-                      if (_ticket!.isAssignment &&
-                          _ticket!.status == TicketStatus.valid &&
-                          !_isLive) ...[
+                      if (!_isRunning &&
+                          _ticket != null &&
+                          _ticket!.isAssignment &&
+                          _ticket!.canStartTrip &&
+                          _ticket!.status != TicketStatus.running) ...[
                         const SizedBox(height: 10),
-                        _ManualStartCard(
+                        _RouteStartCard(
                           ticket: _ticket!,
                           busy: _busy,
                           onStart: () => _startManualRun(_ticket!),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                    ] else if ((_ticket ?? _lastDuty) != null) ...[
+                      // The ticket is the paper trail for the manual, so it
+                      // stays on the dashboard after the shift ends — it only
+                      // goes away when the manual itself runs out.
+                      TicketCard(
+                        ticket: (_ticket ?? _lastDuty)!,
+                        trailingLabel: _ticket?.needsDriver == true
+                            ? 'Accept muna'
+                            : null,
+                        onTap: () => context.push(
+                          '/tickets/${(_ticket ?? _lastDuty)!.id}',
+                        ),
+                      ),
+                      // One start control, always called "Start route". A
+                      // schedule opens today's duty ticket first; a plain run
+                      // ticket starts on the assignment Iswim gave.
+                      if (!_isRunning &&
+                          _ticket != null &&
+                          _ticket!.canStartTrip &&
+                          _ticket!.status != TicketStatus.running) ...[
+                        const SizedBox(height: 10),
+                        _RouteStartCard(
+                          ticket: _ticket!,
+                          busy: _busy,
+                          onStart: () => _ticket!.isAssignment
+                              ? _startManualRun(_ticket!)
+                              : _activate(),
                         ),
                       ],
                       const SizedBox(height: 12),
@@ -1212,7 +1502,7 @@ class _DriverScreenState extends State<DriverScreen> {
                             const Expanded(
                               child: Text(
                                 'No trip ticket yet. Iswim creates it — you cannot '
-                                'start the trip without one.',
+                                'start the route without one.',
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   height: 1.45,
@@ -1241,6 +1531,13 @@ class _DriverScreenState extends State<DriverScreen> {
                       ),
                       const SizedBox(height: 12),
                     ],
+                    // The next duty from the manual. Shown once today's own
+                    // card is no longer the one to act on, so Monday's shift
+                    // ends with Wednesday already on the dashboard.
+                    if (_nextDuty != null &&
+                        _nextDutyDate != null &&
+                        _ticket?.id != _nextDuty!.id)
+                      _NextTripCard(schedule: _nextDuty!, date: _nextDutyDate!),
                     _NextDutyReminder(plans: _upcomingPlans),
                     if (truck != null)
                       TruckTripHeader(
@@ -1249,13 +1546,21 @@ class _DriverScreenState extends State<DriverScreen> {
                         status: _status,
                         startedAt: _startedAt,
                         busy: _busy,
+                        canStart: _ticket?.canStartTrip ?? false,
                         metresFromCenter: _metresFromCenter,
                         connectionLost: _connectionLost,
-                        onStart: _activate,
                         onPause: _pauseRoute,
                         onResume: _resumeRoute,
                         onEnd: _endRoute,
                       ),
+                    if (truck != null) ...[
+                      const SizedBox(height: 10),
+                      IncidentReportCard(
+                        plateNumber: truck.plateNumber,
+                        zone: _plan?.zone ?? _ticket?.routesLabel ?? '',
+                        ticketId: _dutyTicketId ?? _ticket?.id,
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     if (_serviceUnavailable) ...[
                       const _ServiceWarning(),
@@ -1369,8 +1674,13 @@ class _DriverScreenState extends State<DriverScreen> {
 /// A manual only runs on the days its roster names, so the button is live on
 /// those days and greyed out otherwise — the crew sees why, not just a dead
 /// control.
-class _ManualStartCard extends StatelessWidget {
-  const _ManualStartCard({
+/// The one start control on the dashboard.
+///
+/// A schedule runs only on the days its roster names, so the button is live
+/// then and explains the next run otherwise. A plain run ticket has no roster:
+/// the button is live and the start flow itself checks the shift window.
+class _RouteStartCard extends StatelessWidget {
+  const _RouteStartCard({
     required this.ticket,
     required this.busy,
     required this.onStart,
@@ -1382,14 +1692,41 @@ class _ManualStartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final manual = ticket.isAssignment;
     final now = DateTime.now();
-    final scheduled = ticket.runsOn(now);
-    final open = ticket.isShiftOpen(now);
-    final next = ticket.nextRun;
+    final scheduled = !manual || ticket.runsOn(now);
+    final open = !manual || ticket.isShiftOpen(now);
+    final next = manual ? ticket.nextRun : null;
     final nextLabel = next == null
-        ? 'This manual is no longer in force'
+        ? 'This schedule is no longer in force'
         : '${manualDayLabel(next.weekday)}, ${next.month}/${next.day} '
               'at ${ticket.windowStart}';
+
+    final zone = ticket.zone.trim();
+    final routes = ticket.routesLabel;
+    final areaLine = zone.isEmpty || zone == routes
+        ? routes
+        : '$routes · $zone';
+
+    final headline = manual
+        ? (scheduled
+              ? 'Today is your collection day'
+              : 'Not your collection day')
+        : 'Ticket ready for today';
+    final detail = !manual
+        ? '$areaLine · ${ticket.windowLabel}'
+        : !scheduled
+        ? (next == null ? nextLabel : 'Next run $nextLabel')
+        : open
+        ? '$routes · starts ${ticket.windowStart}'
+        : 'Starts at ${ticket.windowStart} — the button unlocks then.';
+    final buttonLabel = open
+        ? 'Start route'
+        : scheduled
+        ? 'Starts at ${ticket.windowStart}'
+        : next == null
+        ? 'Schedule ended'
+        : 'Starts ${manualDayLabel(next.weekday)}';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
@@ -1413,9 +1750,7 @@ class _ManualStartCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  scheduled
-                      ? 'Today is your collection day'
-                      : 'Not your collection day',
+                  headline,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -1427,11 +1762,7 @@ class _ManualStartCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            !scheduled
-                ? (next == null ? nextLabel : 'Next run $nextLabel')
-                : open
-                ? '${ticket.routesLabel} · starts ${ticket.windowStart}'
-                : 'Starts at ${ticket.windowStart} — the button unlocks then.',
+            detail,
             style: const TextStyle(
               fontSize: 9.5,
               height: 1.45,
@@ -1454,15 +1785,7 @@ class _ManualStartCard extends StatelessWidget {
                       ),
                     )
                   : const Icon(Icons.play_arrow_rounded, size: 19),
-              label: Text(
-                open
-                    ? 'Start route'
-                    : scheduled
-                    ? 'Starts at ${ticket.windowStart}'
-                    : next == null
-                    ? 'Schedule ended'
-                    : 'Starts ${manualDayLabel(next.weekday)}',
-              ),
+              label: Text(buttonLabel),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.forest,
                 disabledBackgroundColor: AppColors.sage,
@@ -1484,6 +1807,150 @@ class _ManualStartCard extends StatelessWidget {
 /// wording mirrors what the device reported.
 /// A quiet reminder for the next duty that is not today, so a crew that opens
 /// the app the evening before already knows where to report.
+/// Names whose duty this guide is running, and says where the paperwork is.
+///
+/// A guide holds the device for a driver without a phone: he picks the plate,
+/// starts and ends the route, and never sees a trip ticket — the ticket stays
+/// on the driver's dashboard and carries the three signatures.
+class _GuideDutyCard extends StatelessWidget {
+  const _GuideDutyCard({
+    required this.truck,
+    required this.schedule,
+    required this.hasDriverAccount,
+  });
+
+  final GarbageTruck? truck;
+  final TripTicket? schedule;
+  final bool hasDriverAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    final plate = truck?.plateNumber ?? 'this truck';
+    final driver = (schedule?.driverName ?? truck?.driverName ?? '').trim();
+
+    final String headline;
+    final String detail;
+    if (!hasDriverAccount) {
+      headline = 'No driver login on $plate';
+      detail =
+          'Iswim pairs a driver account with the truck before its duty can '
+          'be run. Pick another plate or ask the desk.';
+    } else if (schedule == null) {
+      headline = 'No approved duty for $plate today';
+      detail =
+          '${driver.isEmpty ? 'The driver' : driver} has no schedule running '
+          'today. Start route unlocks on the next collection day.';
+    } else {
+      headline = 'Driving for ${driver.isEmpty ? 'the driver' : driver}';
+      detail =
+          '${schedule!.routesLabel} · ${schedule!.windowStart}. The trip '
+          'ticket stays on the driver\'s dashboard.';
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: BoxDecoration(
+        color: AppColors.cream,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.sage),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.badge_outlined, size: 16, color: AppColors.primary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  headline,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    height: 1.45,
+                    color: AppColors.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The next duty the manual still owes the crew.
+///
+/// Monday's shift ends with Wednesday already on the dashboard: the manual is
+/// the roster, and it stays in force until its own window runs out.
+class _NextTripCard extends StatelessWidget {
+  const _NextTripCard({required this.schedule, required this.date});
+
+  final TripTicket schedule;
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: AppColors.lightGreen,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.event_available_rounded,
+              size: 16,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Next trip · ${manualDayLabel(date.weekday)}, '
+                    '${routeDateLabel(date)}',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.darkGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${schedule.windowStart} · ${schedule.routesLabel}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 9.5,
+                      height: 1.4,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NextDutyReminder extends StatelessWidget {
   const _NextDutyReminder({required this.plans});
 

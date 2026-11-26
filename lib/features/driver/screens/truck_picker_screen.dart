@@ -229,14 +229,17 @@ class _TruckPickerScreenState extends State<TruckPickerScreen> {
   }
 
   /// Truck ids with a ticket the crew can act on: issued, accepted or already
-  /// running. Finished paperwork does not keep a plate "ready".
+  /// running, plus a schedule that runs today. Finished paperwork does not
+  /// keep a plate "ready", and a guide needs to see which plate is on duty.
   static Set<String> _trucksWithTickets(List<TripTicket>? tickets) {
     if (tickets == null) return const {};
+    final today = DateTime.now();
     return {
       for (final ticket in tickets)
         if (ticket.status == TicketStatus.issued ||
             ticket.status == TicketStatus.accepted ||
-            ticket.status == TicketStatus.running)
+            ticket.status == TicketStatus.running ||
+            (ticket.status == TicketStatus.valid && ticket.runsOn(today)))
           ticket.truckId,
     };
   }

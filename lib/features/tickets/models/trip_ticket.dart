@@ -28,11 +28,11 @@ extension TicketStatusX on TicketStatus {
     TicketStatus.issued => 'Issued by Iswim',
     TicketStatus.accepted => 'Received by driver',
     TicketStatus.declined => 'Declined by driver',
-    TicketStatus.running => 'In progress',
-    TicketStatus.submitted => 'Awaiting barangay verification',
-    TicketStatus.barangaySigned => 'Barangay approved',
-    TicketStatus.iswimSigned => 'Iswim verified',
-    TicketStatus.completed => 'Completed',
+    TicketStatus.running => 'Route in progress',
+    TicketStatus.submitted => 'Route completed',
+    TicketStatus.barangaySigned => 'Barangay signed',
+    TicketStatus.iswimSigned => 'Iswim signed',
+    TicketStatus.completed => 'City Hall signed',
     TicketStatus.missed => 'Missed',
     TicketStatus.cancelled => 'Cancelled',
     TicketStatus.revisionRequired => 'Requires revision',
@@ -373,6 +373,8 @@ class TripTicket {
     this.recurrence = ManualRecurrence.weekly,
     this.assignmentId,
     this.approvalPending = false,
+    this.actedByUid,
+    this.actedByName,
     this.createdAt,
     this.acceptedAt,
     this.startedAt,
@@ -431,6 +433,14 @@ class TripTicket {
 
   /// True while the manual ticket is waiting for City Hall's signature.
   final bool approvalPending;
+
+  /// The crew account that actually pressed Start on this duty.
+  ///
+  /// Null on tickets written before the field existed. It differs from
+  /// [driverId] when a truck guide ran the duty for a driver without a phone;
+  /// the ticket still belongs to the driver.
+  final String? actedByUid;
+  final String? actedByName;
 
   final DateTime? createdAt;
   final DateTime? acceptedAt;
@@ -498,15 +508,26 @@ class TripTicket {
   ///
   /// Null when nothing matches — a yearly manual outside its month, or a plain
   /// run ticket that has no roster at all.
-  DateTime? get nextRun {
+  DateTime? get nextRun => nextDutyOnOrAfter(DateTime.now());
+
+  /// The first duty day on or after [from], looking up to two months ahead.
+  DateTime? nextDutyOnOrAfter(DateTime from) {
     if (!isAssignment) return null;
-    final now = DateTime.now();
+    final start = DateTime(from.year, from.month, from.day);
     for (var i = 0; i < 60; i++) {
-      final day = DateTime(now.year, now.month, now.day + i);
+      final day = DateTime(start.year, start.month, start.day + i);
       if (runsOn(day)) return day;
     }
     return null;
   }
+
+  /// True while the roster still has a duty ahead of it.
+  ///
+  /// This is the manual's validity: a weekly roster never runs out, while a
+  /// monthly or yearly one drops out of the dashboard once its window has
+  /// passed. A ticket that is no longer in force must not be shown as the
+  /// crew's paperwork.
+  bool get isStillInForce => isAssignment && nextRun != null;
 
   TicketSignature? signatureFor(TicketStatusSigner signer) =>
       signatures[signer];
@@ -538,6 +559,17 @@ class TripTicket {
 
   /// One line for the routes, used on cards and PDF exports.
   String get routesLabel => routes.isEmpty ? route : routes.join(' · ');
+
+  /// The areas this ticket covers, for resident-facing notices.
+  ///
+  /// A manual carries one entry per area; an older run ticket only has the
+  /// free-text route, which is used as-is. An empty result means the ticket
+  /// names no area, so no resident may be told it is for them.
+  List<String> get areaNames {
+    if (routes.isNotEmpty) return routes;
+    final single = route.trim();
+    return single.isEmpty ? const [] : [single];
+  }
 
   Map<String, dynamic> toMap() => {
     'code': code,
@@ -636,6 +668,8 @@ class TripTicket {
       recurrence: ManualRecurrenceX.fromName(data['recurrence'] as String?),
       assignmentId: data['assignmentId'] as String?,
       approvalPending: data['approvalPending'] == true,
+      actedByUid: data['actedByUid'] as String?,
+      actedByName: data['actedByName'] as String?,
       createdAt: _date(data['createdAt']),
       acceptedAt: _date(data['acceptedAt']),
       startedAt: _date(data['startedAt']),

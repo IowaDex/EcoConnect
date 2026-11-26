@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/design/eco_tokens.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/area_match.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/desk_ui.dart';
@@ -125,10 +126,27 @@ class _AssignmentScheduleScreenState extends State<AssignmentScheduleScreen> {
           }
 
           final entries = _entries(manuals);
+          // A resident reads only the crews that come to their own village.
+          // The schedule is one manual for the whole barangay, so an
+          // unfiltered list made every resident think three trucks visited
+          // their street.
+          final residentArea = isResident
+              ? (user?.subdivision?.trim() ?? '')
+              : '';
+          final scoped = isResident && residentArea.isNotEmpty
+              ? entries
+                    .where(
+                      (entry) => areaServesResident(
+                        residentArea,
+                        entry.assignment.routes,
+                      ),
+                    )
+                    .toList(growable: false)
+              : entries;
           final days = <int>{
-            for (final e in entries) ...e.assignment.days,
+            for (final e in scoped) ...e.assignment.days,
           }.toList()..sort();
-          final visible = entries.where(_matches).toList(growable: false);
+          final visible = scoped.where(_matches).toList(growable: false);
 
           return Column(
             children: [
@@ -140,7 +158,7 @@ class _AssignmentScheduleScreenState extends State<AssignmentScheduleScreen> {
                           DeskMetric(
                             icon: Icons.place_outlined,
                             label: 'Areas',
-                            value: '${_areas(entries).length}',
+                            value: '${_areas(scoped).length}',
                           ),
                           DeskMetric(
                             icon: Icons.event_repeat_rounded,
@@ -195,25 +213,40 @@ class _AssignmentScheduleScreenState extends State<AssignmentScheduleScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: DeskResultLine(
-                  label: _resultLabel(visible.length, entries.length),
+                  label: _resultLabel(
+                    visible.length,
+                    scoped.length,
+                    residentArea,
+                  ),
                   onClear: _filtered ? _clear : null,
                 ),
               ),
               Expanded(
                 child: visible.isEmpty
-                    ? DeskEmptyQueue(
-                        icon: Icons.search_off_rounded,
-                        title: 'No schedule matches',
-                        message: _day == null
-                            ? 'Nothing in this schedule mentions '
-                                  '"${_query.trim()}". Try a shorter word or '
-                                  'an area name.'
-                            : 'No crew runs on ${manualDayLabel(_day!)}. '
-                                  'Pick another day or clear the filters.',
-                        actionLabel: 'Clear filters',
-                        actionIcon: Icons.filter_alt_off_outlined,
-                        onAction: _clear,
-                      )
+                    ? (isResident && scoped.isEmpty
+                          ? DeskEmptyQueue(
+                              icon: Icons.event_busy_outlined,
+                              title: 'No schedule for your area yet',
+                              message:
+                                  'No approved crew covers '
+                                  '"${residentArea.isEmpty ? 'your area' : residentArea}". '
+                                  'Your schedule appears here once City Hall '
+                                  'signs a manual for it.',
+                            )
+                          : DeskEmptyQueue(
+                              icon: Icons.search_off_rounded,
+                              title: 'No schedule matches',
+                              message: _day == null
+                                  ? 'Nothing in this schedule mentions '
+                                        '"${_query.trim()}". Try a shorter word '
+                                        'or an area name.'
+                                  : 'No crew runs on '
+                                        '${manualDayLabel(_day!)}. Pick another '
+                                        'day or clear the filters.',
+                              actionLabel: 'Clear filters',
+                              actionIcon: Icons.filter_alt_off_outlined,
+                              onAction: _clear,
+                            ))
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
                         itemCount: visible.length,
@@ -395,9 +428,12 @@ class _AssignmentScheduleScreenState extends State<AssignmentScheduleScreen> {
     return manualDayLabel(upcoming.isNotEmpty ? upcoming.first : days.first);
   }
 
-  String _resultLabel(int visible, int total) {
+  String _resultLabel(int visible, int total, String residentArea) {
     if (_filtered) return 'Showing $visible of $total';
-    return '$total ${total == 1 ? 'crew' : 'crews'}';
+    final crews = '$total ${total == 1 ? 'crew' : 'crews'}';
+    // A resident reads the answer to "when is the truck on my street?", so
+    // naming their area is the useful half of this line.
+    return residentArea.isEmpty ? crews : '$residentArea · $crews';
   }
 }
 

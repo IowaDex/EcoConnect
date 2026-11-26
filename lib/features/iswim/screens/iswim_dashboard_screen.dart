@@ -240,12 +240,10 @@ class _IswimDashboardScreenState extends State<IswimDashboardScreen>
     );
   }
 
+  // Route assignments live in the manual: Iswim builds the collection manual,
+  // and the schedules it produces are what the drivers run. There is no
+  // separate assign-route desk.
   static List<QuickAction> _operations(int pendingManuals) => [
-    const QuickAction(
-      label: 'Assign route',
-      icon: Icons.route_rounded,
-      route: '/routes',
-    ),
     const QuickAction(
       label: 'New manual',
       icon: Icons.assignment_ind_outlined,

@@ -15,6 +15,7 @@ import '../../../core/widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../driver/models/garbage_truck.dart';
 import '../../fleet/services/fleet_service.dart';
+import '../../incident/widgets/driver_reports_panel.dart';
 import '../models/delay_report.dart';
 import '../services/delay_service.dart';
 import '../widgets/district_officer_alarm.dart';
@@ -369,124 +370,137 @@ class _DelayListScreenState extends State<DelayListScreen> {
             ? '/admin-dashboard'
             : '/iswim',
       ),
-      body: StreamBuilder<List<DelayReport>>(
-        stream: DelayService().watchAll(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData &&
-              snapshot.connectionState == ConnectionState.waiting) {
-            return const EcoLoadingView(label: 'Loading delay reports');
-          }
+      body: Column(
+        children: [
+          // Crews report accidents and breakdowns to Iswim; those reports sit
+          // above the delay list because Iswim decides whether to file one.
+          if (!canForward && !canAnnounce) const DriverReportsPanel(),
+          Expanded(
+            child: StreamBuilder<List<DelayReport>>(
+              stream: DelayService().watchAll(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData &&
+                    snapshot.connectionState == ConnectionState.waiting) {
+                  return const EcoLoadingView(label: 'Loading delay reports');
+                }
 
-          final reports = snapshot.data ?? const <DelayReport>[];
-          final items = _filter(reports);
-          final page = clampPage(_page, items.length, _pageSize);
-          final visible = pageSlice(items, page, _pageSize);
-          final filtered = _query.trim().isNotEmpty || _stage != null;
+                final reports = snapshot.data ?? const <DelayReport>[];
+                final items = _filter(reports);
+                final page = clampPage(_page, items.length, _pageSize);
+                final visible = pageSlice(items, page, _pageSize);
+                final filtered = _query.trim().isNotEmpty || _stage != null;
 
-          return DeskQueueView(
-            metrics: [
-              DeskMetric(
-                icon: Icons.timer_outlined,
-                label: 'At DSQC',
-                value: '${_count(reports, DelayStage.dsqc)}',
-                accent: AppColors.warning,
-                highlight: _count(reports, DelayStage.dsqc) > 0,
-              ),
-              DeskMetric(
-                icon: Icons.local_police_outlined,
-                label: 'With district',
-                value: '${_count(reports, DelayStage.districtOfficer)}',
-              ),
-              DeskMetric(
-                icon: Icons.campaign_outlined,
-                label: 'Announced',
-                value:
-                    '${reports.where((r) => r.announcementId != null).length}',
-              ),
-            ],
-            search: EcoSearchField(
-              controller: _search,
-              hint: 'Search ticket, plate or reason',
-              onChanged: (value) => setState(() {
-                _query = value;
-                _page = 0;
-              }),
-            ),
-            filters: DeskSegmented<DelayStage?>(
-              value: _stage,
-              onChanged: (value) => setState(() {
-                _stage = value;
-                _page = 0;
-              }),
-              segments: [
-                DeskSegment(value: null, label: 'All', count: reports.length),
-                DeskSegment(
-                  value: DelayStage.dsqc,
-                  label: 'DSQC',
-                  count: _count(reports, DelayStage.dsqc),
-                ),
-                DeskSegment(
-                  value: DelayStage.districtOfficer,
-                  label: 'District',
-                  count: _count(reports, DelayStage.districtOfficer),
-                ),
-                DeskSegment(
-                  value: DelayStage.barangay,
-                  label: 'Barangay',
-                  count: _count(reports, DelayStage.barangay),
-                ),
-              ],
-            ),
-            resultLine: DeskResultLine(
-              label: filtered
-                  ? 'Showing ${items.length} of ${reports.length} reports'
-                  : '${reports.length} '
-                        '${reports.length == 1 ? 'report' : 'reports'}',
-              onClear: filtered ? _clear : null,
-            ),
-            empty: reports.isEmpty
-                ? const DeskEmptyQueue(
-                    icon: Icons.timer_outlined,
-                    title: 'No delay reports yet',
-                    message:
-                        'When a collection runs late, Iswim files it here '
-                        'and the DSQC decides who needs to know.',
-                    steps: [
-                      'Iswim files the late round',
-                      'DSQC pushes it to the district officer',
-                      'The barangay gets its copy',
-                    ],
-                  )
-                : DeskEmptyQueue(
-                    icon: Icons.search_off_rounded,
-                    title: 'No report matches',
-                    message:
-                        'Try another plate or reason, or clear the stage '
-                        'filter.',
-                    actionLabel: 'Clear filters',
-                    actionIcon: Icons.filter_alt_off_outlined,
-                    onAction: _clear,
-                  ),
-            itemCount: visible.length,
-            itemBuilder: (context, i) => _DelayCard(
-              report: visible[i],
-              canForward: canForward,
-              canAnnounce: canAnnounce,
-            ),
-            pagination: items.isEmpty
-                ? null
-                : EcoPaginationBar(
-                    page: page,
-                    pageSize: _pageSize,
-                    total: items.length,
-                    onPageChanged: (next) => setState(() => _page = next),
-                    onPageSizeChanged: (size) => setState(() {
-                      _pageSize = size;
+                return DeskQueueView(
+                  metrics: [
+                    DeskMetric(
+                      icon: Icons.timer_outlined,
+                      label: 'At DSQC',
+                      value: '${_count(reports, DelayStage.dsqc)}',
+                      accent: AppColors.warning,
+                      highlight: _count(reports, DelayStage.dsqc) > 0,
+                    ),
+                    DeskMetric(
+                      icon: Icons.local_police_outlined,
+                      label: 'With district',
+                      value: '${_count(reports, DelayStage.districtOfficer)}',
+                    ),
+                    DeskMetric(
+                      icon: Icons.campaign_outlined,
+                      label: 'Announced',
+                      value:
+                          '${reports.where((r) => r.announcementId != null).length}',
+                    ),
+                  ],
+                  search: EcoSearchField(
+                    controller: _search,
+                    hint: 'Search ticket, plate or reason',
+                    onChanged: (value) => setState(() {
+                      _query = value;
                       _page = 0;
                     }),
                   ),
-          );
-        },
+                  filters: DeskSegmented<DelayStage?>(
+                    value: _stage,
+                    onChanged: (value) => setState(() {
+                      _stage = value;
+                      _page = 0;
+                    }),
+                    segments: [
+                      DeskSegment(
+                        value: null,
+                        label: 'All',
+                        count: reports.length,
+                      ),
+                      DeskSegment(
+                        value: DelayStage.dsqc,
+                        label: 'DSQC',
+                        count: _count(reports, DelayStage.dsqc),
+                      ),
+                      DeskSegment(
+                        value: DelayStage.districtOfficer,
+                        label: 'District',
+                        count: _count(reports, DelayStage.districtOfficer),
+                      ),
+                      DeskSegment(
+                        value: DelayStage.barangay,
+                        label: 'Barangay',
+                        count: _count(reports, DelayStage.barangay),
+                      ),
+                    ],
+                  ),
+                  resultLine: DeskResultLine(
+                    label: filtered
+                        ? 'Showing ${items.length} of ${reports.length} reports'
+                        : '${reports.length} '
+                              '${reports.length == 1 ? 'report' : 'reports'}',
+                    onClear: filtered ? _clear : null,
+                  ),
+                  empty: reports.isEmpty
+                      ? const DeskEmptyQueue(
+                          icon: Icons.timer_outlined,
+                          title: 'No delay reports yet',
+                          message:
+                              'When a collection runs late, Iswim files it here '
+                              'and the DSQC decides who needs to know.',
+                          steps: [
+                            'Iswim files the late round',
+                            'DSQC pushes it to the district officer',
+                            'The barangay gets its copy',
+                          ],
+                        )
+                      : DeskEmptyQueue(
+                          icon: Icons.search_off_rounded,
+                          title: 'No report matches',
+                          message:
+                              'Try another plate or reason, or clear the stage '
+                              'filter.',
+                          actionLabel: 'Clear filters',
+                          actionIcon: Icons.filter_alt_off_outlined,
+                          onAction: _clear,
+                        ),
+                  itemCount: visible.length,
+                  itemBuilder: (context, i) => _DelayCard(
+                    report: visible[i],
+                    canForward: canForward,
+                    canAnnounce: canAnnounce,
+                  ),
+                  pagination: items.isEmpty
+                      ? null
+                      : EcoPaginationBar(
+                          page: page,
+                          pageSize: _pageSize,
+                          total: items.length,
+                          onPageChanged: (next) => setState(() => _page = next),
+                          onPageSizeChanged: (size) => setState(() {
+                            _pageSize = size;
+                            _page = 0;
+                          }),
+                        ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/eco_page.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../driver/models/truck_crew_role.dart';
 import '../../driver/widgets/driver_nav_bar.dart';
 import '../models/trip_ticket.dart';
 import '../services/ticket_service.dart';
@@ -51,11 +52,14 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final uid = user?.uid;
+    final isGuide = user?.crewRole == TruckCrewRole.guide;
 
     return EcoPageScaffold(
-      eyebrow: 'DRIVER · INBOX',
+      eyebrow: isGuide ? 'TRUCK GUIDE · DUTY' : 'DRIVER · INBOX',
       title: 'Trip tickets',
-      subtitle: 'Every ticket issued to you, newest first.',
+      subtitle: isGuide
+          ? 'The driver keeps the ticket. You run the truck.'
+          : 'Every ticket issued to you, newest first.',
       onBack: () => ecoBack(context, '/driver'),
       bottomBar: const DriverNavBar(currentIndex: 1),
       body: uid == null
@@ -69,7 +73,7 @@ class _DriverTicketsScreenState extends State<DriverTicketsScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (tickets.isEmpty) {
-                  return const _EmptyInbox();
+                  return _EmptyInbox(guide: isGuide);
                 }
                 return _Inbox(
                   search: _search,
@@ -585,36 +589,47 @@ class _ManualFilterRow extends StatelessWidget {
 }
 
 class _EmptyInbox extends StatelessWidget {
-  const _EmptyInbox();
+  const _EmptyInbox({this.guide = false});
+
+  /// A guide never owns a ticket: the paperwork stays with the driver.
+  final bool guide;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(28),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.confirmation_number_outlined,
               size: 42,
               color: AppColors.sage,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
-              'No trip tickets yet',
-              style: TextStyle(
+              guide
+                  ? 'The ticket is on the driver\'s dashboard'
+                  : 'No trip tickets yet',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: AppColors.forest,
               ),
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Text(
-              'Iswim creates the ticket. When a new one arrives, a notification '
-              'appears here and you cannot start the trip until you accept it.',
+              guide
+                  ? 'You run the truck from Home: pick the plate, then Start '
+                        'route and End route. The three signatures are recorded '
+                        'on the driver\'s trip ticket.'
+                  : 'Iswim creates the ticket. When a new one arrives, a '
+                        'notification appears here and you cannot start the '
+                        'trip until you accept it.',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 10,
                 height: 1.5,
                 color: AppColors.inkMuted,

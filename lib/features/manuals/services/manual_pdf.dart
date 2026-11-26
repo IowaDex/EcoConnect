@@ -9,7 +9,7 @@ import '../models/manual_assignment.dart';
 /// The creation form, the trip ticket a manual generates and the manuals list
 /// all print the same sheet, so the export never depends on the screen that
 /// happens to be open. A bulk manual prints every driver row under the title.
-/// Returns false when the build has no browser download.
+/// Returns false when the save dialog was cancelled or the write was refused.
 Future<bool> exportAssignmentManualPdf({
   required String title,
   required String driverName,

@@ -322,6 +322,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         context.push('/incidents');
         return;
       }
+      if (kind == 'driverIncident') {
+        // The crew's report sits on the Iswim delay desk.
+        context.push('/delays');
+        return;
+      }
       if (kind == 'complaintFiled' || kind == 'complaintResponse') {
         // The alert carries the complaint id, so the reader lands on that
         // thread instead of the top of the list.
@@ -339,7 +344,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return;
       }
       if (kind == 'planAssigned' || kind == 'planCancelled') {
-        context.push(role == UserRole.driver ? '/driver-routes' : '/routes');
+        // Drivers read their own duty list; the desks read the manual
+        // schedules, which are where assignments are made.
+        context.push(role == UserRole.driver ? '/driver-routes' : '/assignments');
         return;
       }
       if (kind.startsWith('delay')) {
@@ -353,6 +360,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (kind == 'manualApprovedSchedule') {
         // Residents read the approved manual, not the trip ticket.
         context.push('/schedule');
+        return;
+      }
+      if (kind == 'routeStarted') {
+        // A truck started on the resident's street: open the live map.
+        context.push('/tracking');
         return;
       }
       if (kind.startsWith('manual') &&
@@ -415,8 +427,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         context.push(isStaff ? '/verification' : '/user');
       case AppNotificationType.route:
         // The barangay no longer dispatches or watches routes; Iswim and City
-        // Hall do. A stale notification just lands on their desk.
-        context.push(isStaff ? '/admin-dashboard' : '/driver');
+        // Hall do. A resident follows the truck on the map; a crew lands on
+        // its own dashboard.
+        context.push(
+          isStaff
+              ? '/admin-dashboard'
+              : role == UserRole.user
+              ? '/tracking'
+              : '/driver',
+        );
       case AppNotificationType.announcement:
         context.push('/announcements');
       case AppNotificationType.event:

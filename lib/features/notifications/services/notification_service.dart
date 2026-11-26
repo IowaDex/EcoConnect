@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/app_notification.dart';
 import '../../../core/utils/app_logger.dart';
+import '../../../core/utils/area_match.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -221,23 +222,55 @@ class NotificationService {
   /// Fans a notice out to every active resident. Only staff can read the user
   /// directory, so this is a staff-only action; failures stay silent because
   /// the announcement itself has already been saved.
-  Future<void> notifyResidents({
+  ///
+  /// Pass [onlyAreas] for anything tied to a collection route: the notice then
+  /// goes to the residents whose registered subdivision is one of those areas,
+  /// and to nobody else. A resident whose area is unknown is left out — a
+  /// schedule for another village is worse than no alert at all.
+  ///
+  /// Returns how many residents were addressed, so a caller can tell "nobody
+  /// lives on this route" from "the write failed".
+  Future<int> notifyResidents({
     required String title,
     required String body,
     AppNotificationType type = AppNotificationType.system,
     Map<String, dynamic> data = const {},
     String? dedupeKey,
+    Iterable<String>? onlyAreas,
   }) async {
     try {
       final users = await _db
           .collection('users')
           .where('role', isEqualTo: 'user')
           .get();
+
+      final wanted = onlyAreas == null
+          ? null
+          : {
+              for (final area in onlyAreas)
+                if (normalizeAreaName(area).isNotEmpty) normalizeAreaName(area),
+            };
+      // An area-scoped notice with no usable area must reach nobody: falling
+      // back to everyone is exactly the bug this filter exists to stop.
+      if (wanted != null && wanted.isEmpty) return 0;
+
+      final targets = wanted == null
+          ? users.docs
+          : users.docs
+                .where(
+                  (user) => wanted.contains(
+                    normalizeAreaName(
+                      (user.data()['subdivision'] as String?) ?? '',
+                    ),
+                  ),
+                )
+                .toList(growable: false);
+
       // A batch holds at most 500 writes, so a large barangay is split. Each
       // batch is isolated: one failure must not drop everyone after it.
-      var missed = 0;
-      for (var i = 0; i < users.docs.length; i += _batchLimit) {
-        final chunk = users.docs.skip(i).take(_batchLimit).toList();
+      var sent = 0;
+      for (var i = 0; i < targets.length; i += _batchLimit) {
+        final chunk = targets.skip(i).take(_batchLimit).toList();
         final batch = _db.batch();
         for (final user in chunk) {
           final ref = (dedupeKey == null || dedupeKey.isEmpty)
@@ -255,18 +288,21 @@ class NotificationService {
         }
         try {
           await batch.commit();
+          sent += chunk.length;
         } catch (error) {
-          missed += chunk.length;
           AppLogger.error('Resident notification batch failed', error);
         }
       }
-      if (missed > 0) {
+      if (sent < targets.length) {
         AppLogger.error(
-          'Resident notice missed $missed of ${users.docs.length} residents',
+          'Resident notice missed ${targets.length - sent} of '
+          '${targets.length} residents',
         );
       }
+      return sent;
     } catch (error) {
       AppLogger.error('Resident notification fan-out failed', error);
+      return 0;
     }
   }
 

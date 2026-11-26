@@ -1133,6 +1133,102 @@ test('a manual ticket waits for City Hall before the driver can take it', async 
   await assertFails(updateDoc(doc(as('dan'), 'trip_tickets/t2'), {plateNumber: 'FORGED'}));
 });
 
+test('a crew opens the day ticket from a valid schedule only', async () => {
+  // The schedule Iswim issued and City Hall has not signed yet.
+  await assertSucceeds(setDoc(doc(as('ivy'), 'trip_tickets/sched'), {
+    code: 'TT-2026-0100',
+    plateNumber: 'ABC 123',
+    truckId: 'truck1',
+    driverId: 'dan',
+    driverName: 'Dan',
+    kind: 'assignment',
+    status: 'issued',
+    approvalPending: true,
+    createdBy: 'ivy',
+    createdAt: serverTimestamp(),
+    signatures: {},
+    history: [],
+  }));
+  const duty = (id, overrides = {}) => ({
+    code: `TT-2026-0100-${id}`,
+    plateNumber: 'ABC 123',
+    truckId: 'truck1',
+    driverId: 'dan',
+    driverName: 'Dan',
+    kind: 'run',
+    status: 'issued',
+    assignmentId: 'sched',
+    createdBy: 'dan',
+    createdAt: serverTimestamp(),
+    signatures: {},
+    history: [],
+    ...overrides,
+  });
+
+  // A schedule waiting for City Hall is not a licence to open a duty ticket.
+  await assertFails(setDoc(doc(as('dan'), 'trip_tickets/duty0'), duty('0')));
+
+  await assertSucceeds(updateDoc(doc(as('carl'), 'trip_tickets/sched'), {
+    status: 'valid',
+    approvalPending: false,
+    pendingSigner: null,
+    signatures: {cityHall: {name: 'Carl', uid: 'carl', at: Timestamp.now()}},
+  }));
+
+  // Now the crew may copy it for today's duty.
+  await assertSucceeds(setDoc(doc(as('dan'), 'trip_tickets/duty1'), duty('1')));
+  // Another truck's schedule cannot be borrowed.
+  await assertFails(
+    setDoc(doc(as('dan'), 'trip_tickets/duty2'), duty('2', {truckId: 'truck2'})),
+  );
+  // A ticket naming someone else is refused.
+  await assertFails(
+    setDoc(doc(as('dan'), 'trip_tickets/duty3'), duty('3', {driverId: 'bob'})),
+  );
+});
+
+test('a crew reports an incident to the Iswim desk', async () => {
+  await assertSucceeds(setDoc(doc(as('dan'), 'driver_incidents/i1'), {
+    driverId: 'dan',
+    driverName: 'Dan',
+    plateNumber: 'ABC 123',
+    kind: 'accident',
+    description: 'Side mirror clipped a post',
+    status: 'open',
+    createdAt: serverTimestamp(),
+  }));
+  // Someone else's name is refused.
+  await assertFails(setDoc(doc(as('dan'), 'driver_incidents/i2'), {
+    driverId: 'bob',
+    driverName: 'Bob',
+    plateNumber: 'ABC 123',
+    kind: 'accident',
+    description: 'Test',
+    status: 'open',
+  }));
+  // Residents do not file crew reports.
+  await assertFails(setDoc(doc(as('alice'), 'driver_incidents/i3'), {
+    driverId: 'alice',
+    driverName: 'Alice',
+    plateNumber: '',
+    kind: 'other',
+    description: 'Test',
+    status: 'open',
+  }));
+
+  // Iswim reads it and marks it seen.
+  await assertSucceeds(getDoc(doc(as('ivy'), 'driver_incidents/i1')));
+  await assertSucceeds(updateDoc(doc(as('ivy'), 'driver_incidents/i1'), {
+    status: 'acknowledged',
+    acknowledgedAt: Timestamp.now(),
+    acknowledgedByName: 'Ivy',
+  }));
+  // The crew cannot close its own report.
+  await assertFails(
+    updateDoc(doc(as('dan'), 'driver_incidents/i1'), {status: 'closed'}),
+  );
+});
+
 // --- Resident registration decision ---------------------------------------
 
 test('a resident answers only an approval the barangay already gave', async () => {
@@ -1317,4 +1413,122 @@ test('the author corrects a memo only before it is received', async () => {
   }));
   // City Hall may still remove an unsigned memo.
   await assertSucceeds(deleteDoc(doc(as('carl'), 'memos/m1')));
+});
+
+test('a truck guide runs the driver duty on the driver paperwork', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users/gil'), {
+      name: 'Gil', role: 'driver', crewRole: 'guide',
+    });
+    await setDoc(doc(db, 'users/ben'), {name: 'Ben', role: 'driver'});
+    // A guide has no route of his own; the run belongs to the driver.
+    await deleteDoc(doc(db, 'routes/dan'));
+    await setDoc(doc(db, 'trip_tickets/sched'), {
+      code: 'TT-2026-0200',
+      plateNumber: 'ABC 123',
+      truckId: 'truck1',
+      driverId: 'dan',
+      driverName: 'Dan',
+      kind: 'assignment',
+      status: 'valid',
+      approvalPending: false,
+      createdBy: 'ivy',
+      createdAt: Timestamp.now(),
+      signatures: {},
+      history: [],
+    });
+  });
+
+  const duty = (id, overrides = {}) => ({
+    code: `TT-2026-0200-${id}`,
+    plateNumber: 'ABC 123',
+    truckId: 'truck1',
+    driverId: 'dan',
+    driverName: 'Dan',
+    kind: 'run',
+    status: 'issued',
+    assignmentId: 'sched',
+    actedByUid: 'gil',
+    actedByName: 'Gil',
+    createdBy: 'gil',
+    createdAt: serverTimestamp(),
+    signatures: {},
+    history: [],
+    ...overrides,
+  });
+
+  // The guide opens the duty ticket of the schedule's driver.
+  await assertSucceeds(setDoc(doc(as('gil'), 'trip_tickets/duty1'), duty('1')));
+  // He cannot open one for another driver.
+  await assertFails(
+    setDoc(doc(as('gil'), 'trip_tickets/duty2'), duty('2', {driverId: 'ben'})),
+  );
+  // He cannot claim the ticket was opened by someone else.
+  await assertFails(
+    setDoc(doc(as('gil'), 'trip_tickets/duty3'), duty('3', {actedByUid: 'dan'})),
+  );
+
+  // Accept, start and end all move on the guide's own action.
+  await assertSucceeds(updateDoc(doc(as('gil'), 'trip_tickets/duty1'), {
+    status: 'accepted', acceptedAt: Timestamp.now(), history: [],
+  }));
+  await assertSucceeds(updateDoc(doc(as('gil'), 'trip_tickets/duty1'), {
+    status: 'running', startedAt: Timestamp.now(), history: [],
+  }));
+
+  // The live route is written under the driver, authorised by that ticket.
+  await assertSucceeds(setDoc(doc(as('gil'), 'routes/dan'), {
+    driverName: 'Dan',
+    status: 'inTransit',
+    lat: 14.6,
+    lng: 121.0,
+    crewRole: 'guide',
+    actedByUid: 'gil',
+    actedByName: 'Gil',
+    ticketId: 'duty1',
+    assignmentId: 'sched',
+    truckPlate: 'ABC 123',
+    sessionId: 's1',
+    startedAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  }));
+  // The same write without a duty ticket of his own is refused.
+  await assertFails(setDoc(doc(as('gil'), 'routes/ben'), {
+    driverName: 'Ben',
+    status: 'inTransit',
+    crewRole: 'guide',
+    actedByUid: 'gil',
+    ticketId: 'duty1',
+  }));
+  // A plain driver cannot publish someone else's route.
+  await assertFails(setDoc(doc(as('ben'), 'routes/dan'), {
+    driverName: 'Dan',
+    status: 'inTransit',
+    crewRole: 'guide',
+    actedByUid: 'ben',
+    ticketId: 'duty1',
+  }));
+
+  // The heartbeat keeps running on the route he opened…
+  await assertSucceeds(updateDoc(doc(as('gil'), 'routes/dan'), {
+    lat: 14.61, lng: 121.01, updatedAt: Timestamp.now(), lastSeenAt: Timestamp.now(),
+  }));
+  // …but he cannot rewrite who the driver is.
+  await assertFails(updateDoc(doc(as('gil'), 'routes/dan'), {
+    driverName: 'Someone else', updatedAt: Timestamp.now(),
+  }));
+
+  // End of route: the driver's ticket goes to the barangay.
+  await assertSucceeds(updateDoc(doc(as('gil'), 'trip_tickets/duty1'), {
+    status: 'submitted', submittedAt: Timestamp.now(), history: [],
+  }));
+  // Another driver cannot move a guide's ticket.
+  await assertFails(updateDoc(doc(as('ben'), 'trip_tickets/duty1'), {
+    status: 'accepted', acceptedAt: Timestamp.now(), history: [],
+  }));
+  // The schedule itself is never the guide's to consume.
+  await assertFails(updateDoc(doc(as('gil'), 'trip_tickets/sched'), {
+    status: 'completed', completedAt: Timestamp.now(), history: [],
+  }));
 });

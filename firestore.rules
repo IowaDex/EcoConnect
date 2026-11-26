@@ -61,6 +61,60 @@ service cloud.firestore {
         && profile(request.auth.uid).get('crewRole', '') in ['driver', 'guide'];
     }
 
+    // One trip ticket by id. Used to prove a duty ticket really is a copy of
+    // an approved schedule before a crew may create it.
+    function assignmentTicket(ticketId) {
+      return get(/databases/$(database)/documents/trip_tickets/$(ticketId));
+    }
+
+    // An approved crew account: a driver or a truck guide. A guide holds the
+    // device for a driver without a phone, so he acts on that driver's route
+    // and paperwork — always stamped with his own uid.
+    function isCrewActor() {
+      return isActive() && profile(request.auth.uid).role == 'driver';
+    }
+
+    // The duty ticket named by a route write. It is what authorises a guide to
+    // publish a position under the driver's document.
+    function dutyTicket(ticketId) {
+      return get(/databases/$(database)/documents/trip_tickets/$(ticketId));
+    }
+
+    // The fields a crew may move on a live route. Identity (driverName, zone,
+    // plate) can only be set by the write that opens the route.
+    function routeEditableKeys() {
+      return ['status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
+              'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
+              'phone', 'zone', 'pausedAt', 'resumedAt', 'completedAt',
+              'pauseReason', 'locationState', 'locationUpdatedAt',
+              'lastKnownLat', 'lastKnownLng',
+              // trip guard + fleet identity written at activation
+              'truckPlate', 'truckWheelers', 'crewRole', 'connectionState',
+              'geofenceState', 'geofenceMeters', 'geofenceLat', 'geofenceLng',
+              'geofenceRadius'];
+    }
+
+    // A guide moves the run, never the identity: who the driver is, which zone
+    // and which plate are fixed by the write that opened the route.
+    function routeGuideKeys() {
+      return ['status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
+              'endedAt', 'planId', 'sessionId', 'etaMinutes',
+              'pausedAt', 'resumedAt', 'completedAt', 'pauseReason',
+              'locationState', 'locationUpdatedAt', 'lastKnownLat',
+              'lastKnownLng', 'connectionState', 'geofenceState',
+              'geofenceMeters', 'geofenceLat', 'geofenceLng', 'geofenceRadius'];
+    }
+
+    // A route write may only report a status the map understands, and a
+    // location state the desks can explain.
+    function routeWriteShapeOk() {
+      return request.resource.data.status in
+               ['inTransit', 'delayed', 'paused', 'completed', 'idle']
+        && (!('locationState' in request.resource.data)
+            || request.resource.data.locationState in
+                 ['ok', 'disabled', 'permission', 'offline', 'unknown']);
+    }
+
     // A guide is a driver profile with crewRole 'guide'. The barangay makes
     // those logins, and they are the only crew accounts it may touch.
     function isGuideProfile(data) {
@@ -342,10 +396,45 @@ service cloud.firestore {
         // The guide's list shows every plate's ticket state, and the guide is
         // not the driver the ticket names, so crew read the roster's tickets.
         || isCrew();
-      allow create: if isIswim()
-        && request.resource.data.status == 'issued'
-        && request.resource.data.code is string
-        && request.resource.data.plateNumber is string;
+      // Iswim issues a ticket. A crew may also open the day's run ticket from
+      // the schedule Iswim issued and City Hall approved: the schedule itself
+      // is not consumed, so every duty carries its own three signatures. The
+      // copy must name the same truck, still be valid, and belong to the crew
+      // holding the device.
+      allow create: if (isIswim()
+          && request.resource.data.status == 'issued'
+          && request.resource.data.code is string
+          && request.resource.data.plateNumber is string)
+        || (isActive()
+          && profile(request.auth.uid).role == 'driver'
+          && request.resource.data.kind == 'run'
+          && request.resource.data.status == 'issued'
+          && request.resource.data.code is string
+          && request.resource.data.plateNumber is string
+          && request.resource.data.driverId == request.auth.uid
+          && 'assignmentId' in request.resource.data
+          && request.resource.data.assignmentId is string
+          && exists(/databases/$(database)/documents/trip_tickets/$(request.resource.data.assignmentId))
+          && assignmentTicket(request.resource.data.assignmentId).data.kind == 'assignment'
+          && assignmentTicket(request.resource.data.assignmentId).data.status == 'valid'
+          && assignmentTicket(request.resource.data.assignmentId).data.truckId == request.resource.data.truckId)
+        // A truck guide opens the same duty ticket from his own login, for the
+        // driver the schedule names. The ticket belongs to that driver; the
+        // guide is recorded in actedByUid.
+        || (isCrewActor()
+          && request.resource.data.kind == 'run'
+          && request.resource.data.status == 'issued'
+          && request.resource.data.code is string
+          && request.resource.data.plateNumber is string
+          && request.resource.data.get('actedByUid', '') == request.auth.uid
+          && request.resource.data.driverId != request.auth.uid
+          && 'assignmentId' in request.resource.data
+          && request.resource.data.assignmentId is string
+          && exists(/databases/$(database)/documents/trip_tickets/$(request.resource.data.assignmentId))
+          && assignmentTicket(request.resource.data.assignmentId).data.kind == 'assignment'
+          && assignmentTicket(request.resource.data.assignmentId).data.status == 'valid'
+          && assignmentTicket(request.resource.data.assignmentId).data.truckId == request.resource.data.truckId
+          && assignmentTicket(request.resource.data.assignmentId).data.driverId == request.resource.data.driverId);
       allow update: if (isTicketStakeholder()
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['signatures', 'status', 'pendingSigner', 'completedAt',
@@ -355,6 +444,16 @@ service cloud.firestore {
         // to take: the ticket only becomes theirs once it is 'valid'.
         || (isSelf(resource.data.driverId)
           && isActive()
+          && resource.data.get('approvalPending', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'pendingSigner', 'acceptedAt', 'startedAt',
+                         'submittedAt', 'declineReason', 'history'])
+          && request.resource.data.status in
+               ['accepted', 'declined', 'running', 'submitted'])
+        // The guide who opened the duty ticket moves it through the same
+        // steps. He can never touch a ticket he did not open.
+        || (isCrewActor()
+          && resource.data.get('actedByUid', '') == request.auth.uid
           && resource.data.get('approvalPending', false) == false
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['status', 'pendingSigner', 'acceptedAt', 'startedAt',
@@ -451,28 +550,32 @@ service cloud.firestore {
 
     // Live driver locations: any signed-in user can watch, only the driver
     // (or an admin) can publish. Drivers cannot rewrite identity fields.
+    //
+    // A truck guide publishes under the driver's document when the driver has
+    // no phone: the write names the duty ticket that authorises it, and the
+    // guide's own uid. He can only ever touch a route he opened.
     match /routes/{driverId} {
       allow read: if signedIn() && !isAuditViewer();
-      allow create: if (isSelf(driverId) && isActive()) || isAdmin();
-      allow update: if (isSelf(driverId)
-          && isActive()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-               'status', 'lat', 'lng', 'updatedAt', 'lastSeenAt', 'startedAt',
-               'endedAt', 'planId', 'sessionId', 'etaMinutes', 'driverName',
-               'phone', 'zone', 'pausedAt', 'resumedAt', 'completedAt',
-               'pauseReason', 'locationState', 'locationUpdatedAt',
-               'lastKnownLat', 'lastKnownLng',
-               // trip guard + fleet identity written at activation
-               'truckPlate', 'truckWheelers', 'crewRole', 'connectionState',
-               'geofenceState', 'geofenceMeters', 'geofenceLat', 'geofenceLng',
-               'geofenceRadius'
-             ])
-          && request.resource.data.status in
-               ['inTransit', 'delayed', 'paused', 'completed', 'idle']
-          && (!('locationState' in request.resource.data)
-              || request.resource.data.locationState in
-                   ['ok', 'disabled', 'permission', 'offline', 'unknown']))
+      allow create: if (isSelf(driverId) && isActive())
+        || (isCrewActor()
+          && request.resource.data.get('actedByUid', '') == request.auth.uid
+          && request.resource.data.get('crewRole', '') == 'guide'
+          && request.resource.data.get('ticketId', '') != ''
+          && exists(/databases/$(database)/documents/trip_tickets/$(request.resource.data.ticketId))
+          && dutyTicket(request.resource.data.ticketId).data.driverId == driverId
+          && dutyTicket(request.resource.data.ticketId).data.get('actedByUid', '') == request.auth.uid
+          && dutyTicket(request.resource.data.ticketId).data.status in ['accepted', 'running'])
         || isAdmin();
+      allow update: if isAdmin()
+        || (isActive()
+          && routeWriteShapeOk()
+          && ((isSelf(driverId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(routeEditableKeys()))
+            || (isCrewActor()
+              && resource.data.get('actedByUid', '') == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(routeGuideKeys()))));
       allow delete: if isAdmin()
         // Iswim takes a departed driver's truck off the map. The profile still
         // exists at this point, which is how the rule knows whose route it is.
@@ -487,6 +590,23 @@ service cloud.firestore {
       allow read: if isAdmin() || isCityHall();
       allow create: if false;
       allow update, delete: if isAdmin();
+    }
+
+    // A crew report from the truck: accident, breakdown, blocked road. It goes
+    // to the Iswim desk, which decides whether the round is delayed. The crew
+    // may file and read its own reports; only the desks may close them.
+    match /driver_incidents/{incidentId} {
+      allow read: if isTicketStakeholder() || isCrew()
+        || (signedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isActive()
+        && profile(request.auth.uid).role == 'driver'
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.kind is string
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 1000
+        && request.resource.data.status == 'open';
+      allow update: if isIswim() || isAdmin() || isCityHall();
+      allow delete: if isCityHall();
     }
 
     // Barangay announcements. Residents read published posts, staff manage all.

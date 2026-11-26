@@ -7,6 +7,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../../location/providers/location_provider.dart';
 import '../../route/models/collection_route.dart';
 import '../../route/services/route_service.dart';
+import '../models/truck_crew_role.dart';
+import '../providers/truck_provider.dart';
 
 /// Publishes the driver's position for as long as a run is live, on every
 /// screen and with the app in the background. It follows the driver's route
@@ -32,7 +34,14 @@ class _RunBroadcastHostState extends State<RunBroadcastHost> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final user = context.watch<AuthProvider>().currentUser;
-    final id = user?.role == UserRole.driver ? user!.uid : null;
+    final truck = context.watch<TruckProvider>().selectedTruck;
+    // A guide holds the device for the driver without a phone, so the
+    // heartbeat goes to that driver's route document, not the guide's.
+    final id = user?.role != UserRole.driver
+        ? null
+        : user!.crewRole == TruckCrewRole.guide
+        ? truck?.driverAccountId
+        : user.uid;
     if (id == _driverId) return;
 
     _endRun();
